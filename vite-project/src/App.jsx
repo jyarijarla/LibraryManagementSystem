@@ -18,8 +18,9 @@ function App() {
       </div>
       <h1>Vite + React</h1>
       <div className="card">
+        hello team click to set the grade you want on this project:  
         <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
+          {count}
         </button>
         <p>
           Edit <code>src/App.jsx</code> and save to test HMR
