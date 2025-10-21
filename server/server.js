@@ -1,0 +1,1 @@
+require("dotenv").config();//imports dotenv that loads environmental variables from /server.env
