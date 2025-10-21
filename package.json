@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "npm run dev --workspace client",
     "build": "npm run build --workspace client",
+    "dbtest": "npm run dbtest --workspace server",
     "preview": "npm run preview --workspace client",
     "lint:client": "npm run lint --workspace client",
     "lint:server": "npm run lint --workspace server"
