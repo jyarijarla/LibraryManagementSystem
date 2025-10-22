@@ -9,9 +9,11 @@
   "scripts": {
     "dev": "npm run dev --workspace client",
     "build": "npm run build --workspace client",
-    "dbtest": "npm run dbtest --workspace server",
     "preview": "npm run preview --workspace client",
     "lint:client": "npm run lint --workspace client",
+
+    "db:test": "npm run db:test --workspace server",
+    "db:run-cli": "npm run db:run-cli --workspace server",
     "lint:server": "npm run lint --workspace server"
   },
   "devDependencies": {

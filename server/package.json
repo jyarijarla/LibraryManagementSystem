@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dbtest": "node dbscripts.js test-connection"
+    "db:test": "node dbscripts.js test-connection",
+    "db:run-cli": "node dbscripts.js mysql-cli"
   },
   "keywords": [],
   "author": "",
