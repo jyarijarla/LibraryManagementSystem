@@ -1,34 +1,24 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
+import { Link } from 'react-router-dom'
 import './App.css'
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
     <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+      <div className="bg-black text-white text-center p-4 font-bold">
+        <nav className="bg-gray-800 p-4">
+          <div className="flex justify-between items-center">
+            <div className="flex gap-8">
+              <Link to="/">Home</Link>
+              <Link to="/About">About</Link>
+              <Link to="/Books">Books</Link>
+            </div>
+
+            <div className="flex gap-8">
+              <Link to="/Login">Login</Link>
+            </div>
+          </div>
+        </nav>
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        hello team click to set the grade you want on this project:  
-        <button onClick={() => setCount((count) => count + 1)}>
-          {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
     </>
   )
 }
