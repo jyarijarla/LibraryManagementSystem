@@ -16,13 +16,4 @@ const db = mysql.createPool({
     queueLimit: 0
 });
 
-//test connection
-db.query('SELECT 1', (err, results) => {
-  if (err) {
-    console.error('❌ Connection failed:', err.message);
-  } else {
-    console.log('✅ Connection successful:', results);
-  }
-});
-
 module.exports = db;
