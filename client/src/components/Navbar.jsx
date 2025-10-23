@@ -8,6 +8,7 @@ function NavBar() {
           <div className="flex justify-between items-center">
             <div className="flex gap-8">
               <NavLink to="/">Home</NavLink>
+              {/*<NavLink to="/Home">Home</NavLink>*/}
               <NavLink to="/About">About</NavLink>
               <NavLink to="/Books">Books</NavLink>
             </div>
