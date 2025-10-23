@@ -28,18 +28,27 @@
 
 .home-header {
   text-align: center;
-  margin-bottom: 30px;
+  margin-bottom: 20px;
 }
 
 .welcome-sign {
   background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
   color: white;
   border: none;
-  padding: 140px 240px;
+  padding: 100px 240px;
   border-radius: 8px;
   font-size: 50px;
   font-weight: 600;
   cursor: auto;
   transition: all 0.3s ease;
   margin-top: 10px;
+}
+
+.credits-footer {
+    text-align: right;
+    position: absolute;
+    bottom: 20px;
+    right: 30px;
+    font-size: 20px;
+
 }

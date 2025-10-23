@@ -16,7 +16,11 @@ const Home = () => {
         
           </div>
         </div>
-          {/* <h2>Ethan is Here</h2>*/}
+        
+        <f1 className ="credits-footer">
+        Designed by Team 3
+
+        </f1>
 
             
       </div>
