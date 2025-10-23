@@ -15,8 +15,16 @@ const Home = () => {
             Welcome to the Library System!
         
           </div>
+
+          
+
         </div>
+
+        <div className="welcome-body">
+          <h1>Login to rent/view your books</h1>
         
+        </div>
+
         <f1 className ="credits-footer">
         Designed by Team 3
 
