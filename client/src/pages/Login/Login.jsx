@@ -3,19 +3,32 @@ import { useNavigate } from 'react-router-dom'
 import './Login.css'
 
 function Login() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [role, setRole] = useState('student')
+  const [isSignUp, setIsSignUp] = useState(false)
+  const [formData, setFormData] = useState({
+    fullName: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    studentId: '',
+    role: 'student'
+  })
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const navigate = useNavigate()
 
-  const handleSubmit = async (e) => {
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    })
+  }
+
+  const handleLoginSubmit = async (e) => {
     e.preventDefault()
     setError('')
     
     // Basic validation
-    if (!email || !password) {
+    if (!formData.email || !formData.password) {
       setError('Please fill in all fields')
       return
     }
@@ -29,22 +42,22 @@ function Login() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email, password, role }),
+        body: JSON.stringify({ 
+          email: formData.email, 
+          password: formData.password, 
+          role: formData.role 
+        }),
       })
 
       const data = await response.json()
 
       if (response.ok) {
-        // Handle successful login
         console.log('Login successful:', data)
-        console.log('User role:', role)
-        
-        // Store token in localStorage
         localStorage.setItem('token', data.token)
-        localStorage.setItem('role', role)
+        localStorage.setItem('role', formData.role)
         
         // Redirect to dashboard based on role
-        if (role === 'admin') {
+        if (formData.role === 'admin') {
           navigate('/admin-dashboard')
         } else {
           navigate('/student-dashboard')
@@ -52,13 +65,13 @@ function Login() {
       } else {
         setError(data.message || 'Login failed')
       }
-    } catch (err) {
+    } catch (error) {
       // For demo purposes, allow login without backend
       console.log('Demo mode: Logging in without API')
-      localStorage.setItem('role', role)
+      localStorage.setItem('role', formData.role)
       
       // Redirect to dashboard based on role
-      if (role === 'admin') {
+      if (formData.role === 'admin') {
         navigate('/admin-dashboard')
       } else {
         navigate('/student-dashboard')
@@ -68,31 +81,123 @@ function Login() {
     }
   }
 
+  const handleSignUpSubmit = async (e) => {
+    e.preventDefault()
+    setError('')
+    
+    // Validation
+    if (!formData.fullName || !formData.email || !formData.password || !formData.confirmPassword) {
+      setError('Please fill in all fields')
+      return
+    }
+
+    if (formData.role === 'student' && !formData.studentId) {
+      setError('Student ID is required for student registration')
+      return
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters')
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      // TODO: Replace with actual API call
+      const response = await fetch('http://localhost:3000/api/signup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fullName: formData.fullName,
+          email: formData.email,
+          password: formData.password,
+          studentId: formData.studentId,
+          role: formData.role
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        console.log('Sign up successful:', data)
+        alert('Account created successfully! Please login.')
+        setIsSignUp(false)
+        setFormData({
+          fullName: '',
+          email: formData.email,
+          password: '',
+          confirmPassword: '',
+          studentId: '',
+          role: 'student'
+        })
+      } else {
+        setError(data.message || 'Sign up failed')
+      }
+    } catch (err) {
+      // For demo purposes, simulate successful signup
+      console.log('Demo mode: Sign up without API')
+      alert('Account created successfully! Please login.')
+      setIsSignUp(false)
+      setFormData({
+        fullName: '',
+        email: formData.email,
+        password: '',
+        confirmPassword: '',
+        studentId: '',
+        role: 'student'
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const toggleMode = () => {
+    setIsSignUp(!isSignUp)
+    setError('')
+    setFormData({
+      fullName: '',
+      email: '',
+      password: '',
+      confirmPassword: '',
+      studentId: '',
+      role: 'student'
+    })
+  }
+
   return (
     <div className="login-container">
-      <div className="login-card">
+      <div className={`login-card ${isSignUp ? 'signup-card' : ''}`}>
         <div className="login-header">
-          <h2>Login</h2>
+          <h1>HAO is Here</h1>
+          <h2>{isSignUp ? 'Create Account' : 'Login'}</h2>
         </div>
         
-        <form onSubmit={handleSubmit} className="login-form">
+        <form onSubmit={isSignUp ? handleSignUpSubmit : handleLoginSubmit} className="login-form">
           {error && <div className="error-message">{error}</div>}
           
           <div className="form-group">
-            <label>Login As</label>
-            <div className={`role-selector ${role === 'admin' ? 'admin-selected' : ''}`}>
+            <label>{isSignUp ? 'Register As' : 'Login As'}</label>
+            <div className={`role-selector ${formData.role === 'admin' ? 'admin-selected' : ''}`}>
               <button
                 type="button"
-                className={`role-button ${role === 'student' ? 'active' : ''}`}
-                onClick={() => setRole('student')}
+                className={`role-button ${formData.role === 'student' ? 'active' : ''}`}
+                onClick={() => setFormData({...formData, role: 'student'})}
                 disabled={isLoading}
               >
                 Student
               </button>
               <button
                 type="button"
-                className={`role-button ${role === 'admin' ? 'active' : ''}`}
-                onClick={() => setRole('admin')}
+                className={`role-button ${formData.role === 'admin' ? 'active' : ''}`}
+                onClick={() => setFormData({...formData, role: 'admin'})}
                 disabled={isLoading}
               >
                 Admin
@@ -100,13 +205,46 @@ function Login() {
             </div>
           </div>
 
+          {isSignUp && (
+            <div className="form-group">
+              <label htmlFor="fullName">Full Name</label>
+              <input
+                type="text"
+                id="fullName"
+                name="fullName"
+                value={formData.fullName}
+                onChange={handleChange}
+                placeholder="Enter your full name"
+                disabled={isLoading}
+                required
+              />
+            </div>
+          )}
+
+          {isSignUp && formData.role === 'student' && (
+            <div className="form-group">
+              <label htmlFor="studentId">Student ID</label>
+              <input
+                type="text"
+                id="studentId"
+                name="studentId"
+                value={formData.studentId}
+                onChange={handleChange}
+                placeholder="Enter your student ID"
+                disabled={isLoading}
+                required
+              />
+            </div>
+          )}
+
           <div className="form-group">
             <label htmlFor="email">Email</label>
             <input
               type="email"
               id="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
               placeholder="Enter your email"
               disabled={isLoading}
               required
@@ -118,29 +256,57 @@ function Login() {
             <input
               type="password"
               id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
+              name="password"
+              value={formData.password}
+              onChange={handleChange}
+              placeholder={isSignUp ? "Enter your password (min 6 characters)" : "Enter your password"}
               disabled={isLoading}
               required
             />
           </div>
 
-          <div className="form-actions">
-            <a href="#" className="forgot-password">Forgot Password?</a>
-          </div>
+          {isSignUp && (
+            <div className="form-group">
+              <label htmlFor="confirmPassword">Confirm Password</label>
+              <input
+                type="password"
+                id="confirmPassword"
+                name="confirmPassword"
+                value={formData.confirmPassword}
+                onChange={handleChange}
+                placeholder="Confirm your password"
+                disabled={isLoading}
+                required
+              />
+            </div>
+          )}
+
+          {!isSignUp && (
+            <div className="form-actions">
+              <a href="#" className="forgot-password">Forgot Password?</a>
+            </div>
+          )}
 
           <button 
             type="submit" 
             className="login-button"
             disabled={isLoading}
           >
-            {isLoading ? 'Logging in...' : 'Login'}
+            {isLoading ? (isSignUp ? 'Creating Account...' : 'Logging in...') : (isSignUp ? 'Sign Up' : 'Login')}
           </button>
         </form>
 
         <div className="login-footer">
-          <p>Don't have an account? <a href="#">Sign up</a></p>
+          <p>
+            {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
+            <button 
+              type="button"
+              onClick={toggleMode}
+              className="toggle-mode-button"
+            >
+              {isSignUp ? 'Login' : 'Sign up'}
+            </button>
+          </p>
         </div>
       </div>
     </div>

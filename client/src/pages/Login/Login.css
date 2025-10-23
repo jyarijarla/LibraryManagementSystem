@@ -28,13 +28,25 @@
 
 .login-card {
   background: white;
-  border-radius: 12px;
+  border-radius: 0px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   height: auto;
   padding: 40px;
   width: 100%;
   max-width: 440px;
+  display: flex;
+  flex-direction: column;
   animation: slideUp 0.6s ease-out 0.2s both;
+  overflow: hidden;
+  transition: height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.login-card:not(.signup-card) {
+  height: 565px;
+}
+
+.login-card.signup-card {
+  height: 740px;
 }
 
 @keyframes slideUp {
@@ -71,6 +83,11 @@
   display: flex;
   flex-direction: column;
   gap: 20px;
+  flex: 1;
+}
+
+.signup-card .login-form {
+  gap: 16px;
 }
 
 .error-message {
@@ -87,6 +104,10 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.signup-card .form-group {
+  gap: 6px;
 }
 
 .form-group label {
@@ -173,6 +194,11 @@
   outline: none;
 }
 
+.signup-card .form-group input {
+  padding: 10px 14px;
+  font-size: 15px;
+}
+
 .form-group input:focus {
   border-color: #dc2626;
   box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.1);
@@ -214,6 +240,11 @@
   margin-top: 10px;
 }
 
+.signup-card .login-button {
+  padding: 12px 24px;
+  margin-top: 8px;
+}
+
 .login-button:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(220, 38, 38, 0.4);
@@ -235,20 +266,39 @@
   border-top: 1px solid #e0e0e0;
 }
 
+.signup-card .login-footer {
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
 .login-footer p {
   color: #666;
   font-size: 14px;
-  margin: 0;
+  margin: 0px;
 }
 
-.login-footer a {
+.signup-card .login-footer p {
+  color: #444;
+  font-size: 13px;
+  margin: 14px;
+  font-weight: 500;
+}
+
+.login-footer a,
+.toggle-mode-button {
   color: #dc2626;
   text-decoration: none;
   font-weight: 600;
   transition: color 0.3s ease;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-size: 14px;
 }
 
-.login-footer a:hover {
+.login-footer a:hover,
+.toggle-mode-button:hover {
   color: #991b1b;
   text-decoration: underline;
 }

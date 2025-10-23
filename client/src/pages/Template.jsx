@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import reactLogo from '../assets/react.svg'
-import viteLogo from '/vite.svg'
+import viteLogo from '../../vite.svg'
 import './Template.css'
 
 function Template() {
@@ -18,7 +18,7 @@ function Template() {
       </div>
       <h1>Vite + React</h1>
       <div className="card">
-        hello team click to set the grade you want on this project:  
+        hello team click to set the grade you want on this project:{" "}
         <button onClick={() => setCount((count) => count + 1)}>
           {count}
         </button>
