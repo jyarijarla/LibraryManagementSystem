@@ -141,7 +141,7 @@ function Login() {
       } else {
         setError(data.message || 'Sign up failed')
       }
-    } catch (err) {
+    } catch (error) {
       // For demo purposes, simulate successful signup
       console.log('Demo mode: Sign up without API')
       alert('Account created successfully! Please login.')
@@ -174,7 +174,7 @@ function Login() {
 
   return (
     <div className="login-container">
-      <div className={`login-card ${isSignUp ? 'signup-card' : ''}`}>
+      <div className={`login-card ${isSignUp ? 'signup-card' : ''} ${isSignUp && formData.role === 'admin' ? 'admin-signup' : ''}`}>
         <div className="login-header">
           <h1>HAO is Here</h1>
           <h2>{isSignUp ? 'Create Account' : 'Login'}</h2>
