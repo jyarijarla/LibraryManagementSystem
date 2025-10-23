@@ -1,26 +1,19 @@
-import { Link } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import Login from './pages/Login/Login'
+import Student from './pages/Student/Student'
+import Admin from './pages/Admin/Admin'
 import './App.css'
 
 function App() {
   return (
-    <>
-      <div className="bg-black text-white text-center p-4 font-bold">
-        <nav className="bg-gray-800 p-4">
-          <div className="flex justify-between items-center">
-            <div className="flex gap-8">
-              <Link to="/">Home</Link>
-              <Link to="/About">About</Link>
-              <Link to="/Books">Books</Link>
-            </div>
-
-            <div className="flex gap-8">
-              <Link to="/Login">Login</Link>
-            </div>
-          </div>
-        </nav>
-      </div>
-    </>
-  )
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/student" element={<Student />} />
+        <Route path="/admin" element={<Admin />} />
+      </Routes>
+    </BrowserRouter>
+      )
 }
 
 export default App

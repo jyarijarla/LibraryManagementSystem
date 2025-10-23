@@ -72,7 +72,6 @@ function Login() {
     <div className="login-container">
       <div className="login-card">
         <div className="login-header">
-          <h1>HAO is Here</h1>
           <h2>Login</h2>
         </div>
         
