@@ -1,11 +1,10 @@
 require("dotenv").config() ;//imports dotenv that loads environmental variables from /server.env
 const http = require("http");
-const { parse } = require("url");
 
 //Routing map
 const routes = {
-    'POST /api/signup': require('./routes/signup'),
-    'POST /api/login': require('./routes/login')
+    'POST /api/signup': require('./controllers/authController'),
+    'POST /api/login': require('./controllers/login')
 }
 
 const server = http.createServer((req, res) => {
