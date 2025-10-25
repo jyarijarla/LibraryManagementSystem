@@ -1,0 +1,43 @@
+.about-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(rgba(142, 99, 99, 0.7), rgba(241, 235, 235, 0.7)),
+    url('/login.png');
+  background-size: cover;
+  background-position: center;
+  color: #222;
+  animation: fadeIn 0.8s ease-in;
+  padding: 40px;
+  box-sizing: border-box;
+}
+
+.about-content {
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  padding: 60px 80px;
+  max-width: 800px;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.about-title {
+  font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+  font-size: 42px;
+  color: #991b1b;
+  margin-bottom: 20px;
+}
+
+.about-text {
+  font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+  font-size: 20px;
+  line-height: 1.6;
+  margin-bottom: 20px;
+  color: #333;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

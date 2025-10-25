@@ -1,7 +1,25 @@
 .book-item {
-  border: 1px solid #ccc;
-  padding: 16px;
-  margin: 16px;
-  border-radius: 8px;
-  background-color: #f9f9f9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px;
+  text-align: center;
+}
+
+.book-item-cover {
+  width: 250px;
+  height: 360px;
+  object-fit: cover;
+  border-radius: 10px;
+  margin-bottom: 20px;
+}
+
+.book-item-info {
+  max-width: 500px;
+}
+
+.book-item-description {
+  margin-top: 12px;
+  color: #555;
+  line-height: 1.5;
 }

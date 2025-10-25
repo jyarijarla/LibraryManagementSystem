@@ -1,0 +1,17 @@
+.books-page {
+  padding: 40px;
+  text-align: center;
+  background-color: #f8f8f8;
+  min-height: 100vh;
+}
+
+.books-subtitle {
+  color: #666;
+  margin-bottom: 30px;
+}
+
+.books-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+}

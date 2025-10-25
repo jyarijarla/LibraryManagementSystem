@@ -1,12 +1,32 @@
-import React from 'react'
+import { useParams } from 'react-router-dom'
 import './BookItem.css'
 
-const BookItem = () => {
+function BookItem() {
+  const { id } = useParams()
+
+  // In a real app, you'd fetch the book data using the ID (from an API or context)
+  // For now, we’ll just mock it
+  const book = {
+    id,
+    title: 'The Great Gatsby',
+    author: 'F. Scott Fitzgerald',
+    description:
+      'A novel about the disillusionment and decay of the American Dream in the 1920s.',
+    genre: 'Classic',
+    year: 1925,
+    coverImage: 'https://covers.openlibrary.org/b/id/7222246-L.jpg'
+  }
+
   return (
     <div className="book-item">
-      <h2 className="book-title">Book Title</h2>
-      <p className="book-author">Author Name</p>
-      <p className="book-description">This is a brief description of the book.</p>
+      <img src={book.coverImage} alt={book.title} className="book-item-cover" />
+      <div className="book-item-info">
+        <h2>{book.title}</h2>
+        <p><strong>Author:</strong> {book.author}</p>
+        <p><strong>Genre:</strong> {book.genre}</p>
+        <p><strong>Year:</strong> {book.year}</p>
+        <p className="book-item-description">{book.description}</p>
+      </div>
     </div>
   )
 }
