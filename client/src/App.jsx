@@ -3,7 +3,7 @@ import Login from './pages/Login/Login'
 import Student from './pages/Student/Student'
 import Admin from './pages/Admin/Admin'
 import BookItem from './pages/BookItem/BookItem'
-import Home from './pages/Home'
+import Home from './pages/Home/Home'
 import './App.css'
 import NavBar from './components/Navbar'
 
