@@ -1,0 +1,95 @@
+.home-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center; /* centers vertically */
+  align-items: center;     /* centers horizontally */
+  position: relative;      /* keeps footer positioned correctly */
+  width: 100%;
+  min-height: 100vh;       /* full screen height */
+  background-image: 
+    linear-gradient(rgba(142, 99, 99, 0.7), rgba(241, 235, 235, 0.7)),
+    url('/login.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  padding: 175px;
+  margin: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  animation: fadeIn 0.8s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.home-header {
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.welcome-sign {
+  background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+  color: white;
+  border: none;
+  padding: 100px 200px;
+  border-radius: 8px;
+  font-size: 50px;
+  font-weight: 600;
+  font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+  cursor: auto;
+  transition: all 0.3s ease;
+  margin-top: 10px;
+  text-align: center;
+}
+
+.welcome-body {
+  text-align: center;
+  font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+  font-size: 25px;
+  margin-top: 30px;
+}
+
+.credits-footer {
+  position: absolute;
+  bottom: 15px;
+  right: 30px;
+  text-align: right;
+  font-size: 18px;
+  font-family: 'Franklin Gothic Medium', 'Arial Narrow', Arial, sans-serif;
+  white-space: nowrap;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1024px) {
+  .welcome-sign {
+    padding: 80px 150px;
+    font-size: 40px;
+  }
+
+  .welcome-body {
+    font-size: 22px;
+  }
+}
+
+@media (max-width: 768px) {
+  .welcome-sign {
+    padding: 50px 80px;
+    font-size: 30px;
+  }
+
+  .welcome-body {
+    font-size: 18px;
+  }
+
+  .credits-footer {
+    font-size: 14px;
+    right: 15px;
+    bottom: 10px;
+  }
+}
