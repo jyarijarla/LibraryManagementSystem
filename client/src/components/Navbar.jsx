@@ -11,6 +11,7 @@ function NavBar() {
               {/*<NavLink to="/Home">Home</NavLink>*/}
               <NavLink to="/About">About</NavLink>
               <NavLink to="/Books">Books</NavLink>
+              <NavLink to="/Movies">Movies</NavLink>
             </div>
 
             <div className="flex gap-8">
