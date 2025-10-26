@@ -10,7 +10,7 @@ function Movies() {
       age_rating: 'G',
       genre: 'Animation / Adventure',
       year: 2003,
-      coverImage: './findingnemo.jpeg'
+      coverImage: ''
     },
     {
       id: 2,
@@ -18,7 +18,7 @@ function Movies() {
       age_rating: 'PG',
       genre: 'Action/Comedy',
       year: 1984,
-      coverImage: './ghostbusters.jpg'
+      coverImage: ''
     },
     
   ]
