@@ -11,7 +11,10 @@ import NavBar from './components/Navbar'
 
 function AppContent() {
   const location = useLocation()
-  const showNavbar = location.pathname !== '/Login'
+  const pathname = location.pathname.toLowerCase()
+  const showNavbar = pathname !== '/login' && 
+                     pathname !== '/admin' &&
+                     pathname !== '/student'
 
   return (
     <>
