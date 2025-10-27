@@ -15,7 +15,7 @@ const server = http.createServer((req, res) => {
         res.setHeader('Access-Control-Allow-Origin', origin);
     }
     res.setHeader('Access-Control-Allow-Origin', '');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST');//add other methods as needed
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, UPDATE, DELETE');//add other methods as needed
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
     //parsing the route path requested by the client
