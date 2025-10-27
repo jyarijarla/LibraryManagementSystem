@@ -2,42 +2,91 @@
   width: 100%;
   min-height: 100vh;
   background: #f9fafb;
+  padding-top: 0;
 }
 
-.dashboard-header {
-  background: white;
-  padding: 20px 40px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+/* Student Navbar */
+.student-navbar {
+  background: #1f2937;
+  color: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+.student-navbar-content {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 16px 40px;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.dashboard-header h1 {
-  color: #333;
-  font-size: 24px;
-  margin: 0;
+.student-navbar-left {
+  display: flex;
+  align-items: center;
 }
 
-.logout-button {
-  background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+.student-navbar-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0;
+  color: white;
+}
+
+.student-navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.student-navbar-role {
+  font-size: 14px;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.student-navbar-logout {
+  background: #dc2626;
   color: white;
   border: none;
-  padding: 10px 24px;
-  border-radius: 8px;
+  padding: 8px 20px;
+  border-radius: 6px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
 }
 
-.logout-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+.student-navbar-logout:hover {
+  background: #991b1b;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(220, 38, 38, 0.3);
+}
+
+/* Dashboard Title Bar (not sticky, inside content) */
+.dashboard-title-bar {
+  background: white;
+  padding: 24px 40px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-radius: 12px;
+  margin-bottom: 24px;
+}
+
+.dashboard-title-bar h1 {
+  color: #333;
+  font-size: 28px;
+  margin: 0;
+  font-weight: 700;
 }
 
 .dashboard-content {
-  padding: 40px;
+  padding: 32px 40px;
   max-width: 1200px;
   margin: 0 auto;
 }
@@ -64,12 +113,26 @@
 
 /* Responsive design */
 @media (max-width: 768px) {
-  .dashboard-header {
-    padding: 16px 20px;
+  .student-navbar-content {
+    padding: 12px 20px;
   }
 
-  .dashboard-header h1 {
-    font-size: 20px;
+  .student-navbar-title {
+    font-size: 18px;
+  }
+
+  .student-navbar-role {
+    display: none;
+  }
+
+  .dashboard-title-bar {
+    padding: 16px 20px;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .dashboard-title-bar h1 {
+    font-size: 22px;
   }
 
   .dashboard-content {
