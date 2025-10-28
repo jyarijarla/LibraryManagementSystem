@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './Admin.css'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_URL = 'https://librarymanagementsystem-z2yw.onrender.com/api'
 
 function Admin() {
   const navigate = useNavigate()
