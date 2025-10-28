@@ -38,15 +38,9 @@ function matchRoute(pattern, path) {
     } else if (patternParts[i] !== pathParts[i]) {
       return null;
     }
-<<<<<<< HEAD
   }
   return params;
 }
-=======
-    res.setHeader('Access-Control-Allow-Origin', '');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, UPDATE, DELETE');//add other methods as needed
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
->>>>>>> 82b7a151ab3ba955340f9afdbd524d65cd7b978f
 
 // Routing map
 const routes = [
