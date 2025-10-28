@@ -56,16 +56,16 @@ function Login() {
       if (response.ok) {
         console.log('Login successful:', data)
         
-        // Store auth data
-        localStorage.setItem('token', data.token)
-        localStorage.setItem('role', data.user.role)
+        // Store user data in localStorage
         localStorage.setItem('user', JSON.stringify(data.user))
+        localStorage.setItem('userId', data.user.id)
+        localStorage.setItem('role', data.user.role)
         
-        // Redirect to dashboard based on role
+        // Redirect based on role
         if (data.user.role === 'admin') {
-          navigate('/admin-dashboard')
+          navigate('/admin')
         } else {
-          navigate('/student-dashboard')
+          navigate('/student')
         }
       } else {
         setError(data.message || 'Login failed')

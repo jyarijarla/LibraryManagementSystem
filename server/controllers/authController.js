@@ -1,9 +1,5 @@
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const db = require('../db');
-
-// JWT Secret
-const JWT_SECRET = process.env.JWT_SECRET || 'your_secret_key_here_change_in_production';
 
 // Login Handler
 async function login(req, res) {
@@ -49,25 +45,14 @@ async function login(req, res) {
         return;
       }
 
-      // Generate JWT token
+      // Map role to string
       const userRole = user.Role === 2 ? 'admin' : 'student';
-      const token = jwt.sign(
-        { 
-          id: user.User_ID, 
-          username: user.Username, 
-          role: userRole,
-          email: user.User_Email 
-        },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-      );
 
-      // Return user data (without password)
+      // Return user data (without password) - client will store in localStorage
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({
         message: 'Login successful',
-        token,
         user: {
           id: user.User_ID,
           username: user.Username,
@@ -77,7 +62,7 @@ async function login(req, res) {
           phone: user.User_Phone,
           dob: user.Date_Of_Birth,
           role: userRole,
-          balance: parseFloat(user.Balance)
+          balance: Number.parseFloat(user.Balance)
         }
       }));
     });
@@ -164,23 +149,11 @@ async function signup(req, res) {
             return;
           }
 
-          // Generate JWT token
-          const token = jwt.sign(
-            { 
-              id: result.insertId, 
-              username, 
-              role,
-              email 
-            },
-            JWT_SECRET,
-            { expiresIn: '7d' }
-          );
-
+          // Return user data - client will store in localStorage
           res.statusCode = 201;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({
             message: 'Account created successfully',
-            token,
             user: {
               id: result.insertId,
               username,
@@ -190,7 +163,7 @@ async function signup(req, res) {
               phone: phone || null,
               dob: dob || null,
               role,
-              balance: 0.00
+              balance: 0
             }
           }));
         }

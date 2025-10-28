@@ -47,6 +47,7 @@ const routes = [
   // Auth routes
   { method: 'POST', path: '/api/signup', handler: authController },
   { method: 'POST', path: '/api/login', handler: authController },
+  { method: 'POST', path: '/api/logout', handler: authController },
   
   // Asset routes - Books
   { method: 'GET', path: '/api/assets/books', handler: assetController.getAllBooks },

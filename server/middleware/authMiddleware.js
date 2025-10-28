@@ -1,30 +1,22 @@
-const jwt = require('jsonwebtoken');
+// Middleware to verify user authentication (checking if userId is provided)
+function authenticateUser(req, res, next) {
+  const userId = req.headers['x-user-id'];
+  const userRole = req.headers['x-user-role'];
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your_secret_key_here_change_in_production';
-
-// Middleware to verify JWT token
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
-
-  if (!token) {
+  if (!userId || !userRole) {
     res.statusCode = 401;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ message: 'Access token required' }));
+    res.end(JSON.stringify({ message: 'User authentication required' }));
     return;
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      res.statusCode = 403;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ message: 'Invalid or expired token' }));
-      return;
-    }
-
-    req.user = user;
-    next();
-  });
+  // Attach user info to request
+  req.user = {
+    id: Number.parseInt(userId, 10),
+    role: userRole
+  };
+  
+  next();
 }
 
 // Middleware to check if user is admin
@@ -50,7 +42,7 @@ function requireStudent(req, res, next) {
 }
 
 module.exports = {
-  authenticateToken,
+  authenticateUser,
   requireAdmin,
   requireStudent
 };

@@ -4,7 +4,7 @@ const db = require('../db');
 const getAllBooks = async (req, res) => {
   try {
     const query = `
-      SELECT b.Asset_ID, b.ISBN, b.Title, b.Author, b.Page_Count, b.Copies, b.Available_Copies, b.Image_URL
+      SELECT b.Asset_ID, b.ISBN, b.Title, b.Author, b.Page_Count, b.Copies, b.Available_Copies
       FROM book b
       ORDER BY b.Title
     `;
@@ -160,7 +160,7 @@ const addBook = async (req, res) => {
         .end(JSON.stringify({ error: 'Missing required fields' }));
     }
 
-    // Get image path if uploaded
+    // Image can be uploaded via req.file but we won't store it in database
     const imagePath = req.file ? `/assets/uploads/${req.file.filename}` : null;
 
     // First, get the max Asset_ID
@@ -182,13 +182,13 @@ const addBook = async (req, res) => {
             .end(JSON.stringify({ error: 'Failed to create asset' }));
         }
 
-        // Then insert into book table with image path
+        // Insert into book table (without Image_URL column)
         const bookQuery = `
-          INSERT INTO book (Asset_ID, ISBN, Title, Author, Page_Count, Copies, Available_Copies, Image_URL)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO book (Asset_ID, ISBN, Title, Author, Page_Count, Copies, Available_Copies)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
         
-        db.query(bookQuery, [newAssetId, ISBN, Title, Author, Page_Count, Copies, Copies, imagePath], (err, result) => {
+        db.query(bookQuery, [newAssetId, ISBN, Title, Author, Page_Count, Copies, Copies], (err, result) => {
           if (err) {
             console.error('Error adding book:', err);
             return res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -199,7 +199,7 @@ const addBook = async (req, res) => {
           res.end(JSON.stringify({ 
             message: 'Book added successfully',
             assetId: newAssetId,
-            imageUrl: imagePath
+            imageUrl: imagePath // Still return image path for frontend use
           }));
         });
       });

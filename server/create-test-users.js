@@ -17,7 +17,7 @@ async function createTestUsers() {
 
     db.query(
       insertStudentQuery,
-      ['student123', hashedPasswordStudent, 'student@test.com', '555-0100', 'John', 'Doe', '2000-01-15', 1, 0.00],
+      ['student123', hashedPasswordStudent, 'student@test.com', '555-0100', 'John', 'Doe', '2000-01-15', 1, 0],
       (err) => {
         if (err) {
           if (err.code === 'ER_DUP_ENTRY') {
@@ -43,7 +43,7 @@ async function createTestUsers() {
 
     db.query(
       insertAdminQuery,
-      ['admin', hashedPasswordAdmin, 'admin@test.com', '555-0200', 'Admin', 'User', '1990-05-20', 2, 0.00],
+      ['admin', hashedPasswordAdmin, 'admin@test.com', '555-0200', 'Admin', 'User', '1990-05-20', 2, 0],
       (err) => {
         if (err) {
           if (err.code === 'ER_DUP_ENTRY') {
