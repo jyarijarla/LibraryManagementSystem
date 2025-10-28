@@ -231,7 +231,8 @@ function Admin() {
           { name: 'Title', type: 'text', label: 'Title', required: true },
           { name: 'Author', type: 'text', label: 'Author', required: true },
           { name: 'Page_Count', type: 'number', label: 'Page Count', required: true },
-          { name: 'Copies', type: 'number', label: 'Copies', required: true }
+          { name: 'Copies', type: 'number', label: 'Copies', required: true },
+          { name: 'Image_URL', type: 'text', label: 'Image Path (e.g., /assets/book.jpg)', required: false, placeholder: '/assets/placeholder.jpg' }
         ]
       case 'cds':
         return [
@@ -239,7 +240,8 @@ function Admin() {
           { name: 'Total_Duration_In_Minutes', type: 'number', label: 'Duration (Minutes)', required: true },
           { name: 'Title', type: 'text', label: 'Title', required: true },
           { name: 'Artist', type: 'text', label: 'Artist', required: true },
-          { name: 'Copies', type: 'number', label: 'Copies', required: true }
+          { name: 'Copies', type: 'number', label: 'Copies', required: true },
+          { name: 'Image_URL', type: 'text', label: 'Image Path (e.g., /assets/cd.jpg)', required: false, placeholder: '/assets/placeholder.jpg' }
         ]
       case 'audiobooks':
         return [
@@ -247,26 +249,30 @@ function Admin() {
           { name: 'Title', type: 'text', label: 'Title', required: true },
           { name: 'Author', type: 'text', label: 'Author', required: true },
           { name: 'length', type: 'number', label: 'Length (Minutes)', required: true },
-          { name: 'Copies', type: 'number', label: 'Copies', required: true }
+          { name: 'Copies', type: 'number', label: 'Copies', required: true },
+          { name: 'Image_URL', type: 'text', label: 'Image Path (e.g., /assets/audiobook.jpg)', required: false, placeholder: '/assets/placeholder.jpg' }
         ]
       case 'movies':
         return [
           { name: 'Title', type: 'text', label: 'Title', required: true },
           { name: 'Release_Year', type: 'number', label: 'Release Year', required: true },
           { name: 'Age_Rating', type: 'text', label: 'Age Rating', required: true },
-          { name: 'Copies', type: 'number', label: 'Copies', required: true }
+          { name: 'Copies', type: 'number', label: 'Copies', required: true },
+          { name: 'Image_URL', type: 'text', label: 'Image Path (e.g., /assets/movie.jpg)', required: false, placeholder: '/assets/placeholder.jpg' }
         ]
       case 'technology':
         return [
           { name: 'Model_Num', type: 'number', label: 'Model Number', required: true },
           { name: 'Type', type: 'number', label: 'Type', required: true },
           { name: 'Description', type: 'text', label: 'Description', required: true },
-          { name: 'Copies', type: 'number', label: 'Copies', required: true }
+          { name: 'Copies', type: 'number', label: 'Copies', required: true },
+          { name: 'Image_URL', type: 'text', label: 'Image Path (e.g., /assets/tech.jpg)', required: false, placeholder: '/assets/placeholder.jpg' }
         ]
       case 'study-rooms':
         return [
           { name: 'Room_Number', type: 'text', label: 'Room Number', required: true },
-          { name: 'Capacity', type: 'number', label: 'Capacity', required: true }
+          { name: 'Capacity', type: 'number', label: 'Capacity', required: true },
+          { name: 'Image_URL', type: 'text', label: 'Image Path (e.g., /assets/room.jpg)', required: false, placeholder: '/assets/placeholder.jpg' }
         ]
       default:
         return []
@@ -674,7 +680,13 @@ function Admin() {
                     value={assetForm[field.name] || ''}
                     onChange={(e) => setAssetForm({ ...assetForm, [field.name]: e.target.value })}
                     required={field.required}
+                    placeholder={field.placeholder || ''}
                   />
+                  {field.name === 'Image_URL' && (
+                    <small style={{ color: '#666', fontSize: '0.85em', display: 'block', marginTop: '4px' }}>
+                      📸 Add your images to the assets folder first, then enter the path here
+                    </small>
+                  )}
                 </div>
               ))}
               <div className="modal-actions">

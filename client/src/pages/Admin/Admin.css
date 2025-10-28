@@ -812,3 +812,143 @@
     width: 100%;
   }
 }
+
+/* Image Upload Styles */
+.image-upload-container {
+  border: 2px dashed #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  background: #f9fafb;
+  transition: all 0.3s ease;
+}
+
+.image-upload-container:hover {
+  border-color: #dc2626;
+  background: #fef2f2;
+}
+
+.image-upload-label {
+  display: inline-block;
+  background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-bottom: 16px;
+}
+
+.image-upload-label:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+}
+
+.image-preview {
+  position: relative;
+  margin-top: 16px;
+  display: inline-block;
+}
+
+.image-preview img {
+  max-width: 100%;
+  max-height: 200px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  object-fit: contain;
+}
+
+.remove-image-btn {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.4);
+  transition: all 0.3s ease;
+}
+
+.remove-image-btn:hover {
+  background: #991b1b;
+  transform: scale(1.1);
+}
+
+.image-placeholder {
+  padding: 20px;
+  color: #9ca3af;
+}
+
+.image-placeholder span {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.image-placeholder p {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+  color: #6b7280;
+}
+
+.image-placeholder small {
+  font-size: 12px;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+/* Table Image Styles */
+.table-image-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+}
+
+.table-asset-image {
+  width: 60px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+}
+
+.table-asset-image:hover {
+  transform: scale(1.5);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+  cursor: pointer;
+}
+
+.table-image-placeholder {
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: #9ca3af;
+  border: 2px dashed #d1d5db;
+}
+
+/* Adjust table cell padding for image column */
+.data-table td:first-child {
+  padding: 8px 12px;
+}

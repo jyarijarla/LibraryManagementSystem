@@ -5,11 +5,14 @@ import './Login.css'
 function Login() {
   const [isSignUp, setIsSignUp] = useState(false)
   const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
+    username: '',
     password: '',
     confirmPassword: '',
-    studentId: '',
+    email: '',
+    phone: '',
+    firstName: '',
+    lastName: '',
+    dob: '',
     role: 'student'
   })
   const [error, setError] = useState('')
@@ -28,7 +31,7 @@ function Login() {
     setError('')
     
     // Basic validation
-    if (!formData.email || !formData.password) {
+    if (!formData.username || !formData.password) {
       setError('Please fill in all fields')
       return
     }
@@ -36,14 +39,13 @@ function Login() {
     setIsLoading(true)
 
     try {
-      // TODO: Replace with actual API call
       const response = await fetch('http://localhost:3000/api/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          email: formData.email, 
+          username: formData.username, 
           password: formData.password, 
           role: formData.role 
         }),
@@ -53,11 +55,14 @@ function Login() {
 
       if (response.ok) {
         console.log('Login successful:', data)
+        
+        // Store auth data
         localStorage.setItem('token', data.token)
-        localStorage.setItem('role', formData.role)
+        localStorage.setItem('role', data.user.role)
+        localStorage.setItem('user', JSON.stringify(data.user))
         
         // Redirect to dashboard based on role
-        if (formData.role === 'admin') {
+        if (data.user.role === 'admin') {
           navigate('/admin-dashboard')
         } else {
           navigate('/student-dashboard')
@@ -66,16 +71,8 @@ function Login() {
         setError(data.message || 'Login failed')
       }
     } catch (error) {
-      // For demo purposes, allow login without backend
-      console.log('Demo mode: Logging in without API')
-      localStorage.setItem('role', formData.role)
-      
-      // Redirect to dashboard based on role
-      if (formData.role === 'admin') {
-        navigate('/admin-dashboard')
-      } else {
-        navigate('/student-dashboard')
-      }
+      console.error('Login error:', error)
+      setError('Unable to connect to server. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -86,13 +83,9 @@ function Login() {
     setError('')
     
     // Validation
-    if (!formData.fullName || !formData.email || !formData.password || !formData.confirmPassword) {
-      setError('Please fill in all fields')
-      return
-    }
-
-    if (formData.role === 'student' && !formData.studentId) {
-      setError('Student ID is required for student registration')
+    if (!formData.username || !formData.email || !formData.password || !formData.confirmPassword || 
+        !formData.firstName || !formData.lastName) {
+      setError('Please fill in all required fields')
       return
     }
 
@@ -106,20 +99,29 @@ function Login() {
       return
     }
 
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(formData.email)) {
+      setError('Please enter a valid email address')
+      return
+    }
+
     setIsLoading(true)
 
     try {
-      // TODO: Replace with actual API call
       const response = await fetch('http://localhost:3000/api/signup', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          fullName: formData.fullName,
-          email: formData.email,
+          username: formData.username,
           password: formData.password,
-          studentId: formData.studentId,
+          email: formData.email,
+          phone: formData.phone,
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          dob: formData.dob,
           role: formData.role
         }),
       })
@@ -131,29 +133,22 @@ function Login() {
         alert('Account created successfully! Please login.')
         setIsSignUp(false)
         setFormData({
-          fullName: '',
-          email: formData.email,
+          username: formData.username,
           password: '',
           confirmPassword: '',
-          studentId: '',
+          email: '',
+          phone: '',
+          firstName: '',
+          lastName: '',
+          dob: '',
           role: 'student'
         })
       } else {
         setError(data.message || 'Sign up failed')
       }
     } catch (error) {
-      // For demo purposes, simulate successful signup
-      console.log('Demo mode: Sign up without API')
-      alert('Account created successfully! Please login.')
-      setIsSignUp(false)
-      setFormData({
-        fullName: '',
-        email: formData.email,
-        password: '',
-        confirmPassword: '',
-        studentId: '',
-        role: 'student'
-      })
+      console.error('Sign up error:', error)
+      setError('Unable to connect to server. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -163,11 +158,14 @@ function Login() {
     setIsSignUp(!isSignUp)
     setError('')
     setFormData({
-      fullName: '',
-      email: '',
+      username: '',
       password: '',
       confirmPassword: '',
-      studentId: '',
+      email: '',
+      phone: '',
+      firstName: '',
+      lastName: '',
+      dob: '',
       role: 'student'
     })
   }
@@ -206,68 +204,141 @@ function Login() {
           </div>
 
           {isSignUp && (
+            <>
+              <div className="form-group">
+                <label htmlFor="firstName">First Name *</label>
+                <input
+                  type="text"
+                  id="firstName"
+                  name="firstName"
+                  value={formData.firstName}
+                  onChange={handleChange}
+                  placeholder="Enter your first name"
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="lastName">Last Name *</label>
+                <input
+                  type="text"
+                  id="lastName"
+                  name="lastName"
+                  value={formData.lastName}
+                  onChange={handleChange}
+                  placeholder="Enter your last name"
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="username">Username *</label>
+                <input
+                  type="text"
+                  id="username"
+                  name="username"
+                  value={formData.username}
+                  onChange={handleChange}
+                  placeholder="Choose a username"
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="email">Email *</label>
+                <input
+                  type="email"
+                  id="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  placeholder="Enter your email"
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="phone">Phone Number</label>
+                <input
+                  type="tel"
+                  id="phone"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  placeholder="Enter your phone number"
+                  disabled={isLoading}
+                />
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="dob">Date of Birth</label>
+                <input
+                  type="date"
+                  id="dob"
+                  name="dob"
+                  value={formData.dob}
+                  onChange={handleChange}
+                  disabled={isLoading}
+                />
+              </div>
+            </>
+          )}
+
+          {!isSignUp && (
             <div className="form-group">
-              <label htmlFor="fullName">Full Name</label>
+              <label htmlFor="username">Username</label>
               <input
                 type="text"
-                id="fullName"
-                name="fullName"
-                value={formData.fullName}
+                id="username"
+                name="username"
+                value={formData.username}
                 onChange={handleChange}
-                placeholder="Enter your full name"
+                placeholder="Enter your username"
                 disabled={isLoading}
                 required
               />
             </div>
           )}
-
-          {isSignUp && formData.role === 'student' && (
-            <div className="form-group">
-              <label htmlFor="studentId">Student ID</label>
-              <input
-                type="text"
-                id="studentId"
-                name="studentId"
-                value={formData.studentId}
-                onChange={handleChange}
-                placeholder="Enter your student ID"
-                disabled={isLoading}
-                required
-              />
-            </div>
-          )}
-
-          <div className="form-group">
-            <label htmlFor="email">Email</label>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              placeholder="Enter your email"
-              disabled={isLoading}
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="password">Password</label>
-            <input
-              type="password"
-              id="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              placeholder={isSignUp ? "Enter your password (min 6 characters)" : "Enter your password"}
-              disabled={isLoading}
-              required
-            />
-          </div>
 
           {isSignUp && (
             <div className="form-group">
-              <label htmlFor="confirmPassword">Confirm Password</label>
+              <label htmlFor="password">Password *</label>
+              <input
+                type="password"
+                id="password"
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                placeholder="Enter your password (min 6 characters)"
+                disabled={isLoading}
+                required
+              />
+            </div>
+          )}
+
+          {!isSignUp && (
+            <div className="form-group">
+              <label htmlFor="password">Password</label>
+              <input
+                type="password"
+                id="password"
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                placeholder="Enter your password"
+                disabled={isLoading}
+                required
+              />
+            </div>
+          )}
+
+          {isSignUp && (
+            <div className="form-group">
+              <label htmlFor="confirmPassword">Confirm Password *</label>
               <input
                 type="password"
                 id="confirmPassword"
