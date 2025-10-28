@@ -97,7 +97,7 @@ const routes = [
 
 const server = http.createServer(async (req, res) => {
   // CORS handling
-  const allowedOrigins = ['http://localhost:5173', 'http://localhost:5174'];
+  const allowedOrigins = ['http://localhost:5173', 'http://localhost:5174', 'https://library-management-system-blush-eight.vercel.app'];
   const origin = req.headers.origin;
   if (allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
