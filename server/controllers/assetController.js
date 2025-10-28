@@ -4,24 +4,31 @@ const db = require('../db');
 const getAllBooks = async (req, res) => {
   try {
     const query = `
-      SELECT b.Asset_ID, b.ISBN, b.Title, b.Author, b.Page_Count, b.Copies, b.Available_Copies, b.Image_URL
+      SELECT b.Asset_ID, b.ISBN, b.Title, b.Author, b.Page_Count, b.Copies, b.Available_Copies
       FROM book b
       ORDER BY b.Title
     `;
     
+    console.log('📚 getAllBooks - Executing query:', query);
+    
     db.query(query, (err, results) => {
       if (err) {
-        console.error('Error fetching books:', err);
+        console.error('❌ Error fetching books:');
+        console.error('Error code:', err.code);
+        console.error('Error message:', err.message);
+        console.error('SQL State:', err.sqlState);
+        console.error('Full error:', err);
         return res.writeHead(500, { 'Content-Type': 'application/json' })
-          .end(JSON.stringify({ error: 'Database error' }));
+          .end(JSON.stringify({ error: 'Database error', details: err.message }));
       }
+      console.log('✅ Books fetched successfully, count:', results.length);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(results));
     });
   } catch (error) {
-    console.error('Error in getAllBooks:', error);
+    console.error('❌ Error in getAllBooks:', error);
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error' }));
+      .end(JSON.stringify({ error: 'Server error', details: error.message }));
   }
 };
 
@@ -155,59 +162,81 @@ const addBook = async (req, res) => {
   try {
     const { ISBN, Title, Author, Page_Count, Copies } = req.body;
     
+    console.log('📚 addBook - Received data:', { ISBN, Title, Author, Page_Count, Copies });
+    
     if (!ISBN || !Title || !Author || !Page_Count || !Copies) {
+      console.log('❌ Missing required fields');
       return res.writeHead(400, { 'Content-Type': 'application/json' })
         .end(JSON.stringify({ error: 'Missing required fields' }));
     }
 
-    // Get image path if uploaded
+    // Image can be uploaded via req.file but we won't store it in database
     const imagePath = req.file ? `/assets/uploads/${req.file.filename}` : null;
+    console.log('🖼️  Image path:', imagePath);
 
     // First, get the max Asset_ID
+    console.log('📊 Getting max Asset_ID...');
     db.query('SELECT MAX(Asset_ID) as maxId FROM asset', (err, result) => {
       if (err) {
-        console.error('Error getting max Asset_ID:', err);
+        console.error('❌ Error getting max Asset_ID:');
+        console.error('Error code:', err.code);
+        console.error('Error message:', err.message);
+        console.error('Full error:', err);
         return res.writeHead(500, { 'Content-Type': 'application/json' })
-          .end(JSON.stringify({ error: 'Database error' }));
+          .end(JSON.stringify({ error: 'Database error', details: err.message }));
       }
 
       const newAssetId = (result[0].maxId || 0) + 1;
+      console.log('✅ New Asset_ID will be:', newAssetId);
 
       // Insert into asset table first with Asset_TypeID = 1 for book
       const assetQuery = 'INSERT INTO asset (Asset_ID, Asset_TypeID) VALUES (?, ?)';
+      console.log('📝 Inserting into asset table...');
       db.query(assetQuery, [newAssetId, 1], (err) => {
         if (err) {
-          console.error('Error inserting into asset:', err);
+          console.error('❌ Error inserting into asset:');
+          console.error('Error code:', err.code);
+          console.error('Error message:', err.message);
+          console.error('Full error:', err);
           return res.writeHead(500, { 'Content-Type': 'application/json' })
-            .end(JSON.stringify({ error: 'Failed to create asset' }));
+            .end(JSON.stringify({ error: 'Failed to create asset', details: err.message }));
         }
 
-        // Then insert into book table with image path
+        console.log('✅ Asset created successfully');
+        
+        // Insert into book table (without Image_URL column)
         const bookQuery = `
-          INSERT INTO book (Asset_ID, ISBN, Title, Author, Page_Count, Copies, Available_Copies, Image_URL)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO book (Asset_ID, ISBN, Title, Author, Page_Count, Copies, Available_Copies)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
         
-        db.query(bookQuery, [newAssetId, ISBN, Title, Author, Page_Count, Copies, Copies, imagePath], (err, result) => {
+        console.log('📚 Inserting into book table...');
+        console.log('Book data:', [newAssetId, ISBN, Title, Author, Page_Count, Copies, Copies]);
+        
+        db.query(bookQuery, [newAssetId, ISBN, Title, Author, Page_Count, Copies, Copies], (err, result) => {
           if (err) {
-            console.error('Error adding book:', err);
+            console.error('❌ Error adding book:');
+            console.error('Error code:', err.code);
+            console.error('Error message:', err.message);
+            console.error('Full error:', err);
             return res.writeHead(500, { 'Content-Type': 'application/json' })
-              .end(JSON.stringify({ error: 'Failed to add book' }));
+              .end(JSON.stringify({ error: 'Failed to add book', details: err.message }));
           }
           
+          console.log('✅ Book added successfully!');
           res.writeHead(201, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ 
             message: 'Book added successfully',
             assetId: newAssetId,
-            imageUrl: imagePath
+            imageUrl: imagePath // Still return image path for frontend use
           }));
         });
       });
     });
   } catch (error) {
-    console.error('Error in addBook:', error);
+    console.error('❌ Error in addBook:', error);
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error' }));
+      .end(JSON.stringify({ error: 'Server error', details: error.message }));
   }
 };
 
