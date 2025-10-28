@@ -1,0 +1,17 @@
+.movies-page {
+  padding: 40px;
+  text-align: center;
+  background-color: #f8f8f8;
+  min-height: 100vh;
+}
+
+.movies-subtitle {
+  color: #666;
+  margin-bottom: 30px;
+}
+
+.movies-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+}
