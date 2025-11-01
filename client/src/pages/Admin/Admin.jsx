@@ -26,6 +26,12 @@ function Admin() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [itemToDelete, setItemToDelete] = useState(null)
   const [isEditMode, setIsEditMode] = useState(false)
+  
+  // Report states
+  const [mostBorrowedReport, setMostBorrowedReport] = useState([])
+  const [activeBorrowersReport, setActiveBorrowersReport] = useState([])
+  const [overdueItemsReport, setOverdueItemsReport] = useState([])
+  const [inventorySummaryReport, setInventorySummaryReport] = useState([])
 
   // Form States
   const [assetForm, setAssetForm] = useState({})
@@ -65,12 +71,31 @@ function Admin() {
         await fetchStudents()
       } else if (activeTab === 'records') {
         await fetchBorrowRecords()
+      } else if (activeTab === 'reports') {
+        await fetchReports()
       }
     } catch (err) {
       console.error('Error in fetchData:', err)
       setError(err.message || 'Failed to fetch data')
     } finally {
       setLoading(false)
+    }
+  }
+  
+  const fetchReports = async () => {
+    try {
+      const [mostBorrowed, activeBorrowers, overdueItems, inventorySummary] = await Promise.all([
+        fetch(`${API_URL}/reports/most-borrowed`).then(r => r.json()),
+        fetch(`${API_URL}/reports/active-borrowers`).then(r => r.json()),
+        fetch(`${API_URL}/reports/overdue-items`).then(r => r.json()),
+        fetch(`${API_URL}/reports/inventory-summary`).then(r => r.json())
+      ])
+      setMostBorrowedReport(mostBorrowed)
+      setActiveBorrowersReport(activeBorrowers)
+      setOverdueItemsReport(overdueItems)
+      setInventorySummaryReport(inventorySummary)
+    } catch (error) {
+      console.error('Error fetching reports:', error)
     }
   }
 
@@ -85,7 +110,7 @@ function Admin() {
         throw new Error(`Failed to fetch ${assetType}: ${response.status}`)
       }
       const data = await response.json()
-      console.log(`✅ Received ${data.length} ${assetType}`)
+      console.log(`Received ${data.length} ${assetType}`)
       
       switch(assetType) {
         case 'books': setBooks(data); break;
@@ -97,7 +122,7 @@ function Admin() {
         default: break;
       }
     } catch (error) {
-      console.error(`❌ Error fetching ${assetType}:`, error)
+      console.error(`Error fetching ${assetType}:`, error)
       // Don't throw - let it fail silently for individual assets
     }
   }
@@ -382,16 +407,44 @@ function Admin() {
     </div>
   )
 
+  const renderCellContent = (item, col) => {
+    if (col.key === 'Availability') {
+      return (
+        <span className={`status-badge ${item[col.key] === 'Available' ? 'available' : 'unavailable'}`}>
+          {item[col.key] || 'Available'}
+        </span>
+      )
+    }
+    
+    if (col.key === 'Available_Copies') {
+      return (
+        <span className={`availability-indicator ${item[col.key] > 0 ? 'in-stock' : 'out-of-stock'}`}>
+          {item[col.key] === null ? '-' : item[col.key]}
+        </span>
+      )
+    }
+    
+    return item[col.key]
+  }
+
   const renderAssets = () => {
     const columns = getAssetTableColumns()
     const data = getCurrentAssetData()
+    
+    // Get appropriate button text
+    const getAddButtonText = () => {
+      if (activeAssetTab === 'study-rooms') {
+        return '+ Reserve Study Room'
+      }
+      return `+ Add ${activeAssetTab.slice(0, -1)}`
+    }
 
     return (
       <div className="tab-content">
         <div className="section-header">
           <h2>{activeAssetTab.charAt(0).toUpperCase() + activeAssetTab.slice(1)}</h2>
           <button className="add-button" onClick={openAddAssetModal}>
-            + Add {activeAssetTab.slice(0, -1)}
+            {getAddButtonText()}
           </button>
         </div>
 
@@ -457,33 +510,11 @@ function Admin() {
               ) : (
                 data.map((item) => (
                   <tr key={item.Asset_ID}>
-                    {columns.map(col => {
-                      const renderCellContent = () => {
-                        if (col.key === 'Availability') {
-                          return (
-                            <span className={`status-badge ${item[col.key] === 'Available' ? 'available' : 'unavailable'}`}>
-                              {item[col.key] || 'Available'}
-                            </span>
-                          )
-                        }
-                        
-                        if (col.key === 'Available_Copies') {
-                          return (
-                            <span className={`availability-indicator ${item[col.key] > 0 ? 'in-stock' : 'out-of-stock'}`}>
-                              {item[col.key] === null ? '-' : item[col.key]}
-                            </span>
-                          )
-                        }
-                        
-                        return item[col.key]
-                      }
-
-                      return (
-                        <td key={col.key}>
-                          {renderCellContent()}
-                        </td>
-                      )
-                    })}
+                    {columns.map(col => (
+                      <td key={col.key}>
+                        {renderCellContent(item, col)}
+                      </td>
+                    ))}
                     <td>
                       <div className="action-buttons">
                         <button 
@@ -597,6 +628,193 @@ function Admin() {
     </div>
   )
 
+  const renderReports = () => (
+    <div className="tab-content">
+      <h2>Library Reports</h2>
+      {error && <div className="error-message">{error}</div>}
+      
+      {/* Report 1: Most Borrowed Assets */}
+      <div className="report-section">
+        <h3>📊 Most Borrowed Assets</h3>
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Asset ID</th>
+                <th>Title</th>
+                <th>Type</th>
+                <th>Total Borrows</th>
+                <th>Total Copies</th>
+                <th>Available</th>
+                <th>Borrow Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mostBorrowedReport.length === 0 ? (
+                <tr>
+                  <td colSpan="7" style={{ textAlign: 'center' }}>No data available</td>
+                </tr>
+              ) : (
+                mostBorrowedReport.map((item) => (
+                  <tr key={item.Asset_ID}>
+                    <td>{item.Asset_ID}</td>
+                    <td>{item.Title}</td>
+                    <td><span className="category-badge">{item.Type}</span></td>
+                    <td><strong>{item.Total_Borrows}</strong></td>
+                    <td>{item.Total_Copies}</td>
+                    <td>{item.Available_Copies}</td>
+                    <td>{item.Borrow_Rate_Per_Copy}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Report 2: Active Borrowers */}
+      <div className="report-section">
+        <h3>👥 Active Borrowers</h3>
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>User ID</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Currently Borrowed</th>
+                <th>Total Borrows</th>
+                <th>Days Overdue</th>
+                <th>Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activeBorrowersReport.length === 0 ? (
+                <tr>
+                  <td colSpan="7" style={{ textAlign: 'center' }}>No data available</td>
+                </tr>
+              ) : (
+                activeBorrowersReport.map((user) => (
+                  <tr key={user.User_ID}>
+                    <td>{user.User_ID}</td>
+                    <td>{user.Full_Name}</td>
+                    <td>{user.User_Email}</td>
+                    <td><strong>{user.Currently_Borrowed}</strong></td>
+                    <td>{user.Total_Borrows_All_Time}</td>
+                    <td>
+                      <span className={user.Total_Days_Overdue > 0 ? 'text-danger' : ''}>
+                        {user.Total_Days_Overdue}
+                      </span>
+                    </td>
+                    <td>${user.Account_Balance}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Report 3: Overdue Items */}
+      <div className="report-section">
+        <h3>⚠️ Overdue Items</h3>
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Borrow ID</th>
+                <th>Borrower</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Asset</th>
+                <th>Type</th>
+                <th>Due Date</th>
+                <th>Days Overdue</th>
+                <th>Severity</th>
+                <th>Late Fee</th>
+              </tr>
+            </thead>
+            <tbody>
+              {overdueItemsReport.length === 0 ? (
+                <tr>
+                  <td colSpan="10" style={{ textAlign: 'center' }}>
+                    <span style={{ color: '#10b981', fontWeight: '600' }}>✓ No overdue items!</span>
+                  </td>
+                </tr>
+              ) : (
+                overdueItemsReport.map((item) => (
+                  <tr key={item.Borrow_ID}>
+                    <td>{item.Borrow_ID}</td>
+                    <td>{item.Borrower_Name}</td>
+                    <td>{item.User_Email}</td>
+                    <td>{item.User_Phone || '-'}</td>
+                    <td>{item.Title}</td>
+                    <td><span className="category-badge">{item.Type}</span></td>
+                    <td>{new Date(item.Due_Date).toLocaleDateString()}</td>
+                    <td><strong style={{ color: '#dc2626' }}>{item.Days_Overdue}</strong></td>
+                    <td>
+                      <span className={`status-badge ${
+                        item.Severity === 'Critical' ? 'critical' : 
+                        item.Severity === 'Urgent' ? 'urgent' : 'warning'
+                      }`}>
+                        {item.Severity}
+                      </span>
+                    </td>
+                    <td>${item.Estimated_Late_Fee}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Report 4: Inventory Summary */}
+      <div className="report-section">
+        <h3>📦 Inventory Summary by Asset Type</h3>
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Asset Type</th>
+                <th>Unique Items</th>
+                <th>Total Copies</th>
+                <th>Available</th>
+                <th>Currently Borrowed</th>
+                <th>Utilization %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inventorySummaryReport.length === 0 ? (
+                <tr>
+                  <td colSpan="6" style={{ textAlign: 'center' }}>No data available</td>
+                </tr>
+              ) : (
+                inventorySummaryReport.map((type) => (
+                  <tr key={type.Asset_Type}>
+                    <td><strong>{type.Asset_Type}</strong></td>
+                    <td>{type.Unique_Items}</td>
+                    <td>{type.Total_Copies}</td>
+                    <td>{type.Total_Available}</td>
+                    <td>{type.Currently_Borrowed}</td>
+                    <td>
+                      <span style={{ 
+                        color: type.Utilization_Percentage > 70 ? '#dc2626' : '#10b981',
+                        fontWeight: '600'
+                      }}>
+                        {type.Utilization_Percentage}%
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <div className="dashboard-container">
       {/* Admin Navbar */}
@@ -658,19 +876,29 @@ function Admin() {
           >
              Borrow Records
           </button>
+          <button 
+            className={`tab ${activeTab === 'reports' ? 'active' : ''}`}
+            onClick={() => setActiveTab('reports')}
+          >
+             Reports
+          </button>
         </div>
 
         {activeTab === 'overview' && renderOverview()}
         {activeTab === 'assets' && renderAssets()}
         {activeTab === 'students' && renderStudents()}
         {activeTab === 'records' && renderBorrowRecords()}
+        {activeTab === 'reports' && renderReports()}
       </div>
 
       {/* Asset Modal */}
       {showAssetModal && (
         <div className="modal-overlay" onClick={() => setShowAssetModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>{isEditMode ? 'Edit' : 'Add'} {activeAssetTab.slice(0, -1).charAt(0).toUpperCase() + activeAssetTab.slice(1, -1)}</h3>
+            <h3>
+              {isEditMode ? 'Edit' : (activeAssetTab === 'study-rooms' ? 'Reserve' : 'Add')}{' '}
+              {activeAssetTab === 'study-rooms' ? 'Study Room' : activeAssetTab.slice(0, -1).charAt(0).toUpperCase() + activeAssetTab.slice(1, -1)}
+            </h3>
             <form onSubmit={handleAddAsset}>
               {getAssetFormFields().map(field => (
                 <div className="form-group" key={field.name}>
@@ -684,7 +912,7 @@ function Admin() {
                   />
                   {field.name === 'Image_URL' && (
                     <small style={{ color: '#666', fontSize: '0.85em', display: 'block', marginTop: '4px' }}>
-                      📸 Add your images to the assets folder first, then enter the path here
+                      Add your images to the assets folder first, then enter the path here
                     </small>
                   )}
                 </div>
@@ -694,7 +922,12 @@ function Admin() {
                   Cancel
                 </button>
                 <button type="submit" className="submit-button" disabled={loading}>
-                  {loading ? (isEditMode ? 'Updating...' : 'Adding...') : (isEditMode ? 'Update' : 'Add')}
+                  {(() => {
+                    if (loading) {
+                      return isEditMode ? 'Updating...' : 'Adding...'
+                    }
+                    return isEditMode ? 'Update' : 'Add'
+                  })()}
                 </button>
               </div>
             </form>
@@ -706,7 +939,7 @@ function Admin() {
       {showDeleteModal && (
         <div className="modal-overlay" onClick={() => setShowDeleteModal(false)}>
           <div className="modal-content delete-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>⚠️ Confirm Delete</h3>
+            <h3>Confirm Delete</h3>
             <p className="delete-warning">
               Are you sure you want to delete this asset? This action cannot be undone.
             </p>

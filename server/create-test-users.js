@@ -73,4 +73,4 @@ async function createTestUsers() {
 }
 
 // Run setup
-createTestUsers();
+await createTestUsers();

@@ -6,6 +6,7 @@ const authController = require('./controllers/authController');
 const assetController = require('./controllers/assetController');
 const studentController = require('./controllers/studentController');
 const borrowController = require('./controllers/borrowController');
+const reportController = require('./controllers/reportController');
 
 // Helper to parse JSON body
 function parseBody(req) {
@@ -94,6 +95,12 @@ const routes = [
   { method: 'GET', path: '/api/borrow-records', handler: borrowController.getAllRecords },
   { method: 'PUT', path: '/api/borrow-records/:id/return', handler: borrowController.returnBook },
   { method: 'GET', path: '/api/dashboard/stats', handler: borrowController.getDashboardStats },
+  
+  // Report routes
+  { method: 'GET', path: '/api/reports/most-borrowed', handler: reportController.getMostBorrowedAssets },
+  { method: 'GET', path: '/api/reports/active-borrowers', handler: reportController.getActiveBorrowers },
+  { method: 'GET', path: '/api/reports/overdue-items', handler: reportController.getOverdueItems },
+  { method: 'GET', path: '/api/reports/inventory-summary', handler: reportController.getInventorySummary },
 ];
 
 const server = http.createServer(async (req, res) => {
