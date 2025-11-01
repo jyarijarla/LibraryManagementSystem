@@ -39,7 +39,7 @@ function Login() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('http://localhost:3000/api/login', {
+      const response = await fetch('https://librarymanagementsystem-z2yw.onrender.com/api/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -174,7 +174,7 @@ function Login() {
     <div className="login-container">
       <div className={`login-card ${isSignUp ? 'signup-card' : ''} ${isSignUp && formData.role === 'admin' ? 'admin-signup' : ''}`}>
         <div className="login-header">
-          <h1>HAO is Here</h1>
+          <h1>Welcome</h1>
           <h2>{isSignUp ? 'Create Account' : 'Login'}</h2>
         </div>
         
