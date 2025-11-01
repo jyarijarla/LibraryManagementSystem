@@ -85,17 +85,22 @@ function Admin() {
   const fetchReports = async () => {
     try {
       const [mostBorrowed, activeBorrowers, overdueItems, inventorySummary] = await Promise.all([
-        fetch(`${API_URL}/reports/most-borrowed`).then(r => r.json()),
-        fetch(`${API_URL}/reports/active-borrowers`).then(r => r.json()),
-        fetch(`${API_URL}/reports/overdue-items`).then(r => r.json()),
-        fetch(`${API_URL}/reports/inventory-summary`).then(r => r.json())
+        fetch(`${API_URL}/reports/most-borrowed`).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`${API_URL}/reports/active-borrowers`).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`${API_URL}/reports/overdue-items`).then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch(`${API_URL}/reports/inventory-summary`).then(r => r.ok ? r.json() : []).catch(() => [])
       ])
-      setMostBorrowedReport(mostBorrowed)
-      setActiveBorrowersReport(activeBorrowers)
-      setOverdueItemsReport(overdueItems)
-      setInventorySummaryReport(inventorySummary)
+      setMostBorrowedReport(Array.isArray(mostBorrowed) ? mostBorrowed : [])
+      setActiveBorrowersReport(Array.isArray(activeBorrowers) ? activeBorrowers : [])
+      setOverdueItemsReport(Array.isArray(overdueItems) ? overdueItems : [])
+      setInventorySummaryReport(Array.isArray(inventorySummary) ? inventorySummary : [])
     } catch (error) {
       console.error('Error fetching reports:', error)
+      // Set empty arrays as fallback
+      setMostBorrowedReport([])
+      setActiveBorrowersReport([])
+      setOverdueItemsReport([])
+      setInventorySummaryReport([])
     }
   }
 
