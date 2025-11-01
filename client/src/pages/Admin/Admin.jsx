@@ -1,13 +1,17 @@
-import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import './Admin.css'
+import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 
 const API_URL = 'https://librarymanagementsystem-z2yw.onrender.com/api'
 
 function Admin() {
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState('overview')
-  const [activeAssetTab, setActiveAssetTab] = useState('books')
+  const [searchParams, setSearchParams] = useSearchParams()
+  
+  // Get initial tab from URL or default to 'overview'
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'overview')
+  const [activeAssetTab, setActiveAssetTab] = useState(searchParams.get('assetTab') || 'books')
   
   // State for all asset types
   const [books, setBooks] = useState([])
@@ -35,6 +39,26 @@ function Admin() {
 
   // Form States
   const [assetForm, setAssetForm] = useState({})
+
+  // Function to change tab and update URL
+  const changeTab = (tab) => {
+    setActiveTab(tab)
+    const params = new URLSearchParams(searchParams)
+    params.set('tab', tab)
+    if (tab === 'assets') {
+      params.set('assetTab', activeAssetTab)
+    }
+    setSearchParams(params)
+  }
+
+  // Function to change asset tab and update URL
+  const changeAssetTab = (assetTab) => {
+    setActiveAssetTab(assetTab)
+    const params = new URLSearchParams(searchParams)
+    params.set('tab', 'assets')
+    params.set('assetTab', assetTab)
+    setSearchParams(params)
+  }
 
   useEffect(() => {
     fetchData()
@@ -117,13 +141,16 @@ function Admin() {
       const data = await response.json()
       console.log(`Received ${data.length} ${assetType}`)
       
+      // Sort by Asset_ID in ascending order
+      const sortedData = data.sort((a, b) => a.Asset_ID - b.Asset_ID)
+      
       switch(assetType) {
-        case 'books': setBooks(data); break;
-        case 'cds': setCds(data); break;
-        case 'audiobooks': setAudiobooks(data); break;
-        case 'movies': setMovies(data); break;
-        case 'technology': setTechnology(data); break;
-        case 'study-rooms': setStudyRooms(data); break;
+        case 'books': setBooks(sortedData); break;
+        case 'cds': setCds(sortedData); break;
+        case 'audiobooks': setAudiobooks(sortedData); break;
+        case 'movies': setMovies(sortedData); break;
+        case 'technology': setTechnology(sortedData); break;
+        case 'study-rooms': setStudyRooms(sortedData); break;
         default: break;
       }
     } catch (error) {
@@ -139,7 +166,9 @@ function Admin() {
       if (!response.ok) throw new Error('Failed to fetch students')
       const data = await response.json()
       console.log(`✅ Received ${data.length} students`)
-      setStudents(data)
+      // Sort by User_ID in ascending order
+      const sortedData = data.sort((a, b) => a.User_ID - b.User_ID)
+      setStudents(sortedData)
     } catch (error) {
       console.error('❌ Error fetching students:', error)
       // Don't throw
@@ -153,7 +182,9 @@ function Admin() {
       if (!response.ok) throw new Error('Failed to fetch records')
       const data = await response.json()
       console.log(`✅ Received ${data.length} borrow records`)
-      setBorrowRecords(data)
+      // Sort by Borrow_ID in ascending order
+      const sortedData = data.sort((a, b) => a.Borrow_ID - b.Borrow_ID)
+      setBorrowRecords(sortedData)
     } catch (error) {
       console.error('❌ Error fetching records:', error)
       // Don't throw
@@ -459,37 +490,37 @@ function Admin() {
         <div className="asset-tabs">
           <button 
             className={`asset-tab ${activeAssetTab === 'books' ? 'active' : ''}`}
-            onClick={() => setActiveAssetTab('books')}
+            onClick={() => changeAssetTab('books')}
           >
              Books
           </button>
           <button 
             className={`asset-tab ${activeAssetTab === 'cds' ? 'active' : ''}`}
-            onClick={() => setActiveAssetTab('cds')}
+            onClick={() => changeAssetTab('cds')}
           >
              CDs
           </button>
           <button 
             className={`asset-tab ${activeAssetTab === 'audiobooks' ? 'active' : ''}`}
-            onClick={() => setActiveAssetTab('audiobooks')}
+            onClick={() => changeAssetTab('audiobooks')}
           >
              Audiobooks
           </button>
           <button 
             className={`asset-tab ${activeAssetTab === 'movies' ? 'active' : ''}`}
-            onClick={() => setActiveAssetTab('movies')}
+            onClick={() => changeAssetTab('movies')}
           >
              Movies
           </button>
           <button 
             className={`asset-tab ${activeAssetTab === 'technology' ? 'active' : ''}`}
-            onClick={() => setActiveAssetTab('technology')}
+            onClick={() => changeAssetTab('technology')}
           >
              Technology
           </button>
           <button 
             className={`asset-tab ${activeAssetTab === 'study-rooms' ? 'active' : ''}`}
-            onClick={() => setActiveAssetTab('study-rooms')}
+            onClick={() => changeAssetTab('study-rooms')}
           >
              Study Rooms
           </button>
@@ -633,53 +664,102 @@ function Admin() {
     </div>
   )
 
-  const renderReports = () => (
-    <div className="tab-content">
-      <h2>Library Reports</h2>
-      {error && <div className="error-message">{error}</div>}
-      
-      {/* Report 1: Most Borrowed Assets */}
-      <div className="report-section">
-        <h3>📊 Most Borrowed Assets</h3>
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Asset ID</th>
-                <th>Title</th>
-                <th>Type</th>
-                <th>Total Borrows</th>
-                <th>Total Copies</th>
-                <th>Available</th>
-                <th>Borrow Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mostBorrowedReport.length === 0 ? (
+  const renderReports = () => {
+    const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
+    
+    return (
+      <div className="tab-content">
+        <h2>Library Reports</h2>
+        {error && <div className="error-message">{error}</div>}
+        
+        {/* Report 1: Most Borrowed Assets */}
+        <div className="report-section">
+          <h3>📊 Most Borrowed Assets (Top 10)</h3>
+          
+          {mostBorrowedReport.length > 0 && (
+            <div style={{ marginBottom: '30px', backgroundColor: '#f9fafb', padding: '20px', borderRadius: '8px' }}>
+              <ResponsiveContainer width="100%" height={400}>
+                <BarChart data={mostBorrowedReport.slice(0, 10)}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="Title" 
+                    angle={-45} 
+                    textAnchor="end" 
+                    height={120}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="Total_Borrows" fill="#3b82f6" name="Total Borrows" />
+                  <Bar dataKey="Available_Copies" fill="#10b981" name="Available" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <td colSpan="7" style={{ textAlign: 'center' }}>No data available</td>
+                  <th>Asset ID</th>
+                  <th>Title</th>
+                  <th>Type</th>
+                  <th>Total Borrows</th>
+                  <th>Total Copies</th>
+                  <th>Available</th>
+                  <th>Borrow Rate</th>
                 </tr>
-              ) : (
-                mostBorrowedReport.map((item) => (
-                  <tr key={item.Asset_ID}>
-                    <td>{item.Asset_ID}</td>
-                    <td>{item.Title}</td>
-                    <td><span className="category-badge">{item.Type}</span></td>
-                    <td><strong>{item.Total_Borrows}</strong></td>
-                    <td>{item.Total_Copies}</td>
-                    <td>{item.Available_Copies}</td>
-                    <td>{item.Borrow_Rate_Per_Copy}</td>
+              </thead>
+              <tbody>
+                {mostBorrowedReport.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" style={{ textAlign: 'center' }}>No data available</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  mostBorrowedReport.map((item) => (
+                    <tr key={item.Asset_ID}>
+                      <td>{item.Asset_ID}</td>
+                      <td>{item.Title}</td>
+                      <td><span className="category-badge">{item.Type}</span></td>
+                      <td><strong>{item.Total_Borrows}</strong></td>
+                      <td>{item.Total_Copies}</td>
+                      <td>{item.Available_Copies}</td>
+                      <td>{item.Borrow_Rate_Per_Copy}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
 
       {/* Report 2: Active Borrowers */}
       <div className="report-section">
-        <h3>👥 Active Borrowers</h3>
+        <h3>👥 Active Borrowers (Top 20)</h3>
+        
+        {activeBorrowersReport.length > 0 && (
+          <div style={{ marginBottom: '30px', backgroundColor: '#f9fafb', padding: '20px', borderRadius: '8px' }}>
+            <ResponsiveContainer width="100%" height={400}>
+              <BarChart data={activeBorrowersReport.slice(0, 10)}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="Full_Name" 
+                  angle={-45} 
+                  textAnchor="end" 
+                  height={120}
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="Currently_Borrowed" fill="#f59e0b" name="Currently Borrowed" />
+                <Bar dataKey="Total_Borrows_All_Time" fill="#3b82f6" name="Total Borrows" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
         <div className="table-container">
           <table className="data-table">
             <thead>
@@ -777,6 +857,47 @@ function Admin() {
       {/* Report 4: Inventory Summary */}
       <div className="report-section">
         <h3>📦 Inventory Summary by Asset Type</h3>
+        
+        {inventorySummaryReport.length > 0 && (
+          <div style={{ marginBottom: '30px', backgroundColor: '#f9fafb', padding: '20px', borderRadius: '8px', display: 'flex', gap: '40px', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1', minWidth: '300px' }}>
+              <h4 style={{ textAlign: 'center', marginBottom: '20px' }}>Total Copies Distribution</h4>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={inventorySummaryReport}
+                    dataKey="Total_Copies"
+                    nameKey="Asset_Type"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={100}
+                    label={(entry) => `${entry.Asset_Type}: ${entry.Total_Copies}`}
+                  >
+                    {inventorySummaryReport.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            
+            <div style={{ flex: '1', minWidth: '300px' }}>
+              <h4 style={{ textAlign: 'center', marginBottom: '20px' }}>Utilization Rate by Type</h4>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={inventorySummaryReport}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="Asset_Type" angle={-45} textAnchor="end" height={80} tick={{ fontSize: 12 }} />
+                  <YAxis domain={[0, 100]} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="Utilization_Percentage" fill="#8b5cf6" name="Utilization %" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
         <div className="table-container">
           <table className="data-table">
             <thead>
@@ -819,6 +940,7 @@ function Admin() {
       </div>
     </div>
   )
+}
 
   return (
     <div className="dashboard-container">
@@ -859,31 +981,31 @@ function Admin() {
         <div className="tabs-container">
           <button 
             className={`tab ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => setActiveTab('overview')}
+            onClick={() => changeTab('overview')}
           >
              Overview
           </button>
           <button 
             className={`tab ${activeTab === 'assets' ? 'active' : ''}`}
-            onClick={() => setActiveTab('assets')}
+            onClick={() => changeTab('assets')}
           >
              Assets
           </button>
           <button 
             className={`tab ${activeTab === 'students' ? 'active' : ''}`}
-            onClick={() => setActiveTab('students')}
+            onClick={() => changeTab('students')}
           >
              Students
           </button>
           <button 
             className={`tab ${activeTab === 'records' ? 'active' : ''}`}
-            onClick={() => setActiveTab('records')}
+            onClick={() => changeTab('records')}
           >
              Borrow Records
           </button>
           <button 
             className={`tab ${activeTab === 'reports' ? 'active' : ''}`}
-            onClick={() => setActiveTab('reports')}
+            onClick={() => changeTab('reports')}
           >
              Reports
           </button>
