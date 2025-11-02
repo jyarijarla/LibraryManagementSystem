@@ -5,7 +5,7 @@ const getAllBooks = async (req, res) => {
   try {
     const query = `
       SELECT b.Asset_ID, b.ISBN, b.Title, b.Author, b.Page_Count, b.Copies, b.Available_Copies, b.Image_URL
-      FROM book b
+      FROM book_inventory b
       ORDER BY b.Title
     `;
     
@@ -37,7 +37,7 @@ const getAllCDs = async (req, res) => {
   try {
     const query = `
       SELECT c.Asset_ID, c.Total_Tracks, c.Total_Duration_In_Minutes, c.Title, c.Artist, c.Copies, c.Available_Copies, c.Image_URL
-      FROM cd c
+      FROM cd_inventory c
       ORDER BY c.Title
     `;
     
@@ -62,7 +62,7 @@ const getAllAudiobooks = async (req, res) => {
   try {
     const query = `
       SELECT ab.Asset_ID, ab.ISBN, ab.Title, ab.Author, ab.length, ab.Copies, ab.Available_Copies, ab.Image_URL
-      FROM audiobook ab
+      FROM audiobook_inventory ab
       ORDER BY ab.Title
     `;
     
@@ -87,7 +87,7 @@ const getAllMovies = async (req, res) => {
   try {
     const query = `
       SELECT m.Asset_ID, m.Title, m.Release_Year, m.Age_Rating, m.Available_Copies, m.Image_URL
-      FROM movie m
+      FROM movie_inventory m
       ORDER BY m.Title
     `;
     
@@ -112,7 +112,7 @@ const getAllTechnology = async (req, res) => {
   try {
     const query = `
       SELECT t.Asset_ID, t.Model_Num, t.Type, t.Description, t.Copies, t.Image_URL
-      FROM technology t
+      FROM technology_inventory t
       ORDER BY t.Type, t.Model_Num
     `;
     
