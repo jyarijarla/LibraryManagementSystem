@@ -280,7 +280,14 @@ function Admin() {
       
       const method = isEditMode ? 'PUT' : 'POST';
       
-      const assetData = { ...assetForm, Image_URL: imageUrl }
+      // Prepare asset data - handle movie-specific field mapping
+      let assetData = { ...assetForm, Image_URL: imageUrl }
+      
+      // For movies, map 'Copies' to 'Available_Copies' since movie table only has Available_Copies
+      if (activeAssetTab === 'movies' && assetData.Copies) {
+        assetData.Available_Copies = assetData.Copies
+        delete assetData.Copies
+      }
       
       const response = await fetch(url, {
         method: method,
@@ -1272,15 +1279,15 @@ function Admin() {
                     onChange={handleImageChange}
                     style={{ display: 'none' }}
                   />
-                  <label htmlFor="image-upload" className="image-upload-btn">
-                    📁 Choose Image
-                  </label>
-                  {(imagePreview || assetForm.Image_URL) && (
+                  {(imagePreview || assetForm.Image_URL) ? (
                     <div className="image-preview-container">
                       <img 
                         src={imagePreview || assetForm.Image_URL} 
                         alt="Preview" 
                         className="image-preview"
+                        onClick={() => document.getElementById('image-upload').click()}
+                        style={{ cursor: 'pointer' }}
+                        title="Click to change image"
                       />
                       <button 
                         type="button" 
@@ -1291,12 +1298,15 @@ function Admin() {
                         ✕
                       </button>
                     </div>
-                  )}
-                  {!imagePreview && !assetForm.Image_URL && (
-                    <div className="no-image-placeholder">
+                  ) : (
+                    <label 
+                      htmlFor="image-upload" 
+                      className="no-image-placeholder"
+                      style={{ cursor: 'pointer' }}
+                    >
                       <span>📷</span>
-                      <p>No image selected</p>
-                    </div>
+                      <p>Click to upload image</p>
+                    </label>
                   )}
                 </div>
               </div>

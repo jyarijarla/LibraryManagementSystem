@@ -723,7 +723,6 @@ const updateAsset = async (req, res) => {
     // Determine which table to update based on the fields present
     let table = '';
     let fields = [];
-    let values = [];
 
     if (updates.ISBN && updates.Title && updates.Author && updates.Page_Count !== undefined) {
       // Book
@@ -738,9 +737,9 @@ const updateAsset = async (req, res) => {
       table = 'audiobook';
       fields = ['ISBN', 'Title', 'Author', 'length', 'Copies', 'Available_Copies'];
     } else if (updates.Release_Year !== undefined && updates.Age_Rating) {
-      // Movie
+      // Movie - only has Available_Copies, not Copies
       table = 'movie';
-      fields = ['Title', 'Release_Year', 'Age_Rating', 'Copies', 'Available_Copies'];
+      fields = ['Title', 'Release_Year', 'Age_Rating', 'Available_Copies'];
     } else if (updates.Model_Num && updates.Type && updates.Description) {
       // Technology
       table = 'technology';
