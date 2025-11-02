@@ -283,6 +283,13 @@ function Admin() {
       // Prepare asset data - handle movie-specific field mapping
       let assetData = { ...assetForm, Image_URL: imageUrl }
       
+      // For movies, remove Copies/Available_Copies fields when editing
+      // (they are managed through the rentables table, not the movie table)
+      if (activeAssetTab === 'movies' && isEditMode) {
+        delete assetData.Copies
+        delete assetData.Available_Copies
+      }
+      
       const response = await fetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
@@ -1305,7 +1312,13 @@ function Admin() {
                 </div>
               </div>
 
-              {getAssetFormFields().filter(field => field.name !== 'Image_URL').map(field => (
+              {getAssetFormFields()
+                .filter(field => field.name !== 'Image_URL')
+                .filter(field => {
+                  // Hide Copies field for movies when editing (managed through rentables table)
+                  return !(activeAssetTab === 'movies' && field.name === 'Copies' && isEditMode);
+                })
+                .map(field => (
                 <div className="form-group" key={field.name}>
                   <label>{field.label} {field.required && '*'}</label>
                   <input

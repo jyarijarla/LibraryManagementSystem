@@ -561,9 +561,13 @@ const updateAsset = async (req, res) => {
       table = 'audiobook';
       fields = ['ISBN', 'Title', 'Author', 'length', 'Copies', 'Available_Copies'];
     } else if (updates.Release_Year !== undefined && updates.Age_Rating) {
-      // Movie - only has Available_Copies, not Copies
+      // Movie - table only has Title, Release_Year, Age_Rating, Image_URL
+      // Copies are managed through rentables table
       table = 'movie';
-      fields = ['Title', 'Release_Year', 'Age_Rating', 'Available_Copies'];
+      fields = ['Title', 'Release_Year', 'Age_Rating'];
+      if (updates.Image_URL !== undefined) {
+        fields.push('Image_URL');
+      }
     } else if (updates.Model_Num && updates.Type && updates.Description) {
       // Technology
       table = 'technology';
