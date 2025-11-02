@@ -951,45 +951,6 @@
   color: #92400e;
 }
 
-/* Loading Overlay */
-.loading-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-}
-
-.spinner {
-  width: 50px;
-  height: 50px;
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #dc2626;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-/* Error Message */
-.error-message {
-  background: #fee2e2;
-  color: #991b1b;
-  padding: 12px 16px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  border: 1px solid #fecaca;
-  font-size: 14px;
-}
-
 /* Info Banner */
 .info-banner {
   background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
@@ -1012,80 +973,6 @@
 
 .info-banner span:last-child {
   line-height: 1.6;
-}
-
-/* Success Popup */
-.success-popup {
-  position: fixed;
-  top: 80px;
-  right: 20px;
-  z-index: 9999;
-  animation: slideInRight 0.4s ease, fadeOut 0.4s ease 2.6s;
-}
-
-.success-popup-content {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  color: white;
-  padding: 16px 24px;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.4);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 300px;
-}
-
-.success-icon {
-  width: 32px;
-  height: 32px;
-  background: rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  font-weight: bold;
-  flex-shrink: 0;
-}
-
-.success-text {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-}
-
-@keyframes slideInRight {
-  from {
-    transform: translateX(400px);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-@keyframes fadeOut {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-/* Responsive Success Popup */
-@media (max-width: 768px) {
-  .success-popup {
-    top: 70px;
-    right: 10px;
-    left: 10px;
-  }
-
-  .success-popup-content {
-    min-width: auto;
-    width: 100%;
-  }
 }
 
 /* Image Upload Styles */

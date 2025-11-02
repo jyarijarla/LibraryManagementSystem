@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import './Admin.css'
+import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 
 // Use local server for development, production for deployed app
@@ -604,7 +605,7 @@ function Admin() {
   const renderOverview = () => (
     <div className="tab-content">
       <h2>Dashboard Overview</h2>
-      {error && <div className="error-message">{error}</div>}
+      <ErrorPopup errorMessage={error} />
       
       <div className="stats-grid">
         <div className="stat-card">
@@ -677,7 +678,7 @@ function Admin() {
           </button>
         </div>
 
-        {error && <div className="error-message">{error}</div>}
+        <ErrorPopup errorMessage={error} />
 
         {/* Sub-tabs for different asset types */}
         <div className="asset-tabs">
@@ -810,7 +811,7 @@ function Admin() {
         <h2>Students</h2>
       </div>
 
-      {error && <div className="error-message">{error}</div>}
+      <ErrorPopup errorMessage={error} />
 
       <div className="table-container">
         <table className="data-table">
@@ -848,7 +849,7 @@ function Admin() {
   const renderBorrowRecords = () => (
     <div className="tab-content">
       <h2>Borrow Records</h2>
-      {error && <div className="error-message">{error}</div>}
+      <ErrorPopup errorMessage={error} />
 
       <div className="table-container">
         <table className="data-table">
@@ -899,7 +900,7 @@ function Admin() {
     return (
       <div className="tab-content">
         <h2>Library Reports</h2>
-        {error && <div className="error-message">{error}</div>}
+        <ErrorPopup errorMessage={error} />
         
         {/* Report 1: Most Borrowed Assets */}
         <div className="report-section">
@@ -1186,36 +1187,9 @@ function Admin() {
         </div>
       </nav>
 
-      {/* Loading Overlay with Open Book Animation */}
-      {loading && (
-        <div className="loading-overlay">
-          <div className="book-loader-container">
-            <div className="book-loader">
-              <div className="book-base">
-                <div className="book-left"></div>
-                <div className="book-right"></div>
-              </div>
-              <div className="book-page"></div>
-              <div className="book-page"></div>
-              <div className="book-page"></div>
-              <div className="book-spine"></div>
-            </div>
-            <span className="loading-text loading-dots">
-              {successMessage || 'Loading'}
-            </span>
-          </div>
-        </div>
-      )}
+      <LoadingOverlay loading={loading} loadMessage={successMessage} />
 
-      {/* Success Popup */}
-      {successMessage && (
-        <div className="success-popup">
-          <div className="success-popup-content">
-            <span className="success-icon">✓</span>
-            <span className="success-text">{successMessage}</span>
-          </div>
-        </div>
-      )}
+      <SuccessPopup successMessage={successMessage} />
       
       <div className="dashboard-content">
         <div className="dashboard-title-bar">
