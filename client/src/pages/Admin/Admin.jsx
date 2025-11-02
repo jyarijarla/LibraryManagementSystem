@@ -3,7 +3,17 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import './Admin.css'
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 
-const API_URL = 'https://librarymanagementsystem-z2yw.onrender.com/api'
+// Use local server for development, production for deployed app
+const API_URL = window.location.hostname === 'localhost' 
+  ? 'http://localhost:3000/api'
+  : 'https://librarymanagementsystem-z2yw.onrender.com/api'
+
+// Helper function to get image path for an asset
+const getAssetImagePath = (assetType, assetId) => {
+  // Will try to load image as {Asset_ID}.jpg from the asset type folder
+  // Browser will show broken image if it doesn't exist, which we handle with onError
+  return `/assets/${assetType}/${assetId}.jpg`
+}
 
 function Admin() {
   const navigate = useNavigate()
@@ -39,6 +49,8 @@ function Admin() {
 
   // Form States
   const [assetForm, setAssetForm] = useState({})
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
 
   // Function to change tab and update URL
   const changeTab = (tab) => {
@@ -139,7 +151,14 @@ function Admin() {
         throw new Error(`Failed to fetch ${assetType}: ${response.status}`)
       }
       const data = await response.json()
-      console.log(`Received ${data.length} ${assetType}`)
+      console.log(`Received ${data.length} ${assetType}`, data)
+      
+      // Log images
+      data.forEach(item => {
+        if (item.Image_URL) {
+          console.log(`Asset ${item.Asset_ID} has image:`, item.Image_URL)
+        }
+      })
       
       // Sort by Asset_ID in ascending order
       const sortedData = data.sort((a, b) => a.Asset_ID - b.Asset_ID)
@@ -196,6 +215,7 @@ function Admin() {
     setLoading(true)
     setError('')
     try {
+      // First create the asset in database
       const url = isEditMode 
         ? `${API_URL}/assets/${activeAssetTab}/${assetForm.Asset_ID}`
         : `${API_URL}/assets/${activeAssetTab}`;
@@ -213,10 +233,36 @@ function Admin() {
         throw new Error(errorData.error || `Failed to ${isEditMode ? 'update' : 'add'} asset`)
       }
       
-      await response.json()
+      const result = await response.json()
+      const assetId = isEditMode ? assetForm.Asset_ID : result.assetId
+      
+      console.log(`Asset ${isEditMode ? 'updated' : 'created'} with ID:`, assetId)
+      
+      // Now upload image if selected, using Asset_ID as filename
+      if (imageFile) {
+        console.log('Uploading image for Asset ID:', assetId)
+        const formData = new FormData()
+        formData.append('image', imageFile)
+        formData.append('assetType', activeAssetTab)
+        formData.append('assetId', assetId) // Send Asset_ID to name the file
+        
+        const uploadResponse = await fetch(`${API_URL}/upload`, {
+          method: 'POST',
+          body: formData
+        })
+        
+        if (uploadResponse.ok) {
+          const uploadData = await uploadResponse.json()
+          console.log('Image uploaded successfully:', uploadData.imageUrl)
+        } else {
+          console.warn('Image upload failed, but asset was saved')
+        }
+      }
       
       setShowAssetModal(false)
       setAssetForm({})
+      setImageFile(null)
+      setImagePreview(null)
       
       // Show success message
       const assetTypeName = activeAssetTab.slice(0, -1).charAt(0).toUpperCase() + activeAssetTab.slice(1, -1)
@@ -236,14 +282,36 @@ function Admin() {
     }
   }
 
+  const handleImageChange = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      setImageFile(file)
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImagePreview(reader.result)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const removeImage = () => {
+    setImageFile(null)
+    setImagePreview(null)
+    setAssetForm({ ...assetForm, Image_URL: '' })
+  }
+
   const openAddAssetModal = () => {
     setAssetForm({})
+    setImageFile(null)
+    setImagePreview(null)
     setIsEditMode(false)
     setShowAssetModal(true)
   }
 
   const openEditAssetModal = (item) => {
     setAssetForm(item)
+    setImageFile(null)
+    setImagePreview(item.Image_URL || null)
     setIsEditMode(true)
     setShowAssetModal(true)
   }
@@ -496,88 +564,104 @@ function Admin() {
             className={`asset-tab ${activeAssetTab === 'books' ? 'active' : ''}`}
             onClick={() => changeAssetTab('books')}
           >
-             Books
+            📚 Books
           </button>
           <button 
             className={`asset-tab ${activeAssetTab === 'cds' ? 'active' : ''}`}
             onClick={() => changeAssetTab('cds')}
           >
-             CDs
+            💿 CDs
           </button>
           <button 
             className={`asset-tab ${activeAssetTab === 'audiobooks' ? 'active' : ''}`}
             onClick={() => changeAssetTab('audiobooks')}
           >
-             Audiobooks
+            🎧 Audiobooks
           </button>
           <button 
             className={`asset-tab ${activeAssetTab === 'movies' ? 'active' : ''}`}
             onClick={() => changeAssetTab('movies')}
           >
-             Movies
+            🎬 Movies
           </button>
           <button 
             className={`asset-tab ${activeAssetTab === 'technology' ? 'active' : ''}`}
             onClick={() => changeAssetTab('technology')}
           >
-             Technology
+            💻 Technology
           </button>
           <button 
             className={`asset-tab ${activeAssetTab === 'study-rooms' ? 'active' : ''}`}
             onClick={() => changeAssetTab('study-rooms')}
           >
-             Study Rooms
+            🚪 Study Rooms
           </button>
         </div>
 
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                {columns.map(col => (
-                  <th key={col.key}>{col.label}</th>
-                ))}
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.length === 0 ? (
-                <tr>
-                  <td colSpan={columns.length + 1} style={{ textAlign: 'center' }}>
-                    No {activeAssetTab} found
-                  </td>
-                </tr>
-              ) : (
-                data.map((item, index) => (
-                  <tr key={item.Asset_ID}>
-                    {columns.map(col => (
-                      <td key={col.key}>
+        <div className="cards-container">
+          {data.length === 0 ? (
+            <div className="empty-state">
+              <span className="empty-icon">📭</span>
+              <p>No {activeAssetTab} found</p>
+            </div>
+          ) : (
+            data.map((item, index) => (
+              <div key={item.Asset_ID} className="asset-card">
+                <div className="card-header">
+                  <span className="card-number">#{index + 1}</span>
+                  <div className="card-actions">
+                    <button 
+                      className="icon-btn edit-icon" 
+                      onClick={() => openEditAssetModal(item)}
+                      title="Edit"
+                    >
+                      ✏️
+                    </button>
+                    <button 
+                      className="icon-btn delete-icon" 
+                      onClick={() => openDeleteModal(item)}
+                      title="Delete"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Image Section */}
+                <div className="card-image">
+                  <img 
+                    src={getAssetImagePath(activeAssetTab, item.Asset_ID)} 
+                    alt={item.Title || item.Room_Number || 'Asset'}
+                    onLoad={(e) => {
+                      e.target.style.display = 'block';
+                      const placeholder = e.target.nextElementSibling;
+                      if (placeholder) placeholder.style.display = 'none';
+                    }}
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                      const placeholder = e.target.nextElementSibling;
+                      if (placeholder) placeholder.style.display = 'flex';
+                    }}
+                    style={{ display: 'none' }}
+                  />
+                  <div className="image-placeholder-card" style={{ display: 'flex' }}>
+                    <span>N/A</span>
+                  </div>
+                </div>
+                
+                <div className="card-body">
+                  {columns.slice(1).map(col => (
+                    <div key={col.key} className="card-field">
+                      <span className="field-label">{col.label}:</span>
+                      <span className="field-value">
                         {renderCellContent(item, col, index)}
-                      </td>
-                    ))}
-                    <td>
-                      <div className="action-buttons">
-                        <button 
-                          className="edit-btn" 
-                          onClick={() => openEditAssetModal(item)}
-                          title="Edit this asset"
-                        >
-                           Edit
-                        </button>
-                        <button 
-                          className="delete-btn" 
-                          onClick={() => openDeleteModal(item)}
-                          title="Delete this asset"
-                        >
-                           Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     )
@@ -1035,7 +1119,47 @@ function Admin() {
               {activeAssetTab === 'study-rooms' ? 'Study Room' : activeAssetTab.slice(0, -1).charAt(0).toUpperCase() + activeAssetTab.slice(1, -1)}
             </h3>
             <form onSubmit={handleAddAsset}>
-              {getAssetFormFields().map(field => (
+              {/* Image Upload Section */}
+              <div className="form-group">
+                <label>Image</label>
+                <div className="image-upload-section">
+                  <input
+                    type="file"
+                    id="image-upload"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    style={{ display: 'none' }}
+                  />
+                  <label htmlFor="image-upload" className="image-upload-btn">
+                    📁 Choose Image
+                  </label>
+                  {(imagePreview || assetForm.Image_URL) && (
+                    <div className="image-preview-container">
+                      <img 
+                        src={imagePreview || assetForm.Image_URL} 
+                        alt="Preview" 
+                        className="image-preview"
+                      />
+                      <button 
+                        type="button" 
+                        className="remove-image-btn" 
+                        onClick={removeImage}
+                        title="Remove image"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                  {!imagePreview && !assetForm.Image_URL && (
+                    <div className="no-image-placeholder">
+                      <span>📷</span>
+                      <p>No image selected</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {getAssetFormFields().filter(field => field.name !== 'Image_URL').map(field => (
                 <div className="form-group" key={field.name}>
                   <label>{field.label} {field.required && '*'}</label>
                   <input
@@ -1045,11 +1169,6 @@ function Admin() {
                     required={field.required}
                     placeholder={field.placeholder || ''}
                   />
-                  {field.name === 'Image_URL' && (
-                    <small style={{ color: '#666', fontSize: '0.85em', display: 'block', marginTop: '4px' }}>
-                      Add your images to the assets folder first, then enter the path here
-                    </small>
-                  )}
                 </div>
               ))}
               <div className="modal-actions">

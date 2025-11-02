@@ -7,6 +7,7 @@ const assetController = require('./controllers/assetController');
 const studentController = require('./controllers/studentController');
 const borrowController = require('./controllers/borrowController');
 const reportController = require('./controllers/reportController');
+const uploadController = require('./controllers/uploadController');
 
 // Helper to parse JSON body
 function parseBody(req) {
@@ -101,6 +102,9 @@ const routes = [
   { method: 'GET', path: '/api/reports/active-borrowers', handler: reportController.getActiveBorrowers },
   { method: 'GET', path: '/api/reports/overdue-items', handler: reportController.getOverdueItems },
   { method: 'GET', path: '/api/reports/inventory-summary', handler: reportController.getInventorySummary },
+  
+  // Upload route
+  { method: 'POST', path: '/api/upload', handler: uploadController.handleUpload },
 ];
 
 const server = http.createServer(async (req, res) => {
@@ -140,6 +144,12 @@ const server = http.createServer(async (req, res) => {
 
   if (matchedRoute) {
     try {
+      // Special handling for upload route (multipart/form-data)
+      if (pathname === '/api/upload') {
+        matchedRoute.handler(req, res);
+        return;
+      }
+      
       // Parse body for POST/PUT requests
       if (req.method === 'POST' || req.method === 'PUT') {
         req.body = await parseBody(req);
