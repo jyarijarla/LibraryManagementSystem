@@ -157,6 +157,22 @@ const getAllStudyRooms = async (req, res) => {
   }
 };
 
+//Create asset and rentables
+const assetRentableCreate = async (connection, Asset_Type, Copies) => {
+  //inserting into asset
+  const assetQuery = 'INSERT INTO asset (Asset_TypeID) VALUES (?)';
+  const [assetResult] = await connection.query(assetQuery, [Asset_Type]);//[1] being the asset_type for book
+  const newAssetId = assetResult.insertId;
+  console.log("Asset ID Assigned:", newAssetId);
+
+  //inserting rentables based on copies
+  const rentableQuery = 'INSERT INTO rentable (Asset_ID, Availability, Fee) VALUES (?, ?, ?)';
+  for(let r = 0; r < Copies; r++){
+    await connection.query(rentableQuery, [newAssetId, 1, 0.00])
+  }
+  console.log(Copies, " insert(s) into rentable successful");
+  return newAssetId;
+}
 // Add a new book
 const addBook = async (req, res) => {
   const connection = await db.promise().getConnection();
@@ -178,27 +194,17 @@ const addBook = async (req, res) => {
     //start transaction
     await connection.beginTransaction();
 
-    //inserting into asset
-    const assetQuery = 'INSERT INTO asset (Asset_TypeID) VALUES (?)';
-    const [assetResult] = await connection.query(assetQuery, [1]);//[1] being the asset_type for book
-    const newAssetId = assetResult.insertId;
-    console.log("Asset ID Assigned:", newAssetId);
-    
+    //creating assets and rentables
+    const newAssetId = await assetRentableCreate(connection, 1, Copies);
+
     //inserting into book
     const bookQuery = 'INSERT INTO book (Asset_ID, ISBN, Title, Author, Page_Count, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';
     await connection.query(bookQuery, [newAssetId, ISBN, Title, Author, Page_Count, Image_URL || null]);
     console.log("Insert into book successful");
-
-    //inserting rentables based on copies
-    const rentableQuery = 'INSERT INTO rentable (Asset_ID, Availability, Fee) VALUES (?, ?, ?)';
-    for(let r = 0; r < Copies; r++){
-      await connection.query(rentableQuery, [newAssetId, 1, 0.00])
-    }
     
     //end transaction
     await connection.commit();
 
-    console.log(Copies, " inserts into rentable successful");
     res.writeHead(201, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ 
       message: 'Book added successfully',
@@ -208,13 +214,17 @@ const addBook = async (req, res) => {
   } catch (error) {
     await connection.rollback();
     console.error('❌ Error in addBook:', error);
+    console.log("Rollback inserts");
     res.writeHead(500, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({ error: 'Server error', details: error.message }));
+  } finally {
+    connection.release();
   }
 };
 
 // Add a new CD
 const addCD = async (req, res) => {
+  const connection = await db.promise().getConnection();
   try {
     const { Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Copies, Image_URL } = req.body;
     
@@ -223,88 +233,45 @@ const addCD = async (req, res) => {
         .end(JSON.stringify({ error: 'Missing required fields' }));
     }
 
-    db.query('SELECT MAX(Asset_ID) as maxId FROM asset', (err, result) => {
-      if (err) {
-        console.error('Error getting max Asset_ID:', err);
-        return res.writeHead(500, { 'Content-Type': 'application/json' })
-          .end(JSON.stringify({ error: 'Database error' }));
-      }
+    // Image can be uploaded via req.file but we won't store it in database
+    const imagePath = req.file ? `/assets/uploads/${req.file.filename}` : null;
+    console.log('🖼️  Image path:', imagePath);
+    
+    //start transaction
+    await connection.beginTransaction();
 
-      const newAssetId = (result[0].maxId || 0) + 1;
+    //creating assets and rentables
+    const newAssetId = await assetRentableCreate(connection, 2, Copies);
+    console.log("NewAssetIDCD: ", newAssetId);
+    //inserting into cd
+    const cdQuery = 'INSERT INTO cd (Asset_ID, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';            
+    const [cdResult] = await connection.query(cdQuery, [newAssetId, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Image_URL || null]);
+    const newCDID = cdResult.insertId;
+    console.log("CD ID Assigned:", newCDID);
+    
+    //end transaction
+    await connection.commit();
 
-      // Check if this Asset_ID already exists with the same type
-      db.query('SELECT Asset_ID, Asset_TypeID FROM asset WHERE Asset_ID = ?', [newAssetId], (err, existing) => {
-        if (err) {
-          console.error('Error checking existing asset:', err);
-          return res.writeHead(500, { 'Content-Type': 'application/json' })
-            .end(JSON.stringify({ error: 'Database error' }));
-        }
-
-        const insertOrUseAsset = (callback) => {
-          if (existing.length > 0) {
-            // Asset exists, check if it's the same type (6 = technology)
-            if (existing[0].Asset_TypeID === 6) {
-              // Same type, reuse it
-              callback(null);
-            } else {
-              // Different type, this is an error - shouldn't happen
-              return callback(new Error('Asset ID exists with different type'));
-            }
-          } else {
-            // Create new asset
-            const assetQuery = 'INSERT INTO asset (Asset_ID, Asset_TypeID) VALUES (?, ?)';
-            db.query(assetQuery, [newAssetId, 6], callback);
-          }
-        };
-
-        insertOrUseAsset((err) => {
-          if (err) {
-            console.error('Error inserting into asset:', err);
-            return res.writeHead(500, { 'Content-Type': 'application/json' })
-              .end(JSON.stringify({ error: 'Failed to create asset', details: err.message }));
-          }
-
-          // Get max CD_ID to generate new one
-          db.query('SELECT MAX(CD_ID) as maxCDID FROM cd', (err, result) => {
-            if (err) {
-              console.error('Error getting max CD_ID:', err);
-              return res.writeHead(500, { 'Content-Type': 'application/json' })
-                .end(JSON.stringify({ error: 'Database error' }));
-            }
-
-            const newCDID = (result[0].maxCDID || 0) + 1;
-
-            const cdQuery = `
-              INSERT INTO cd (Asset_ID, CD_ID, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Copies, Available_Copies, Image_URL)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `;
-            
-            db.query(cdQuery, [newAssetId, newCDID, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Copies, Copies, Image_URL || null], (err) => {
-              if (err) {
-                console.error('Error adding CD:', err);
-                return res.writeHead(500, { 'Content-Type': 'application/json' })
-                  .end(JSON.stringify({ error: 'Failed to add CD', details: err.message }));
-              }
-              
-              res.writeHead(201, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ 
-                message: 'CD added successfully',
-                assetId: newAssetId
-              }));
-            });
-          });
-        });
-      });
-    });
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      message: 'CD added successfully',
+      assetId: newAssetId,
+      imageUrl: imagePath
+    }));
   } catch (error) {
+    await connection.rollback();
     console.error('Error in addCD:', error);
+    console.log("Rollback inserts");
     res.writeHead(500, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({ error: 'Server error' }));
+  } finally {
+    connection.release();
   }
 };
 
-// Add other asset types similarly...
+// Add a new Audiobook
 const addAudiobook = async (req, res) => {
+  const connection = await db.promise().getConnection();
   try {
     const { ISBN, Title, Author, length, Copies, Image_URL } = req.body;
     
@@ -313,67 +280,43 @@ const addAudiobook = async (req, res) => {
         .end(JSON.stringify({ error: 'Missing required fields' }));
     }
 
-    db.query('SELECT MAX(Asset_ID) as maxId FROM asset', (err, result) => {
-      if (err) {
-        console.error('Error getting max Asset_ID:', err);
-        return res.writeHead(500, { 'Content-Type': 'application/json' })
-          .end(JSON.stringify({ error: 'Database error' }));
-      }
+    // Image can be uploaded via req.file but we won't store it in database
+    const imagePath = req.file ? `/assets/uploads/${req.file.filename}` : null;
+    console.log('🖼️  Image path:', imagePath);
 
-      const newAssetId = (result[0].maxId || 0) + 1;
+    //star transaction
+    await connection.beginTransaction();
 
-      db.query('SELECT Asset_ID FROM asset WHERE Asset_ID = ?', [newAssetId], (err, existing) => {
-        if (err) {
-          console.error('Error checking existing asset:', err);
-          return res.writeHead(500, { 'Content-Type': 'application/json' })
-            .end(JSON.stringify({ error: 'Database error' }));
-        }
+    //creating asset and rentables
+    const newAssetId = await assetRentableCreate(connection, 5, Copies);
 
-        const insertOrUseAsset = (callback) => {
-          if (existing.length > 0) {
-            callback(null);
-          } else {
-            const assetQuery = 'INSERT INTO asset (Asset_ID, Asset_TypeID) VALUES (?, ?)';
-            db.query(assetQuery, [newAssetId, 5], callback);
-          }
-        };
+    //inserting into audiobook
+    const audiobookQuery = 'INSERT INTO audiobook (Asset_ID, ISBN, Title, Author, length, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';
+    await connection.query(audiobookQuery, [newAssetId, ISBN, Title, Author, length, Image_URL || null]);
+    console.log("Audiobook inserted")
+    //end transaction
+    await connection.commit();
 
-        insertOrUseAsset((err) => {
-          if (err) {
-            console.error('Error inserting into asset:', err);
-            return res.writeHead(500, { 'Content-Type': 'application/json' })
-              .end(JSON.stringify({ error: 'Failed to create asset', details: err.message }));
-          }
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      message: 'Audiobook added successfully',
+      assetId: newAssetId,
+      imageUrl: imagePath
+    }));
 
-          const audiobookQuery = `
-            INSERT INTO audiobook (Asset_ID, ISBN, Title, Author, length, Copies, Available_Copies, Image_URL)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          `;
-          
-          db.query(audiobookQuery, [newAssetId, ISBN, Title, Author, length, Copies, Copies, Image_URL || null], (err) => {
-            if (err) {
-              console.error('Error adding audiobook:', err);
-              return res.writeHead(500, { 'Content-Type': 'application/json' })
-                .end(JSON.stringify({ error: 'Failed to add audiobook', details: err.message }));
-            }
-            
-            res.writeHead(201, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ 
-              message: 'Audiobook added successfully',
-              assetId: newAssetId
-            }));
-          });
-        });
-      });
-    });
   } catch (error) {
+    await connection.rollback();
     console.error('Error in addAudiobook:', error);
+    console.log("Rollback inserts");
     res.writeHead(500, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({ error: 'Server error' }));
+  } finally {
+    connection.release();
   }
 };
 
 const addMovie = async (req, res) => {
+  const connection = await db.promise().getConnection();
   try {
     const { Title, Release_Year, Age_Rating, Copies, Image_URL } = req.body;
     
@@ -382,78 +325,43 @@ const addMovie = async (req, res) => {
         .end(JSON.stringify({ error: 'Missing required fields' }));
     }
 
-    db.query('SELECT MAX(Asset_ID) as maxId FROM asset', (err, result) => {
-      if (err) {
-        console.error('Error getting max Asset_ID:', err);
-        return res.writeHead(500, { 'Content-Type': 'application/json' })
-          .end(JSON.stringify({ error: 'Database error' }));
-      }
+    // Image can be uploaded via req.file but we won't store it in database
+    const imagePath = req.file ? `/assets/uploads/${req.file.filename}` : null;
+    console.log('🖼️  Image path:', imagePath);
 
-      const newAssetId = (result[0].maxId || 0) + 1;
+    //begin transaction
+    await connection.beginTransaction();
 
-      db.query('SELECT Asset_ID FROM asset WHERE Asset_ID = ?', [newAssetId], (err, existing) => {
-        if (err) {
-          console.error('Error checking existing asset:', err);
-          return res.writeHead(500, { 'Content-Type': 'application/json' })
-            .end(JSON.stringify({ error: 'Database error' }));
-        }
+    //create asset and rentables
+    const newAssetId = await assetRentableCreate(connection, 3, Copies);
 
-        const insertOrUseAsset = (callback) => {
-          if (existing.length > 0) {
-            callback(null);
-          } else {
-            const assetQuery = 'INSERT INTO asset (Asset_ID, Asset_TypeID) VALUES (?, ?)';
-            db.query(assetQuery, [newAssetId, 3], callback);
-          }
-        };
+    //insert into movie
+    const movieQuery = 'INSERT INTO movie (Asset_ID, Title, Release_Year, Age_Rating, Image_URL) VALUES (?, ?, ?, ?, ?)';
+    const [movieResults] = await connection.query(movieQuery, [newAssetId, Title, Release_Year, Age_Rating, Image_URL || null]);
+    const newMovieID = movieResults.insertId;
+    console.log("Movie ID Assigned: ", newMovieID);
 
-        insertOrUseAsset((err) => {
-          if (err) {
-            console.error('Error inserting into asset:', err);
-            return res.writeHead(500, { 'Content-Type': 'application/json' })
-              .end(JSON.stringify({ error: 'Failed to create asset', details: err.message }));
-          }
-
-          // Get max Movie_ID to generate new one
-          db.query('SELECT MAX(Movie_ID) as maxMovieID FROM movie', (err, result) => {
-            if (err) {
-              console.error('Error getting max Movie_ID:', err);
-              return res.writeHead(500, { 'Content-Type': 'application/json' })
-                .end(JSON.stringify({ error: 'Database error' }));
-            }
-
-            const newMovieID = (result[0].maxMovieID || 0) + 1;
-
-            const movieQuery = `
-              INSERT INTO movie (Asset_ID, Movie_ID, Title, Release_Year, Age_Rating, Available_Copies, Image_URL)
-              VALUES (?, ?, ?, ?, ?, ?, ?)
-            `;
-            
-            db.query(movieQuery, [newAssetId, newMovieID, Title, Release_Year, Age_Rating, Copies, Image_URL || null], (err) => {
-              if (err) {
-                console.error('Error adding movie:', err);
-                return res.writeHead(500, { 'Content-Type': 'application/json' })
-                  .end(JSON.stringify({ error: 'Failed to add movie', details: err.message }));
-              }
-              
-              res.writeHead(201, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ 
-                message: 'Movie added successfully',
-                assetId: newAssetId
-              }));
-            });
-          });
-        });
-      });
-    });
+    //end transaction
+    await connection.commit();
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      message: 'Movie added successfully',
+      assetId: newAssetId,
+      imageUrl: imagePath
+    }));
   } catch (error) {
+    await connection.rollback();
     console.error('Error in addMovie:', error);
+    console.log("Rollback inserts");
     res.writeHead(500, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({ error: 'Server error' }));
+  } finally {
+    connection.release();
   }
 };
 
 const addTechnology = async (req, res) => {
+  const connection = await db.promise().getConnection();
   try {
     const { Model_Num, Type, Description, Copies, Image_URL } = req.body;
     
@@ -462,71 +370,42 @@ const addTechnology = async (req, res) => {
         .end(JSON.stringify({ error: 'Missing required fields' }));
     }
 
-    db.query('SELECT MAX(Asset_ID) as maxId FROM asset', (err, result) => {
-      if (err) {
-        console.error('Error getting max Asset_ID:', err);
-        return res.writeHead(500, { 'Content-Type': 'application/json' })
-          .end(JSON.stringify({ error: 'Database error' }));
-      }
+    // Image can be uploaded via req.file but we won't store it in database
+    const imagePath = req.file ? `/assets/uploads/${req.file.filename}` : null;
+    console.log('🖼️  Image path:', imagePath);
 
-      const newAssetId = (result[0].maxId || 0) + 1;
+    //begin transaction
+    await connection.beginTransaction();
 
-      // Check if this Asset_ID already exists
-      db.query('SELECT Asset_ID FROM asset WHERE Asset_ID = ?', [newAssetId], (err, existing) => {
-        if (err) {
-          console.error('Error checking existing asset:', err);
-          return res.writeHead(500, { 'Content-Type': 'application/json' })
-            .end(JSON.stringify({ error: 'Database error' }));
-        }
+    //create asset and rentables
+    const newAssetId = await assetRentableCreate(connection, 6, Copies);
 
-        // If asset exists, use it; otherwise create new one
-        const insertOrUseAsset = (callback) => {
-          if (existing.length > 0) {
-            // Asset already exists, just use it
-            callback(null);
-          } else {
-            // Create new asset
-            const assetQuery = 'INSERT INTO asset (Asset_ID, Asset_TypeID) VALUES (?, ?)';
-            db.query(assetQuery, [newAssetId, 6], callback);
-          }
-        };
+    //insert into technology
+    const technologyQuery = 'INSERT INTO technology (Asset_ID, Model_Num, Type, Description, Image_URL) VALUES (?, ?, ?, ?, ?)';
+    await connection.query(technologyQuery, [newAssetId, Model_Num, Type, Description, Copies, Image_URL || null]);
+    console.log("technology inserted");
 
-        insertOrUseAsset((err) => {
-          if (err) {
-            console.error('Error inserting into asset:', err);
-            return res.writeHead(500, { 'Content-Type': 'application/json' })
-              .end(JSON.stringify({ error: 'Failed to create asset', details: err.message }));
-          }
+    //end transaction
+    await connection.commit();
 
-          const technologyQuery = `
-            INSERT INTO technology (Asset_ID, Model_Num, Type, Description, Copies, Image_URL)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `;
-          
-          db.query(technologyQuery, [newAssetId, Model_Num, Type, Description, Copies, Image_URL || null], (err) => {
-            if (err) {
-              console.error('Error adding technology:', err);
-              return res.writeHead(500, { 'Content-Type': 'application/json' })
-                .end(JSON.stringify({ error: 'Failed to add technology', details: err.message }));
-            }
-            
-            res.writeHead(201, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ 
-              message: 'Technology added successfully',
-              assetId: newAssetId
-            }));
-          });
-        });
-      });
-    });
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      message: 'Technology added successfully',
+      assetId: newAssetId
+    }));
   } catch (error) {
+    await connection.rollback();
     console.error('Error in addTechnology:', error);
+    console.log("Rollback insert");
     res.writeHead(500, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({ error: 'Server error' }));
+  } finally {
+    connection.release();
   }
 };
 
 const addStudyRoom = async (req, res) => {
+  const connection = await db.promise().getConnection();
   try {
     const { Room_Number, Capacity, Image_URL } = req.body;
     
@@ -535,63 +414,35 @@ const addStudyRoom = async (req, res) => {
         .end(JSON.stringify({ error: 'Missing required fields' }));
     }
 
-    db.query('SELECT MAX(Asset_ID) as maxId FROM asset', (err, result) => {
-      if (err) {
-        console.error('Error getting max Asset_ID:', err);
-        return res.writeHead(500, { 'Content-Type': 'application/json' })
-          .end(JSON.stringify({ error: 'Database error' }));
-      }
+    // Image can be uploaded via req.file but we won't store it in database
+    const imagePath = req.file ? `/assets/uploads/${req.file.filename}` : null;
+    console.log('🖼️  Image path:', imagePath);
 
-      const newAssetId = (result[0].maxId || 0) + 1;
+    //begin transaction
+    await connection.beginTransaction();
 
-      db.query('SELECT Asset_ID FROM asset WHERE Asset_ID = ?', [newAssetId], (err, existing) => {
-        if (err) {
-          console.error('Error checking existing asset:', err);
-          return res.writeHead(500, { 'Content-Type': 'application/json' })
-            .end(JSON.stringify({ error: 'Database error' }));
-        }
+    //create asset and rentables
+    const newAssetId = await assetRentableCreate(connection, 4, 1);
 
-        const insertOrUseAsset = (callback) => {
-          if (existing.length > 0) {
-            callback(null);
-          } else {
-            const assetQuery = 'INSERT INTO asset (Asset_ID, Asset_TypeID) VALUES (?, ?)';
-            db.query(assetQuery, [newAssetId, 4], callback);
-          }
-        };
-
-        insertOrUseAsset((err) => {
-          if (err) {
-            console.error('Error inserting into asset:', err);
-            return res.writeHead(500, { 'Content-Type': 'application/json' })
-              .end(JSON.stringify({ error: 'Failed to create asset', details: err.message }));
-          }
-
-          const roomQuery = `
-            INSERT INTO study_room (Asset_ID, Room_Number, Capacity, Availability, Image_URL)
-            VALUES (?, ?, ?, 1, ?)
-          `;
-          
-          db.query(roomQuery, [newAssetId, Room_Number, Capacity, Image_URL || null], (err) => {
-            if (err) {
-              console.error('Error adding study room:', err);
-              return res.writeHead(500, { 'Content-Type': 'application/json' })
-                .end(JSON.stringify({ error: 'Failed to add study room', details: err.message }));
-            }
-            
-            res.writeHead(201, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ 
-              message: 'Study room added successfully',
-              assetId: newAssetId
-            }));
-          });
-        });
-      });
-    });
+    //insert into study room
+    const roomQuery = 'INSERT INTO study_room (Asset_ID, Room_Number, Capacity, Availability, Image_URL) VALUES (?, ?, ?, 1, ?)';
+    await connection.query(roomQuery, [newAssetId, Room_Number, Capacity, Image_URL || null]);
+    
+    //end transaction
+    await connection.commit();
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      message: 'Study room added successfully',
+      assetId: newAssetId
+    }));
   } catch (error) {
+    await connection.rollback();
     console.error('Error in addStudyRoom:', error);
+    console.log("rollback insert");
     res.writeHead(500, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({ error: 'Server error' }));
+  } finally {
+    connection.release();
   }
 };
 

@@ -283,12 +283,6 @@ function Admin() {
       // Prepare asset data - handle movie-specific field mapping
       let assetData = { ...assetForm, Image_URL: imageUrl }
       
-      // For movies, map 'Copies' to 'Available_Copies' since movie table only has Available_Copies
-      if (activeAssetTab === 'movies' && assetData.Copies) {
-        assetData.Available_Copies = assetData.Copies
-        delete assetData.Copies
-      }
-      
       const response = await fetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
