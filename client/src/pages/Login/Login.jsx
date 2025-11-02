@@ -2,6 +2,11 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './Login.css'
 
+const API_URL = window.location.hostname === 'localhost' 
+  ? 'http://localhost:3000/api'
+  : 'https://librarymanagementsystem-z2yw.onrender.com/api'
+
+
 function Login() {
   const [isSignUp, setIsSignUp] = useState(false)
   const [formData, setFormData] = useState({
@@ -39,7 +44,7 @@ function Login() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('https://librarymanagementsystem-z2yw.onrender.com/api/login', {
+      const response = await fetch(`${API_URL}/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -109,7 +114,7 @@ function Login() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('http://localhost:3000/api/signup', {
+      const response = await fetch(`${API_URL}/signup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
