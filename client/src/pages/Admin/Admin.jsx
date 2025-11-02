@@ -344,7 +344,7 @@ function Admin() {
     switch(activeAssetTab) {
       case 'books':
         return [
-          { key: 'Asset_ID', label: 'ID' },
+          { key: 'rowNum', label: '#' },
           { key: 'ISBN', label: 'ISBN' },
           { key: 'Title', label: 'Title' },
           { key: 'Author', label: 'Author' },
@@ -354,7 +354,7 @@ function Admin() {
         ]
       case 'cds':
         return [
-          { key: 'Asset_ID', label: 'ID' },
+          { key: 'rowNum', label: '#' },
           { key: 'Title', label: 'Title' },
           { key: 'Artist', label: 'Artist' },
           { key: 'Total_Tracks', label: 'Tracks' },
@@ -364,7 +364,7 @@ function Admin() {
         ]
       case 'audiobooks':
         return [
-          { key: 'Asset_ID', label: 'ID' },
+          { key: 'rowNum', label: '#' },
           { key: 'ISBN', label: 'ISBN' },
           { key: 'Title', label: 'Title' },
           { key: 'Author', label: 'Author' },
@@ -374,7 +374,7 @@ function Admin() {
         ]
       case 'movies':
         return [
-          { key: 'Asset_ID', label: 'ID' },
+          { key: 'rowNum', label: '#' },
           { key: 'Title', label: 'Title' },
           { key: 'Release_Year', label: 'Year' },
           { key: 'Age_Rating', label: 'Rating' },
@@ -382,7 +382,7 @@ function Admin() {
         ]
       case 'technology':
         return [
-          { key: 'Asset_ID', label: 'ID' },
+          { key: 'rowNum', label: '#' },
           { key: 'Model_Num', label: 'Model #' },
           { key: 'Type', label: 'Type' },
           { key: 'Description', label: 'Description' },
@@ -390,7 +390,7 @@ function Admin() {
         ]
       case 'study-rooms':
         return [
-          { key: 'Asset_ID', label: 'ID' },
+          { key: 'rowNum', label: '#' },
           { key: 'Room_Number', label: 'Room Number' },
           { key: 'Capacity', label: 'Capacity' },
           { key: 'Availability', label: 'Status' }
@@ -443,7 +443,11 @@ function Admin() {
     </div>
   )
 
-  const renderCellContent = (item, col) => {
+  const renderCellContent = (item, col, rowIndex) => {
+    if (col.key === 'rowNum') {
+      return rowIndex + 1
+    }
+    
     if (col.key === 'Availability') {
       return (
         <span className={`status-badge ${item[col.key] === 'Available' ? 'available' : 'unavailable'}`}>
@@ -544,11 +548,11 @@ function Admin() {
                   </td>
                 </tr>
               ) : (
-                data.map((item) => (
+                data.map((item, index) => (
                   <tr key={item.Asset_ID}>
                     {columns.map(col => (
                       <td key={col.key}>
-                        {renderCellContent(item, col)}
+                        {renderCellContent(item, col, index)}
                       </td>
                     ))}
                     <td>
@@ -591,7 +595,8 @@ function Admin() {
         <table className="data-table">
           <thead>
             <tr>
-              <th>ID</th>
+              <th>#</th>
+              <th>User ID</th>
               <th>Name</th>
               <th>Email</th>
               <th>Active Borrows</th>
@@ -600,11 +605,12 @@ function Admin() {
           <tbody>
             {students.length === 0 ? (
               <tr>
-                <td colSpan="4" style={{ textAlign: 'center' }}>No students found</td>
+                <td colSpan="5" style={{ textAlign: 'center' }}>No students found</td>
               </tr>
             ) : (
-              students.map((student) => (
+              students.map((student, index) => (
                 <tr key={student.User_ID}>
+                  <td>{index + 1}</td>
                   <td>{student.User_ID}</td>
                   <td>{student.Full_Name}</td>
                   <td>{student.User_Email}</td>
@@ -627,6 +633,7 @@ function Admin() {
         <table className="data-table">
           <thead>
             <tr>
+              <th>#</th>
               <th>ID</th>
               <th>Borrower</th>
               <th>Item</th>
@@ -639,11 +646,12 @@ function Admin() {
           <tbody>
             {borrowRecords.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ textAlign: 'center' }}>No records found</td>
+                <td colSpan="8" style={{ textAlign: 'center' }}>No records found</td>
               </tr>
             ) : (
-              borrowRecords.map((record) => (
+              borrowRecords.map((record, index) => (
                 <tr key={record.Borrow_ID}>
+                  <td>{index + 1}</td>
                   <td>{record.Borrow_ID}</td>
                   <td>{record.Borrower_Name}</td>
                   <td>{record.Item_Title}</td>
