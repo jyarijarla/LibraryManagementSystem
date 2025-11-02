@@ -160,17 +160,24 @@ const getAllStudyRooms = async (req, res) => {
 //Create asset and rentables
 const assetRentableCreate = async (connection, Asset_Type, Copies) => {
   //inserting into asset
-  const assetQuery = 'INSERT INTO asset (Asset_TypeID) VALUES (?)';
-  const [assetResult] = await connection.query(assetQuery, [Asset_Type]);//[1] being the asset_type for book
-  const newAssetId = assetResult.insertId;
-  console.log("Asset ID Assigned:", newAssetId);
-
-  //inserting rentables based on copies
-  const rentableQuery = 'INSERT INTO rentable (Asset_ID, Availability, Fee) VALUES (?, ?, ?)';
-  for(let r = 0; r < Copies; r++){
-    await connection.query(rentableQuery, [newAssetId, 1, 0.00])
+  try{
+    const assetQuery = 'INSERT INTO asset (Asset_TypeID) VALUES (?)';
+    const [assetResult] = await connection.query(assetQuery, [Asset_Type])
+    const newAssetId = assetResult.insertId;
+    console.log("Asset ID Assigned:", newAssetId);
+  } catch {
+    throw new Error('Asset creation failed')
   }
-  console.log(Copies, " insert(s) into rentable successful");
+  //inserting rentables based on copies
+  try {
+    const rentableQuery = 'INSERT INTO rentable (Asset_ID, Availability, Fee) VALUES (?, ?, ?)';
+    for(let r = 0; r < Copies; r++){
+      await connection.query(rentableQuery, [newAssetId, 1, 0.00])
+    }
+    console.log(Copies, " insert(s) into rentable successful");
+  } catch {
+    throw new Error('Rentable creation failed')
+  }
   return newAssetId;
 }
 // Add a new book
@@ -198,9 +205,13 @@ const addBook = async (req, res) => {
     const newAssetId = await assetRentableCreate(connection, 1, Copies);
 
     //inserting into book
-    const bookQuery = 'INSERT INTO book (Asset_ID, ISBN, Title, Author, Page_Count, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';
-    await connection.query(bookQuery, [newAssetId, ISBN, Title, Author, Page_Count, Image_URL || null]);
-    console.log("Insert into book successful");
+    try {
+      const bookQuery = 'INSERT INTO book (Asset_ID, ISBN, Title, Author, Page_Count, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';
+      await connection.query(bookQuery, [newAssetId, ISBN, Title, Author, Page_Count, Image_URL || null]);
+      console.log("Insert into book successful");
+    } catch {
+      throw new Error('Book Creation failed')
+    }
     
     //end transaction
     await connection.commit();
@@ -244,10 +255,14 @@ const addCD = async (req, res) => {
     const newAssetId = await assetRentableCreate(connection, 2, Copies);
     console.log("NewAssetIDCD: ", newAssetId);
     //inserting into cd
-    const cdQuery = 'INSERT INTO cd (Asset_ID, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';            
-    const [cdResult] = await connection.query(cdQuery, [newAssetId, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Image_URL || null]);
-    const newCDID = cdResult.insertId;
-    console.log("CD ID Assigned:", newCDID);
+    try {
+      const cdQuery = 'INSERT INTO cd (Asset_ID, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';            
+      const [cdResult] = await connection.query(cdQuery, [newAssetId, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Image_URL || null]);
+      const newCDID = cdResult.insertId;
+      console.log("CD ID Assigned:", newCDID);
+    } catch {
+      throw new Error('CD Creation Failed')
+    }
     
     //end transaction
     await connection.commit();
@@ -263,7 +278,7 @@ const addCD = async (req, res) => {
     console.error('Error in addCD:', error);
     console.log("Rollback inserts");
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error' }));
+      .end(JSON.stringify({ error: 'Server error' , details: error.message}));
   } finally {
     connection.release();
   }
@@ -284,16 +299,20 @@ const addAudiobook = async (req, res) => {
     const imagePath = req.file ? `/assets/uploads/${req.file.filename}` : null;
     console.log('🖼️  Image path:', imagePath);
 
-    //star transaction
+    //start transaction
     await connection.beginTransaction();
 
     //creating asset and rentables
     const newAssetId = await assetRentableCreate(connection, 5, Copies);
 
     //inserting into audiobook
-    const audiobookQuery = 'INSERT INTO audiobook (Asset_ID, ISBN, Title, Author, length, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';
-    await connection.query(audiobookQuery, [newAssetId, ISBN, Title, Author, length, Image_URL || null]);
-    console.log("Audiobook inserted")
+    try{
+      const audiobookQuery = 'INSERT INTO audiobook (Asset_ID, ISBN, Title, Author, length, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';
+      await connection.query(audiobookQuery, [newAssetId, ISBN, Title, Author, length, Image_URL || null]);
+      console.log("Audiobook inserted")
+    } catch {
+      throw new Error('Audiobook Creation failed')
+    }
     //end transaction
     await connection.commit();
 
@@ -309,7 +328,7 @@ const addAudiobook = async (req, res) => {
     console.error('Error in addAudiobook:', error);
     console.log("Rollback inserts");
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error' }));
+      .end(JSON.stringify({ error: 'Server error' , details: error.message}));
   } finally {
     connection.release();
   }
@@ -336,10 +355,14 @@ const addMovie = async (req, res) => {
     const newAssetId = await assetRentableCreate(connection, 3, Copies);
 
     //insert into movie
-    const movieQuery = 'INSERT INTO movie (Asset_ID, Title, Release_Year, Age_Rating, Image_URL) VALUES (?, ?, ?, ?, ?)';
-    const [movieResults] = await connection.query(movieQuery, [newAssetId, Title, Release_Year, Age_Rating, Image_URL || null]);
-    const newMovieID = movieResults.insertId;
-    console.log("Movie ID Assigned: ", newMovieID);
+    try{
+      const movieQuery = 'INSERT INTO movie (Asset_ID, Title, Release_Year, Age_Rating, Image_URL) VALUES (?, ?, ?, ?, ?)';
+      const [movieResults] = await connection.query(movieQuery, [newAssetId, Title, Release_Year, Age_Rating, Image_URL || null]);
+      const newMovieID = movieResults.insertId;
+      console.log("Movie ID Assigned: ", newMovieID);
+    } catch {
+      throw new Error('Movie Creation Failed')
+    }
 
     //end transaction
     await connection.commit();
@@ -354,7 +377,7 @@ const addMovie = async (req, res) => {
     console.error('Error in addMovie:', error);
     console.log("Rollback inserts");
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error' }));
+      .end(JSON.stringify({ error: 'Server error' , details: error.message}));
   } finally {
     connection.release();
   }
@@ -381,9 +404,13 @@ const addTechnology = async (req, res) => {
     const newAssetId = await assetRentableCreate(connection, 6, Copies);
 
     //insert into technology
-    const technologyQuery = 'INSERT INTO technology (Asset_ID, Model_Num, Type, Description, Image_URL) VALUES (?, ?, ?, ?, ?)';
-    await connection.query(technologyQuery, [newAssetId, Model_Num, Type, Description, Copies, Image_URL || null]);
-    console.log("technology inserted");
+    try{
+      const technologyQuery = 'INSERT INTO technology (Asset_ID, Model_Num, Type, Description, Image_URL) VALUES (?, ?, ?, ?, ?)';
+      await connection.query(technologyQuery, [newAssetId, Model_Num, Type, Description, Copies, Image_URL || null]);
+      console.log("technology inserted");
+    } catch {
+      throw new Error('Technology Creation Failed')
+    }
 
     //end transaction
     await connection.commit();
@@ -398,7 +425,7 @@ const addTechnology = async (req, res) => {
     console.error('Error in addTechnology:', error);
     console.log("Rollback insert");
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error' }));
+      .end(JSON.stringify({ error: 'Server error' , details: error.message}));
   } finally {
     connection.release();
   }
@@ -425,9 +452,13 @@ const addStudyRoom = async (req, res) => {
     const newAssetId = await assetRentableCreate(connection, 4, 1);
 
     //insert into study room
-    const roomQuery = 'INSERT INTO study_room (Asset_ID, Room_Number, Capacity, Availability, Image_URL) VALUES (?, ?, ?, 1, ?)';
-    await connection.query(roomQuery, [newAssetId, Room_Number, Capacity, Image_URL || null]);
-    
+    try{
+      const roomQuery = 'INSERT INTO study_room (Asset_ID, Room_Number, Capacity, Availability, Image_URL) VALUES (?, ?, ?, 1, ?)';
+      await connection.query(roomQuery, [newAssetId, Room_Number, Capacity, Image_URL || null]);
+      console.log('study room inserted')
+    } catch {
+      throw new Error('Study Room Creation Failed')
+    }
     //end transaction
     await connection.commit();
     res.writeHead(201, { 'Content-Type': 'application/json' });
@@ -440,7 +471,7 @@ const addStudyRoom = async (req, res) => {
     console.error('Error in addStudyRoom:', error);
     console.log("rollback insert");
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error' }));
+      .end(JSON.stringify({ error: 'Server error' , details: error.message}));
   } finally {
     connection.release();
   }
@@ -551,15 +582,15 @@ const updateAsset = async (req, res) => {
     if (updates.ISBN && updates.Title && updates.Author && updates.Page_Count !== undefined) {
       // Book
       table = 'book';
-      fields = ['ISBN', 'Title', 'Author', 'Page_Count', 'Copies', 'Available_Copies'];
+      fields = ['ISBN', 'Title', 'Author', 'Page_Count'];
     } else if (updates.Total_Tracks !== undefined && updates.Artist) {
       // CD
       table = 'cd';
-      fields = ['Total_Tracks', 'Total_Duration_In_Minutes', 'Title', 'Artist', 'Copies', 'Available_Copies'];
+      fields = ['Total_Tracks', 'Total_Duration_In_Minutes', 'Title', 'Artist'];
     } else if (updates.ISBN && updates.length !== undefined) {
       // Audiobook
       table = 'audiobook';
-      fields = ['ISBN', 'Title', 'Author', 'length', 'Copies', 'Available_Copies'];
+      fields = ['ISBN', 'Title', 'Author', 'length'];
     } else if (updates.Release_Year !== undefined && updates.Age_Rating) {
       // Movie - table only has Title, Release_Year, Age_Rating, Image_URL
       // Copies are managed through rentables table
@@ -571,7 +602,7 @@ const updateAsset = async (req, res) => {
     } else if (updates.Model_Num && updates.Type && updates.Description) {
       // Technology
       table = 'technology';
-      fields = ['Model_Num', 'Type', 'Description', 'Copies'];
+      fields = ['Model_Num', 'Type', 'Description'];
     } else if (updates.Room_Number && updates.Capacity !== undefined) {
       // Study Room
       table = 'study_room';
