@@ -160,22 +160,27 @@ const getAllStudyRooms = async (req, res) => {
 //Create asset and rentables
 const assetRentableCreate = async (connection, Asset_Type, Copies) => {
   //inserting into asset
+  let newAssetId;
   try{
     const assetQuery = 'INSERT INTO asset (Asset_TypeID) VALUES (?)';
     const [assetResult] = await connection.query(assetQuery, [Asset_Type])
-    const newAssetId = assetResult.insertId;
+    newAssetId = assetResult.insertId;
     console.log("Asset ID Assigned:", newAssetId);
-  } catch {
+  } catch (error) {
+    console.log(error)
     throw new Error('Asset creation failed')
   }
   //inserting rentables based on copies
+  console.log("Did this run")
+  console.log(newAssetId, "Test")
   try {
     const rentableQuery = 'INSERT INTO rentable (Asset_ID, Availability, Fee) VALUES (?, ?, ?)';
     for(let r = 0; r < Copies; r++){
       await connection.query(rentableQuery, [newAssetId, 1, 0.00])
     }
     console.log(Copies, " insert(s) into rentable successful");
-  } catch {
+  } catch (error) {
+    console.log(error)
     throw new Error('Rentable creation failed')
   }
   return newAssetId;
@@ -209,7 +214,8 @@ const addBook = async (req, res) => {
       const bookQuery = 'INSERT INTO book (Asset_ID, ISBN, Title, Author, Page_Count, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';
       await connection.query(bookQuery, [newAssetId, ISBN, Title, Author, Page_Count, Image_URL || null]);
       console.log("Insert into book successful");
-    } catch {
+    } catch (error) {
+      console.log(error)
       throw new Error('Book Creation failed')
     }
     
@@ -260,7 +266,8 @@ const addCD = async (req, res) => {
       const [cdResult] = await connection.query(cdQuery, [newAssetId, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Image_URL || null]);
       const newCDID = cdResult.insertId;
       console.log("CD ID Assigned:", newCDID);
-    } catch {
+    } catch (error){
+      console.log(error)
       throw new Error('CD Creation Failed')
     }
     
@@ -310,7 +317,8 @@ const addAudiobook = async (req, res) => {
       const audiobookQuery = 'INSERT INTO audiobook (Asset_ID, ISBN, Title, Author, length, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';
       await connection.query(audiobookQuery, [newAssetId, ISBN, Title, Author, length, Image_URL || null]);
       console.log("Audiobook inserted")
-    } catch {
+    } catch (error) {
+      console.log(error)
       throw new Error('Audiobook Creation failed')
     }
     //end transaction
@@ -360,7 +368,8 @@ const addMovie = async (req, res) => {
       const [movieResults] = await connection.query(movieQuery, [newAssetId, Title, Release_Year, Age_Rating, Image_URL || null]);
       const newMovieID = movieResults.insertId;
       console.log("Movie ID Assigned: ", newMovieID);
-    } catch {
+    } catch (error) {
+      console.log(error)
       throw new Error('Movie Creation Failed')
     }
 
@@ -408,7 +417,8 @@ const addTechnology = async (req, res) => {
       const technologyQuery = 'INSERT INTO technology (Asset_ID, Model_Num, Type, Description, Image_URL) VALUES (?, ?, ?, ?, ?)';
       await connection.query(technologyQuery, [newAssetId, Model_Num, Type, Description, Copies, Image_URL || null]);
       console.log("technology inserted");
-    } catch {
+    } catch (error) {
+      console.log(error)
       throw new Error('Technology Creation Failed')
     }
 
@@ -456,7 +466,8 @@ const addStudyRoom = async (req, res) => {
       const roomQuery = 'INSERT INTO study_room (Asset_ID, Room_Number, Capacity, Availability, Image_URL) VALUES (?, ?, ?, 1, ?)';
       await connection.query(roomQuery, [newAssetId, Room_Number, Capacity, Image_URL || null]);
       console.log('study room inserted')
-    } catch {
+    } catch (error){
+      console.log(error)
       throw new Error('Study Room Creation Failed')
     }
     //end transaction
