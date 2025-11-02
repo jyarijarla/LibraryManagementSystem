@@ -159,6 +159,7 @@ const getAllStudyRooms = async (req, res) => {
 
 // Add a new book
 const addBook = async (req, res) => {
+  const connection = await db.promise().getConnection();
   try {
     const { ISBN, Title, Author, Page_Count, Copies, Image_URL } = req.body;
     
@@ -173,67 +174,39 @@ const addBook = async (req, res) => {
     // Image can be uploaded via req.file but we won't store it in database
     const imagePath = req.file ? `/assets/uploads/${req.file.filename}` : null;
     console.log('🖼️  Image path:', imagePath);
+    
+    //start transaction
+    await connection.beginTransaction();
 
-    // First, get the max Asset_ID
-    console.log('📊 Getting max Asset_ID...');
-    db.query('SELECT MAX(Asset_ID) as maxId FROM asset', (err, result) => {
-      if (err) {
-        console.error('❌ Error getting max Asset_ID:');
-        console.error('Error code:', err.code);
-        console.error('Error message:', err.message);
-        console.error('Full error:', err);
-        return res.writeHead(500, { 'Content-Type': 'application/json' })
-          .end(JSON.stringify({ error: 'Database error', details: err.message }));
-      }
+    //inserting into asset
+    const assetQuery = 'INSERT INTO asset (Asset_TypeID) VALUES (?)';
+    const [assetResult] = await connection.query(assetQuery, [1]);//[1] being the asset_type for book
+    const newAssetId = assetResult.insertId;
+    console.log("Asset ID Assigned:", newAssetId);
+    
+    //inserting into book
+    const bookQuery = 'INSERT INTO book (Asset_ID, ISBN, Title, Author, Page_Count, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';
+    await connection.query(bookQuery, [newAssetId, ISBN, Title, Author, Page_Count, Image_URL || null]);
+    console.log("Insert into book successful");
 
-      const newAssetId = (result[0].maxId || 0) + 1;
-      console.log('✅ New Asset_ID will be:', newAssetId);
+    //inserting rentables based on copies
+    const rentableQuery = 'INSERT INTO rentable (Asset_ID, Availability, Fee) VALUES (?, ?, ?)';
+    for(let r = 0; r < Copies; r++){
+      await connection.query(rentableQuery, [newAssetId, 1, 0.00])
+    }
+    
+    //end transaction
+    await connection.commit();
 
-      // Insert into asset table first with Asset_TypeID = 1 for book
-      const assetQuery = 'INSERT INTO asset (Asset_ID, Asset_TypeID) VALUES (?, ?)';
-      console.log('📝 Inserting into asset table...');
-      db.query(assetQuery, [newAssetId, 1], (err) => {
-        if (err) {
-          console.error('❌ Error inserting into asset:');
-          console.error('Error code:', err.code);
-          console.error('Error message:', err.message);
-          console.error('Full error:', err);
-          return res.writeHead(500, { 'Content-Type': 'application/json' })
-            .end(JSON.stringify({ error: 'Failed to create asset', details: err.message }));
-        }
-
-        console.log('✅ Asset created successfully');
-        
-        // Insert into book table with Image_URL
-        const bookQuery = `
-          INSERT INTO book (Asset_ID, ISBN, Title, Author, Page_Count, Copies, Available_Copies, Image_URL)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-        
-        console.log('📚 Inserting into book table...');
-        console.log('Book data:', [newAssetId, ISBN, Title, Author, Page_Count, Copies, Copies, Image_URL || null]);
-        
-        db.query(bookQuery, [newAssetId, ISBN, Title, Author, Page_Count, Copies, Copies, Image_URL || null], (err, result) => {
-          if (err) {
-            console.error('❌ Error adding book:');
-            console.error('Error code:', err.code);
-            console.error('Error message:', err.message);
-            console.error('Full error:', err);
-            return res.writeHead(500, { 'Content-Type': 'application/json' })
-              .end(JSON.stringify({ error: 'Failed to add book', details: err.message }));
-          }
-          
-          console.log('✅ Book added successfully!');
-          res.writeHead(201, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ 
-            message: 'Book added successfully',
-            assetId: newAssetId,
-            imageUrl: imagePath // Still return image path for frontend use
-          }));
-        });
-      });
-    });
+    console.log(Copies, " inserts into rentable successful");
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      message: 'Book added successfully',
+      assetId: newAssetId,
+      imageUrl: imagePath // Still return image path for frontend use
+    }));
   } catch (error) {
+    await connection.rollback();
     console.error('❌ Error in addBook:', error);
     res.writeHead(500, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({ error: 'Server error', details: error.message }));
