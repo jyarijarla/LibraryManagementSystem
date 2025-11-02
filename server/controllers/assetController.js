@@ -4,7 +4,7 @@ const db = require('../db');
 const getAllBooks = async (req, res) => {
   try {
     const query = `
-      SELECT b.Asset_ID, b.ISBN, b.Title, b.Author, b.Page_Count, b.Copies, b.Available_Copies
+      SELECT b.Asset_ID, b.ISBN, b.Title, b.Author, b.Page_Count, b.Copies, b.Available_Copies, b.Image_URL
       FROM book b
       ORDER BY b.Title
     `;
@@ -36,7 +36,7 @@ const getAllBooks = async (req, res) => {
 const getAllCDs = async (req, res) => {
   try {
     const query = `
-      SELECT c.Asset_ID, c.Total_Tracks, c.Total_Duration_In_Minutes, c.Title, c.Artist, c.Copies, c.Available_Copies
+      SELECT c.Asset_ID, c.Total_Tracks, c.Total_Duration_In_Minutes, c.Title, c.Artist, c.Copies, c.Available_Copies, c.Image_URL
       FROM cd c
       ORDER BY c.Title
     `;
@@ -61,7 +61,7 @@ const getAllCDs = async (req, res) => {
 const getAllAudiobooks = async (req, res) => {
   try {
     const query = `
-      SELECT ab.Asset_ID, ab.ISBN, ab.Title, ab.Author, ab.length, ab.Copies, ab.Available_Copies
+      SELECT ab.Asset_ID, ab.ISBN, ab.Title, ab.Author, ab.length, ab.Copies, ab.Available_Copies, ab.Image_URL
       FROM audiobook ab
       ORDER BY ab.Title
     `;
@@ -86,7 +86,7 @@ const getAllAudiobooks = async (req, res) => {
 const getAllMovies = async (req, res) => {
   try {
     const query = `
-      SELECT m.Asset_ID, m.Title, m.Release_Year, m.Age_Rating, m.Available_Copies
+      SELECT m.Asset_ID, m.Title, m.Release_Year, m.Age_Rating, m.Available_Copies, m.Image_URL
       FROM movie m
       ORDER BY m.Title
     `;
@@ -111,7 +111,7 @@ const getAllMovies = async (req, res) => {
 const getAllTechnology = async (req, res) => {
   try {
     const query = `
-      SELECT t.Asset_ID, t.Model_Num, t.Type, t.Description, t.Copies
+      SELECT t.Asset_ID, t.Model_Num, t.Type, t.Description, t.Copies, t.Image_URL
       FROM technology t
       ORDER BY t.Type, t.Model_Num
     `;
@@ -136,7 +136,7 @@ const getAllTechnology = async (req, res) => {
 const getAllStudyRooms = async (req, res) => {
   try {
     const query = `
-      SELECT sr.Asset_ID, sr.Room_Number, sr.Capacity, sr.Availability
+      SELECT sr.Asset_ID, sr.Room_Number, sr.Capacity, sr.Availability, sr.Image_URL
       FROM study_room sr
       ORDER BY sr.Room_Number
     `;
@@ -160,9 +160,9 @@ const getAllStudyRooms = async (req, res) => {
 // Add a new book
 const addBook = async (req, res) => {
   try {
-    const { ISBN, Title, Author, Page_Count, Copies } = req.body;
+    const { ISBN, Title, Author, Page_Count, Copies, Image_URL } = req.body;
     
-    console.log('📚 addBook - Received data:', { ISBN, Title, Author, Page_Count, Copies });
+    console.log('📚 addBook - Received data:', { ISBN, Title, Author, Page_Count, Copies, Image_URL });
     
     if (!ISBN || !Title || !Author || !Page_Count || !Copies) {
       console.log('❌ Missing required fields');
@@ -204,16 +204,16 @@ const addBook = async (req, res) => {
 
         console.log('✅ Asset created successfully');
         
-        // Insert into book table (without Image_URL column)
+        // Insert into book table with Image_URL
         const bookQuery = `
-          INSERT INTO book (Asset_ID, ISBN, Title, Author, Page_Count, Copies, Available_Copies)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO book (Asset_ID, ISBN, Title, Author, Page_Count, Copies, Available_Copies, Image_URL)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
         
         console.log('📚 Inserting into book table...');
-        console.log('Book data:', [newAssetId, ISBN, Title, Author, Page_Count, Copies, Copies]);
+        console.log('Book data:', [newAssetId, ISBN, Title, Author, Page_Count, Copies, Copies, Image_URL || null]);
         
-        db.query(bookQuery, [newAssetId, ISBN, Title, Author, Page_Count, Copies, Copies], (err, result) => {
+        db.query(bookQuery, [newAssetId, ISBN, Title, Author, Page_Count, Copies, Copies, Image_URL || null], (err, result) => {
           if (err) {
             console.error('❌ Error adding book:');
             console.error('Error code:', err.code);
@@ -243,7 +243,7 @@ const addBook = async (req, res) => {
 // Add a new CD
 const addCD = async (req, res) => {
   try {
-    const { Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Copies } = req.body;
+    const { Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Copies, Image_URL } = req.body;
     
     if (!Total_Tracks || !Total_Duration_In_Minutes || !Title || !Artist || !Copies) {
       return res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -302,11 +302,11 @@ const addCD = async (req, res) => {
             const newCDID = (result[0].maxCDID || 0) + 1;
 
             const cdQuery = `
-              INSERT INTO cd (Asset_ID, CD_ID, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Copies, Available_Copies)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              INSERT INTO cd (Asset_ID, CD_ID, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Copies, Available_Copies, Image_URL)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             `;
             
-            db.query(cdQuery, [newAssetId, newCDID, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Copies, Copies], (err) => {
+            db.query(cdQuery, [newAssetId, newCDID, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Copies, Copies, Image_URL || null], (err) => {
               if (err) {
                 console.error('Error adding CD:', err);
                 return res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -333,7 +333,7 @@ const addCD = async (req, res) => {
 // Add other asset types similarly...
 const addAudiobook = async (req, res) => {
   try {
-    const { ISBN, Title, Author, length, Copies } = req.body;
+    const { ISBN, Title, Author, length, Copies, Image_URL } = req.body;
     
     if (!ISBN || !Title || !Author || !length || !Copies) {
       return res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -373,11 +373,11 @@ const addAudiobook = async (req, res) => {
           }
 
           const audiobookQuery = `
-            INSERT INTO audiobook (Asset_ID, ISBN, Title, Author, length, Copies, Available_Copies)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO audiobook (Asset_ID, ISBN, Title, Author, length, Copies, Available_Copies, Image_URL)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           `;
           
-          db.query(audiobookQuery, [newAssetId, ISBN, Title, Author, length, Copies, Copies], (err) => {
+          db.query(audiobookQuery, [newAssetId, ISBN, Title, Author, length, Copies, Copies, Image_URL || null], (err) => {
             if (err) {
               console.error('Error adding audiobook:', err);
               return res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -402,7 +402,7 @@ const addAudiobook = async (req, res) => {
 
 const addMovie = async (req, res) => {
   try {
-    const { Title, Release_Year, Age_Rating, Copies } = req.body;
+    const { Title, Release_Year, Age_Rating, Copies, Image_URL } = req.body;
     
     if (!Title || !Release_Year || !Age_Rating || !Copies) {
       return res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -452,11 +452,11 @@ const addMovie = async (req, res) => {
             const newMovieID = (result[0].maxMovieID || 0) + 1;
 
             const movieQuery = `
-              INSERT INTO movie (Asset_ID, Movie_ID, Title, Release_Year, Age_Rating, Available_Copies)
-              VALUES (?, ?, ?, ?, ?, ?)
+              INSERT INTO movie (Asset_ID, Movie_ID, Title, Release_Year, Age_Rating, Available_Copies, Image_URL)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
             `;
             
-            db.query(movieQuery, [newAssetId, newMovieID, Title, Release_Year, Age_Rating, Copies], (err) => {
+            db.query(movieQuery, [newAssetId, newMovieID, Title, Release_Year, Age_Rating, Copies, Image_URL || null], (err) => {
               if (err) {
                 console.error('Error adding movie:', err);
                 return res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -482,7 +482,7 @@ const addMovie = async (req, res) => {
 
 const addTechnology = async (req, res) => {
   try {
-    const { Model_Num, Type, Description, Copies } = req.body;
+    const { Model_Num, Type, Description, Copies, Image_URL } = req.body;
     
     if (!Model_Num || !Type || !Description || !Copies) {
       return res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -525,12 +525,12 @@ const addTechnology = async (req, res) => {
               .end(JSON.stringify({ error: 'Failed to create asset', details: err.message }));
           }
 
-          const techQuery = `
-            INSERT INTO technology (Asset_ID, Model_Num, Type, Description, Copies)
-            VALUES (?, ?, ?, ?, ?)
+          const technologyQuery = `
+            INSERT INTO technology (Asset_ID, Model_Num, Type, Description, Copies, Image_URL)
+            VALUES (?, ?, ?, ?, ?, ?)
           `;
           
-          db.query(techQuery, [newAssetId, Model_Num, Type, Description, Copies], (err) => {
+          db.query(technologyQuery, [newAssetId, Model_Num, Type, Description, Copies, Image_URL || null], (err) => {
             if (err) {
               console.error('Error adding technology:', err);
               return res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -555,7 +555,7 @@ const addTechnology = async (req, res) => {
 
 const addStudyRoom = async (req, res) => {
   try {
-    const { Room_Number, Capacity } = req.body;
+    const { Room_Number, Capacity, Image_URL } = req.body;
     
     if (!Room_Number || !Capacity) {
       return res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -595,11 +595,11 @@ const addStudyRoom = async (req, res) => {
           }
 
           const roomQuery = `
-            INSERT INTO study_room (Asset_ID, Room_Number, Capacity, Availability)
-            VALUES (?, ?, ?, 1)
+            INSERT INTO study_room (Asset_ID, Room_Number, Capacity, Availability, Image_URL)
+            VALUES (?, ?, ?, 1, ?)
           `;
           
-          db.query(roomQuery, [newAssetId, Room_Number, Capacity], (err) => {
+          db.query(roomQuery, [newAssetId, Room_Number, Capacity, Image_URL || null], (err) => {
             if (err) {
               console.error('Error adding study room:', err);
               return res.writeHead(500, { 'Content-Type': 'application/json' })

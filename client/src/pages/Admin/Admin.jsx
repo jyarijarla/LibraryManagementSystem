@@ -9,10 +9,10 @@ const API_URL = window.location.hostname === 'localhost'
   : 'https://librarymanagementsystem-z2yw.onrender.com/api'
 
 // Helper function to get image path for an asset
-const getAssetImagePath = (assetType, assetId) => {
-  // Will try to load image as {Asset_ID}.jpg from the asset type folder
-  // Browser will show broken image if it doesn't exist, which we handle with onError
-  return `/assets/${assetType}/${assetId}.jpg`
+const getAssetImagePath = (assetType, assetId, extension = 'png') => {
+  // Returns image path with specified extension
+  // Default to .png, but can be .jpg, .jpeg, .gif, .webp, etc.
+  return `/assets/${assetType}/${assetId}.${extension}`
 }
 
 function Admin() {
@@ -40,6 +40,7 @@ function Admin() {
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [itemToDelete, setItemToDelete] = useState(null)
   const [isEditMode, setIsEditMode] = useState(false)
+  const [imageRefreshKey, setImageRefreshKey] = useState(Date.now()) // Cache buster for images
   
   // Report states
   const [mostBorrowedReport, setMostBorrowedReport] = useState([])
@@ -214,18 +215,77 @@ function Admin() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    setSuccessMessage('') // Clear previous messages
     try {
-      // First create the asset in database
+      let imageUrl = assetForm.Image_URL || ''
+      
+      // If editing and no new image, keep existing
+      if (isEditMode && !imageFile && assetForm.Image_URL) {
+        imageUrl = assetForm.Image_URL
+      }
+      
+      // Upload image if a new file is selected
+      if (imageFile) {
+        // First get the Asset_ID (either from edit mode or will be generated)
+        const assetId = isEditMode ? assetForm.Asset_ID : null
+        
+        console.log('Uploading image:', imageFile.name, 'for asset type:', activeAssetTab)
+        const formData = new FormData()
+        formData.append('image', imageFile)
+        formData.append('assetType', activeAssetTab)
+        
+        // If we don't have assetId yet (adding new), we'll upload after creation
+        if (assetId) {
+          formData.append('assetId', assetId)
+          
+          // Show uploading message
+          setSuccessMessage('Uploading image...')
+          
+                  // Add timeout to upload request (5 minutes for large files)
+        const uploadController = new AbortController()
+        const uploadTimeout = setTimeout(() => uploadController.abort(), 300000)
+          
+          try {
+            const uploadResponse = await fetch(`${API_URL}/upload`, {
+              method: 'POST',
+              body: formData,
+              signal: uploadController.signal
+            })
+            
+            clearTimeout(uploadTimeout)
+            
+            if (uploadResponse.ok) {
+              const uploadData = await uploadResponse.json()
+              imageUrl = uploadData.imageUrl
+              console.log('Image uploaded successfully, URL:', imageUrl)
+            } else {
+              const errorText = await uploadResponse.text()
+              console.error('Upload failed:', errorText)
+              throw new Error('Failed to upload image')
+            }
+          } catch (uploadError) {
+            clearTimeout(uploadTimeout)
+            if (uploadError.name === 'AbortError') {
+              throw new Error('Upload timed out. Please try with a smaller image.')
+            }
+            throw uploadError
+          }
+        }
+      }
+      
+      // Create/update the asset in database
       const url = isEditMode 
         ? `${API_URL}/assets/${activeAssetTab}/${assetForm.Asset_ID}`
         : `${API_URL}/assets/${activeAssetTab}`;
       
       const method = isEditMode ? 'PUT' : 'POST';
       
+      const assetData = { ...assetForm, Image_URL: imageUrl }
+      
       const response = await fetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(assetForm)
+        body: JSON.stringify(assetData)
       })
       
       if (!response.ok) {
@@ -234,31 +294,63 @@ function Admin() {
       }
       
       const result = await response.json()
-      const assetId = isEditMode ? assetForm.Asset_ID : result.assetId
+      const newAssetId = result.assetId
       
-      console.log(`Asset ${isEditMode ? 'updated' : 'created'} with ID:`, assetId)
+      console.log(`Asset ${isEditMode ? 'updated' : 'created'} with ID:`, newAssetId)
       
-      // Now upload image if selected, using Asset_ID as filename
-      if (imageFile) {
-        console.log('Uploading image for Asset ID:', assetId)
+      // Now upload image for new assets
+      if (!isEditMode && imageFile && newAssetId) {
+        console.log('Uploading image for new Asset ID:', newAssetId)
+        setSuccessMessage('Uploading image...')
+        
         const formData = new FormData()
         formData.append('image', imageFile)
         formData.append('assetType', activeAssetTab)
-        formData.append('assetId', assetId) // Send Asset_ID to name the file
+        formData.append('assetId', newAssetId)
         
-        const uploadResponse = await fetch(`${API_URL}/upload`, {
-          method: 'POST',
-          body: formData
-        })
+        // Add timeout to upload request (60 seconds)
+        const uploadController = new AbortController()
+        const uploadTimeout = setTimeout(() => uploadController.abort(), 60000)
         
-        if (uploadResponse.ok) {
-          const uploadData = await uploadResponse.json()
-          console.log('Image uploaded successfully:', uploadData.imageUrl)
-        } else {
-          console.warn('Image upload failed, but asset was saved')
+        try {
+          const uploadResponse = await fetch(`${API_URL}/upload`, {
+            method: 'POST',
+            body: formData,
+            signal: uploadController.signal
+          })
+          
+          clearTimeout(uploadTimeout)
+          
+          if (uploadResponse.ok) {
+            const uploadData = await uploadResponse.json()
+            console.log('Image uploaded successfully:', uploadData.imageUrl)
+            
+            // Update the asset with the image URL
+            await fetch(`${API_URL}/assets/${activeAssetTab}/${newAssetId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...assetForm, Asset_ID: newAssetId, Image_URL: uploadData.imageUrl })
+            })
+          } else {
+            console.warn('Image upload failed, but asset was saved')
+          }
+        } catch (uploadError) {
+          clearTimeout(uploadTimeout)
+          if (uploadError.name === 'AbortError') {
+            console.warn('Upload timed out, but asset was saved')
+          } else {
+            console.warn('Image upload failed, but asset was saved:', uploadError)
+          }
         }
       }
       
+      // Refresh the data first
+      await fetchAssets(activeAssetTab)
+      
+      // Force image refresh by updating cache key
+      setImageRefreshKey(Date.now())
+      
+      // Then close modal and clear form
       setShowAssetModal(false)
       setAssetForm({})
       setImageFile(null)
@@ -272,8 +364,6 @@ function Admin() {
       setTimeout(() => {
         setSuccessMessage('')
       }, 3000)
-      
-      await fetchAssets(activeAssetTab)
     } catch (error) {
       setError(error.message)
       console.error('Error saving asset:', error)
@@ -285,12 +375,31 @@ function Admin() {
   const handleImageChange = (e) => {
     const file = e.target.files[0]
     if (file) {
+      // Increased max size to 100MB
+      const maxSize = 100 * 1024 * 1024; // 100MB
+      if (file.size > maxSize) {
+        setError('Image file is too large. Please select an image smaller than 100MB.');
+        return;
+      }
+
+      // Check if it's an image
+      if (!file.type.startsWith('image/')) {
+        setError('Please select a valid image file.');
+        return;
+      }
+
       setImageFile(file)
       const reader = new FileReader()
       reader.onloadend = () => {
         setImagePreview(reader.result)
       }
+      reader.onerror = () => {
+        setError('Failed to read image file.');
+      }
       reader.readAsDataURL(file)
+      
+      // Clear any previous errors
+      setError('')
     }
   }
 
@@ -336,14 +445,16 @@ function Admin() {
         throw new Error(errorData.error || 'Failed to delete asset')
       }
       
+      // Refresh the data first
+      await fetchAssets(activeAssetTab)
+      
+      // Then close modal and clear state
       setShowDeleteModal(false)
       setItemToDelete(null)
       
       // Show success message
       setSuccessMessage('Asset deleted successfully!')
       setTimeout(() => setSuccessMessage(''), 3000)
-      
-      await fetchAssets(activeAssetTab)
     } catch (error) {
       setError(error.message)
       console.error('Error deleting asset:', error)
@@ -630,7 +741,11 @@ function Admin() {
                 {/* Image Section */}
                 <div className="card-image">
                   <img 
-                    src={getAssetImagePath(activeAssetTab, item.Asset_ID)} 
+                    src={
+                      item.Image_URL 
+                        ? `${item.Image_URL}?t=${imageRefreshKey}` 
+                        : `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'png')}?t=${imageRefreshKey}`
+                    }
                     alt={item.Title || item.Room_Number || 'Asset'}
                     onLoad={(e) => {
                       e.target.style.display = 'block';
@@ -638,13 +753,25 @@ function Admin() {
                       if (placeholder) placeholder.style.display = 'none';
                     }}
                     onError={(e) => {
-                      e.target.style.display = 'none';
-                      const placeholder = e.target.nextElementSibling;
-                      if (placeholder) placeholder.style.display = 'flex';
+                      // Try other common extensions if PNG fails
+                      const currentSrc = e.target.src;
+                      if (currentSrc.includes('.png')) {
+                        e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'jpg')}?t=${imageRefreshKey}`;
+                      } else if (currentSrc.includes('.jpg')) {
+                        e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'jpeg')}?t=${imageRefreshKey}`;
+                      } else if (currentSrc.includes('.jpeg')) {
+                        e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'gif')}?t=${imageRefreshKey}`;
+                      } else if (currentSrc.includes('.gif')) {
+                        e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'webp')}?t=${imageRefreshKey}`;
+                      } else {
+                        // All extensions failed, show placeholder
+                        e.target.style.display = 'none';
+                        const placeholder = e.target.nextElementSibling;
+                        if (placeholder) placeholder.style.display = 'flex';
+                      }
                     }}
-                    style={{ display: 'none' }}
                   />
-                  <div className="image-placeholder-card" style={{ display: 'flex' }}>
+                  <div className="image-placeholder-card">
                     <span>N/A</span>
                   </div>
                 </div>
@@ -1049,9 +1176,24 @@ function Admin() {
         </div>
       </nav>
 
+      {/* Loading Overlay with Open Book Animation */}
       {loading && (
         <div className="loading-overlay">
-          <div className="spinner"></div>
+          <div className="book-loader-container">
+            <div className="book-loader">
+              <div className="book-base">
+                <div className="book-left"></div>
+                <div className="book-right"></div>
+              </div>
+              <div className="book-page"></div>
+              <div className="book-page"></div>
+              <div className="book-page"></div>
+              <div className="book-spine"></div>
+            </div>
+            <span className="loading-text loading-dots">
+              {successMessage || 'Loading'}
+            </span>
+          </div>
         </div>
       )}
 

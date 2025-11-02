@@ -1,6 +1,6 @@
 const Busboy = require('busboy');
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 // Base assets directory
 const assetsDir = path.join(__dirname, '..', '..', 'client', 'public', 'assets');
@@ -23,49 +23,112 @@ const handleUpload = (req, res) => {
     return;
   }
 
-  console.log('Upload request received');
-  const busboy = Busboy({ headers: req.headers });
+  console.log('📤 Upload request received');
+  
+  const busboy = Busboy({ 
+    headers: req.headers,
+    limits: {
+      fileSize: 100 * 1024 * 1024, // 100MB max file size
+      files: 1 // Only allow 1 file at a time
+    }
+  });
+  
   let uploadedFile = null;
   let isResponseSent = false;
-  let assetType = 'general'; // Default folder
-  let assetId = null; // Asset ID for filename
-  let pendingFile = null;
+  let assetType = null;
+  let assetId = null;
+  let fileBuffer = null;
+  let fileInfo = null;
+  let processingComplete = false;
 
-  // Parse fields to get asset type and asset ID FIRST
+  // Collect all fields first
+  const fields = {};
+  
   busboy.on('field', (fieldname, value) => {
+    fields[fieldname] = value;
+    console.log(`📝 Field received: ${fieldname} = ${value}`);
+    
     if (fieldname === 'assetType') {
       assetType = value;
-      console.log(`Asset type: ${assetType}`);
     } else if (fieldname === 'assetId') {
       assetId = value;
-      console.log(`Asset ID: ${assetId}`);
-    }
-    
-    // If we have both assetType and assetId, and a pending file, process it now
-    if (pendingFile && assetType && assetId) {
-      processFile(pendingFile.fieldname, pendingFile.file, pendingFile.info, assetType, assetId);
-      pendingFile = null;
     }
   });
 
-  function processFile(fieldname, file, info, type, assetId) {
+  busboy.on('file', (fieldname, file, info) => {
     const { filename, mimeType } = info;
-    console.log(`Processing file: ${filename}, type: ${mimeType}, asset type: ${type}, asset ID: ${assetId}`);
+    console.log(`📎 File received: ${filename}, type: ${mimeType}`);
     
     // Check if it's an image
     if (!mimeType.startsWith('image/')) {
+      console.log('❌ Invalid file type');
+      file.resume(); // Drain the stream
       if (!isResponseSent) {
         isResponseSent = true;
         res.statusCode = 400;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ error: 'Only image files are allowed' }));
       }
-      file.resume(); // Drain the stream
       return;
     }
 
+    // Buffer the file data
+    const chunks = [];
+    file.on('data', (chunk) => {
+      chunks.push(chunk);
+    });
+
+    file.on('end', () => {
+      fileBuffer = Buffer.concat(chunks);
+      fileInfo = { filename, mimeType };
+      console.log(`✅ File buffered: ${fileBuffer.length} bytes`);
+    });
+
+    file.on('error', (error) => {
+      console.error('❌ File stream error:', error);
+      if (!isResponseSent) {
+        isResponseSent = true;
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'File upload failed: ' + error.message }));
+      }
+    });
+  });
+
+  busboy.on('finish', () => {
+    console.log('✅ Busboy finished parsing');
+    
+    // Now process the buffered file with the collected fields
+    if (!fileBuffer || !fileInfo) {
+      console.log('❌ No file was uploaded');
+      if (!isResponseSent) {
+        isResponseSent = true;
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'No file uploaded' }));
+      }
+      return;
+    }
+
+    // Use fields from the collected fields object
+    const finalAssetType = assetType || fields.assetType || 'general';
+    const finalAssetId = assetId || fields.assetId;
+
+    if (!finalAssetId) {
+      console.log('❌ No asset ID provided');
+      if (!isResponseSent) {
+        isResponseSent = true;
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Asset ID is required' }));
+      }
+      return;
+    }
+
+    console.log(`💾 Saving file for Asset ID: ${finalAssetId}, Type: ${finalAssetType}`);
+
     // Determine upload directory based on asset type
-    const uploadDir = path.join(assetsDir, type);
+    const uploadDir = path.join(assetsDir, finalAssetType);
     
     // Create directory if it doesn't exist
     if (!fs.existsSync(uploadDir)) {
@@ -73,52 +136,25 @@ const handleUpload = (req, res) => {
     }
 
     // Use Asset_ID as filename with original extension
-    const ext = path.extname(filename) || '.png';
-    const newFilename = `${assetId}${ext}`;
+    const ext = path.extname(fileInfo.filename) || '.png';
+    const newFilename = `${finalAssetId}${ext}`;
     const savePath = path.join(uploadDir, newFilename);
 
-    console.log(`Saving to: ${savePath}`);
+    console.log(`💾 Saving to: ${savePath}`);
 
-    // Save the file
-    const writeStream = fs.createWriteStream(savePath);
-    file.pipe(writeStream);
-
-    writeStream.on('finish', () => {
-      console.log(`File saved successfully: ${newFilename} in ${type} folder`);
-      uploadedFile = {
-        filename: newFilename,
-        path: `/assets/${type}/${newFilename}`
-      };
-    });
-
-    writeStream.on('error', (error) => {
-      console.error('Error saving file:', error);
-      if (!isResponseSent) {
-        isResponseSent = true;
-        res.statusCode = 500;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ error: 'Failed to save file: ' + error.message }));
-      }
-    });
-  }
-
-  busboy.on('file', (fieldname, file, info) => {
-    // Store the file info until we get both asset type and asset ID
-    if (!assetType || !assetId) {
-      console.log('File received before asset type/ID, storing...');
-      pendingFile = { fieldname, file, info };
-    } else {
-      processFile(fieldname, file, info, assetType, assetId);
-    }
-  });
-
-  busboy.on('finish', () => {
-    console.log('Busboy finished parsing');
-    // Wait a bit to ensure file write is complete
+    // Add 3 second delay to show the animation
     setTimeout(() => {
-      if (!isResponseSent) {
-        if (uploadedFile) {
-          console.log('Sending success response:', uploadedFile);
+      // Write the buffered file
+      try {
+        fs.writeFileSync(savePath, fileBuffer);
+        console.log(`✅ File saved successfully: ${newFilename} in ${finalAssetType} folder`);
+        
+        uploadedFile = {
+          filename: newFilename,
+          path: `/assets/${finalAssetType}/${newFilename}`
+        };
+
+        if (!isResponseSent) {
           isResponseSent = true;
           res.statusCode = 200;
           res.setHeader('Content-Type', 'application/json');
@@ -127,24 +163,37 @@ const handleUpload = (req, res) => {
             imageUrl: uploadedFile.path,
             filename: uploadedFile.filename
           }));
-        } else {
-          console.log('No file was uploaded');
+        }
+      } catch (error) {
+        console.error('❌ Error saving file:', error);
+        if (!isResponseSent) {
           isResponseSent = true;
-          res.statusCode = 400;
+          res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: 'No file uploaded' }));
+          res.end(JSON.stringify({ error: 'Failed to save file: ' + error.message }));
         }
       }
-    }, 100);
+    }, 3000); // 3 second delay to show animation
   });
 
   busboy.on('error', (error) => {
-    console.error('Busboy error:', error);
+    console.error('❌ Busboy error:', error);
     if (!isResponseSent) {
       isResponseSent = true;
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ error: 'Upload failed: ' + error.message }));
+    }
+  });
+
+  // Handle request errors
+  req.on('error', (error) => {
+    console.error('❌ Request error:', error);
+    if (!isResponseSent) {
+      isResponseSent = true;
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Request failed: ' + error.message }));
     }
   });
 
