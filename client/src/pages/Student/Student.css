@@ -151,3 +151,11 @@
     font-size: 16px;
   }
 }
+/*Options Navbar*/
+.options-nav {
+  width: 100%;
+}
+/*Asset Navbar*/
+.asset-nav {
+  width: 100%;
+}

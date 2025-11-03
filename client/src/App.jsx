@@ -14,9 +14,9 @@ import Movies from './pages/Movie/Movies'
 function AppContent() {
   const location = useLocation()
   const pathname = location.pathname.toLowerCase()
-  const showNavbar = pathname !== '/login' && 
-                     pathname !== '/admin' &&
-                     pathname !== '/student'
+  const showNavbar = !pathname.startsWith('/login') && 
+                     !pathname.startsWith('/admin') &&
+                     !pathname.startsWith('/student')
 
   return (
     <>
@@ -24,7 +24,7 @@ function AppContent() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/student" element={<Student />} />
+        <Route path="/student/*" element={<Student />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/book-item" element={<BookItem />} />
         <Route path="/about" element={<About />} />     

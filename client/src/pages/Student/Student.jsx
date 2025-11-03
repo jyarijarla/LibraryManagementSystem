@@ -1,7 +1,16 @@
-import { useNavigate } from 'react-router-dom'
-import './Student.css'
+import { useNavigate, NavLink, Routes, Route } from 'react-router-dom'
+import './Dashboard.css'
 
-function Student() {
+const StudentWelcome = () => {
+  return (
+    <div className="welcome-section">
+      <h2>Welcome, Student!</h2>
+      <p>This is your student dashboard.</p>
+    </div>
+  )
+}
+
+function StudentDashboard() {
   const navigate = useNavigate()
 
   const handleLogout = () => {
@@ -29,14 +38,12 @@ function Student() {
         <div className="dashboard-title-bar">
           <h1>Student Dashboard</h1>
         </div>
-        
-        <div className="welcome-section">
-          <h2>Welcome, Student!</h2>
-          <p>This is your student dashboard.</p>
-        </div>
+          <Routes>
+            <Route path="/" element={ <StudentWelcome />} />
+          </Routes>
       </div>
     </div>
   )
 }
 
-export default Student
+export default StudentDashboard
