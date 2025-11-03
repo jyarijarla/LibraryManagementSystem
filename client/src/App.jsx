@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
 import Login from './pages/Login/Login'
-import Student from './pages/Student/Student'
+import Student from './pages/Student/Dashboard'
 import Admin from './pages/Admin/Admin'
 import BookItem from './pages/BookItem/BookItem'
 import MovieItem from './pages/MovieItem/MovieItem'
