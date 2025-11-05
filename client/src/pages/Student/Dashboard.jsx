@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, NavLink } from 'react-router-dom';
+import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
 import './Dashboard.css';
 
 const API_URL =
@@ -108,7 +109,7 @@ function StudentDashboard() {
       <h2>Dashboard Overview</h2>
       
       <p>Currently Borrowed: {borrowRecords.filter(r => !r.Return_Date).length}</p>
-      {error && <div className="error">{error}</div>}
+      <ErrorPopup />
     </div>
   );
 
@@ -274,22 +275,23 @@ function StudentDashboard() {
           </div>
           <div className="student-navbar-right">
             <span className="student-navbar-role">Student</span>
-            <button onClick={handleLogout}>Logout</button>
+            <button className="student-navbar-logout"onClick={handleLogout}>Logout</button>
           </div>
         </div>
       </nav>
+      <LoadingOverlay loading={loading} loadMessage={successMessage} />
 
-      {loading && <div className="loading">Loading...</div>}
-      {successMessage && <div className="success">{successMessage}</div>}
-
+      <SuccessPopup successMessage={successMessage} />
       <div className="dashboard-content">
-        <div className="tabs-container">
-          <button className={activeTab === 'overview' ? 'active' : ''} onClick={() => changeTab('overview')}>Overview</button>
-          <button className={activeTab === 'assets' ? 'active' : ''} onClick={() => changeTab('assets')}>Assets</button>
-          
-          <button className={activeTab === 'inventory' ? 'active' : ''} onClick={() => changeTab('inventory')}>Inventory</button>
-          <button className={activeTab === 'reports' ? 'active' : ''} onClick={() => changeTab('reports')}>Reports</button>
+        <div className="dashboard-title-bar">
+          <h1>Student Dashboard</h1>
         </div>
+        <nav className="tabs-container">
+          <NavLink className={({ isActive }) => `tab ${isActive ? 'active' : ''}`} to='/student/overview'>Overview</NavLink>
+          <NavLink className={({ isActive }) => `tab ${isActive ? 'active' : ''}`} to='/student/assets'>Assets</NavLink>
+          <NavLink className={({ isActive }) => `tab ${isActive ? 'active' : ''}`} to='/student/inventory'>Inventory</NavLink>
+          <NavLink className={({ isActive }) => `tab ${isActive ? 'active' : ''}`} to='/student/reports'>Reports</NavLink>
+        </nav>
 
         {activeTab === 'overview' && renderOverview()}
         {activeTab === 'assets' && renderAssets()}

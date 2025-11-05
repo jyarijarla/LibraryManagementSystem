@@ -5,8 +5,8 @@
   padding-top: 0;
 }
 
-/* Admin Navbar */
-.admin-navbar {
+/* Student Navbar */
+.student-navbar {
   background: #1f2937;
   color: white;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
@@ -15,7 +15,7 @@
   z-index: 1000;
 }
 
-.admin-navbar-content {
+.student-navbar-content {
   max-width: 1600px;
   margin: 0 auto;
   padding: 16px 40px;
@@ -24,31 +24,31 @@
   align-items: center;
 }
 
-.admin-navbar-left {
+.student-navbar-left {
   display: flex;
   align-items: center;
 }
 
-.admin-navbar-title {
+.student-navbar-title {
   font-size: 22px;
   font-weight: 700;
   margin: 0;
   color: white;
 }
 
-.admin-navbar-right {
+.student-navbar-right {
   display: flex;
   align-items: center;
   gap: 20px;
 }
 
-.admin-navbar-role {
+.student-navbar-role {
   font-size: 14px;
   color: #9ca3af;
   font-weight: 500;
 }
 
-.admin-navbar-logout {
+.student-navbar-logout {
   background: #dc2626;
   color: white;
   border: none;
@@ -60,7 +60,7 @@
   transition: all 0.3s ease;
 }
 
-.admin-navbar-logout:hover {
+.student-navbar-logout:hover {
   background: #991b1b;
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(220, 38, 38, 0.3);
@@ -817,15 +817,15 @@
 
 /* Responsive design */
 @media (max-width: 768px) {
-  .admin-navbar-content {
+  .student-navbar-content {
     padding: 12px 20px;
   }
 
-  .admin-navbar-title {
+  .student-navbar-title {
     font-size: 18px;
   }
 
-  .admin-navbar-role {
+  .student-navbar-role {
     display: none;
   }
 
@@ -869,7 +869,7 @@
     overflow-x: auto;
   }
 
-  .admin-table {
+  .student-table {
     min-width: 800px;
   }
 
