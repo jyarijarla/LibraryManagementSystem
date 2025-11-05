@@ -99,6 +99,116 @@ function StudentDashboard() {
     }
   };
 
+  const fetchAssets = async (assetType) => {
+    try {
+      console.log(`Fetching assets: ${assetType} from ${API_URL}/assets/${assetType}`)
+      const response = await fetch(`${API_URL}/assets/${assetType}`)
+      console.log(`Response status: ${response.status}`)
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`Failed to fetch ${assetType}:`, errorText)
+        throw new Error(`Failed to fetch ${assetType}: ${response.status}`)
+      }
+      const data = await response.json()
+      console.log(`Received ${data.length} ${assetType}`, data)
+      
+      // Log images
+      data.forEach(item => {
+        if (item.Image_URL) {
+          console.log(`Asset ${item.Asset_ID} has image:`, item.Image_URL)
+        }
+      })
+      
+      // Sort by Asset_ID in ascending order
+      const sortedData = data.sort((a, b) => a.Asset_ID - b.Asset_ID)
+      
+      switch(assetType) {
+        case 'books': setBooks(sortedData); break;
+        case 'cds': setCds(sortedData); break;
+        case 'audiobooks': setAudiobooks(sortedData); break;
+        case 'movies': setMovies(sortedData); break;
+        case 'technology': setTechnology(sortedData); break;
+        case 'study-rooms': setStudyRooms(sortedData); break;
+        default: break;
+      }
+    } catch (error) {
+      console.error(`Error fetching ${assetType}:`, error)
+      // Don't throw - let it fail silently for individual assets
+    }
+  }
+
+   const getCurrentAssetData = () => {
+    switch(activeAssetTab) {
+      case 'books': return books
+      case 'cds': return cds
+      case 'audiobooks': return audiobooks
+      case 'movies': return movies
+      case 'technology': return technology
+      case 'study-rooms': return studyRooms
+      default: return []
+    }
+  }
+
+  const getAssetTableColumns = () => {
+    switch(activeAssetTab) {
+      case 'books':
+        return [
+          { key: 'rowNum', label: '#' },
+          { key: 'ISBN', label: 'ISBN' },
+          { key: 'Title', label: 'Title' },
+          { key: 'Author', label: 'Author' },
+          { key: 'Page_Count', label: 'Pages' },
+          { key: 'Copies', label: 'Total Copies' },
+          { key: 'Available_Copies', label: 'Available' }
+        ]
+      case 'cds':
+        return [
+          { key: 'rowNum', label: '#' },
+          { key: 'Title', label: 'Title' },
+          { key: 'Artist', label: 'Artist' },
+          { key: 'Total_Tracks', label: 'Tracks' },
+          { key: 'Total_Duration_In_Minutes', label: 'Duration (min)' },
+          { key: 'Copies', label: 'Total Copies' },
+          { key: 'Available_Copies', label: 'Available' }
+        ]
+      case 'audiobooks':
+        return [
+          { key: 'rowNum', label: '#' },
+          { key: 'ISBN', label: 'ISBN' },
+          { key: 'Title', label: 'Title' },
+          { key: 'Author', label: 'Author' },
+          { key: 'length', label: 'Length (min)' },
+          { key: 'Copies', label: 'Total Copies' },
+          { key: 'Available_Copies', label: 'Available' }
+        ]
+      case 'movies':
+        return [
+          { key: 'rowNum', label: '#' },
+          { key: 'Title', label: 'Title' },
+          { key: 'Release_Year', label: 'Year' },
+          { key: 'Age_Rating', label: 'Rating' },
+          { key: 'Available_Copies', label: 'Available' }
+        ]
+      case 'technology':
+        return [
+          { key: 'rowNum', label: '#' },
+          { key: 'Model_Num', label: 'Model #' },
+          { key: 'Type', label: 'Type' },
+          { key: 'Description', label: 'Description' },
+          { key: 'Copies', label: 'Quantity' }
+        ]
+      case 'study-rooms':
+        return [
+          { key: 'rowNum', label: '#' },
+          { key: 'Room_Number', label: 'Room Number' },
+          { key: 'Capacity', label: 'Capacity' },
+          { key: 'Availability', label: 'Status' }
+        ]
+      default:
+        return []
+    }
+  }
+
   useEffect(() => {
     fetchData();
   }, [activeTab, activeAssetTab]);
@@ -112,6 +222,32 @@ function StudentDashboard() {
       <ErrorPopup />
     </div>
   );
+
+  const renderCellContent = (item, col, rowIndex) => {
+    if (col.key === 'rowNum') {
+      return rowIndex + 1
+    }
+    
+    if (col.key === 'Availability') {
+      return (
+        <span className={`status-badge ${item[col.key] === 'Available' ? 'available' : 'unavailable'}`}>
+          {item[col.key] || 'Available'}
+        </span>
+      )
+    }
+    
+    if (col.key === 'Available_Copies') {
+      return (
+        <span className={`availability-indicator ${item[col.key] > 0 ? 'in-stock' : 'out-of-stock'}`}>
+          {item[col.key] === null ? '-' : item[col.key]}
+        </span>
+      )
+    }
+    
+    return item[col.key]
+  }
+
+
 
   const renderAssets = () => {
       const columns = getAssetTableColumns()
@@ -265,6 +401,8 @@ function StudentDashboard() {
   const renderBorrowRecords = () => <div className="tab-content"><h2>Inventory</h2></div>;
   const renderReports = () => <div className="tab-content"><h2>Reports</h2></div>;
 
+ 
+
   // -------------------- MAIN RENDER --------------------
   return (
     <div className="dashboard-container">
@@ -301,6 +439,8 @@ function StudentDashboard() {
       </div>
     </div>
   );
+
+  
 }
 
 export default StudentDashboard;
