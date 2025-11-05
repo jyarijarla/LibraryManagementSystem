@@ -10,7 +10,7 @@ const API_URL =
 
 const tabClassName = ({ isActive }) => `tab ${isActive ? 'active' : ''}`; 
 
-const temp = () => (
+const Temp = () => (
   <div>Test</div>
 )
 
@@ -35,24 +35,24 @@ function StudentDashboard() {
   // -------------------- ROUTES --------------------
   const routes = [
     {
-      path: '/student/overview',
+      path: 'overview',
       label: 'Overview',
-      content: <temp />
+      content: <Temp />
     },
     {
-      path: '/student/assets',
+      path: 'assets',
       label: 'Assets',
-      content: <temp />
+      content: <Temp />
     },
     {
-      path: '/student/inventory',
+      path: 'inventory',
       label: 'Inventory',
-      content: <temp />
+      content: <Temp />
     },
     {
-      path: '/student/reports',
+      path: 'reports',
       label: 'Reports',
-      content: <temp />
+      content: <Temp />
     }
   ]
   // -------------------- MAIN RENDER --------------------
@@ -78,7 +78,7 @@ function StudentDashboard() {
 
         <nav className="tabs-container">
           {routes.map(({ path, label }) => (
-            <NavLink key={path} to={path} className={tabClassName} >{label}</NavLink>
+            <NavLink key={path} to={'/student/' + path} className={tabClassName} >{label}</NavLink>
           ))}
         </nav>
 
