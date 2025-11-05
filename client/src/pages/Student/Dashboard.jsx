@@ -32,7 +32,29 @@ function StudentDashboard() {
     localStorage.removeItem('role');
     navigate('/login');
   };
-
+  // -------------------- ROUTES --------------------
+  const routes = [
+    {
+      path: 'overview',
+      label: 'Overview',
+      content: <Temp />
+    },
+    {
+      path: 'assets',
+      label: 'Assets',
+      content: <Temp />
+    },
+    {
+      path: 'inventory',
+      label: 'Inventory',
+      content: <Temp />
+    },
+    {
+      path: 'reports',
+      label: 'Reports',
+      content: <Temp />
+    }
+  ]
   // -------------------- MAIN RENDER --------------------
   return (
     <div className="dashboard-container">
