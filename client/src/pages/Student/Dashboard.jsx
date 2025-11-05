@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams, NavLink } from 'react-router-dom';
+import { useNavigate, useSearchParams, Navigate, NavLink, Routes, Route } from 'react-router-dom';
 import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
 import './Dashboard.css';
 
@@ -8,53 +8,23 @@ const API_URL =
     ? 'http://localhost:3000/api'
     : 'https://librarymanagementsystem-z2yw.onrender.com/api';
 
+const tabClassName = ({ isActive }) => `tab ${isActive ? 'active' : ''}`; 
+
+const Temp = () => (
+  <div>Test</div>
+)
+
 function StudentDashboard() {
   // -------------------- ROUTER & NAV --------------------
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-
-  // -------------------- TABS --------------------
-  const [activeTab, setActiveTab] = useState('overview');
-  const [activeAssetTab, setActiveAssetTab] = useState('books');
-
-  // -------------------- DATA STATES --------------------
-  const [books, setBooks] = useState([]);
-  const [cds, setCds] = useState([]);
-  const [audiobooks, setAudiobooks] = useState([]);
-  const [movies, setMovies] = useState([]);
-  const [technology, setTechnology] = useState([]);
-  const [studyRooms, setStudyRooms] = useState([]);
-  const [students, setStudents] = useState([]);
-  const [borrowRecords, setBorrowRecords] = useState([]);
 
   // -------------------- UI STATES --------------------
-  const [loading, setLoading] = useState(false);
+  const [{ isLoading, loadText }, setLoading] = useState({
+    isLoading: false,
+    loadText: 'Loading...'
+  });
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
-  const [showAssetModal, setShowAssetModal] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [assetForm, setAssetForm] = useState({});
-  const [imagePreview, setImagePreview] = useState(null);
-  const [imageRefreshKey, setImageRefreshKey] = useState(Date.now());
-
-  // -------------------- TAB HANDLERS --------------------
-  const changeTab = (tab) => {
-    setActiveTab(tab);
-    const params = new URLSearchParams(searchParams);
-    params.set('tab', tab);
-    if (tab === 'assets') {
-      params.set('assetTab', activeAssetTab);
-    }
-    setSearchParams(params);
-  };
-
-  const changeAssetTab = (assetTab) => {
-    setActiveAssetTab(assetTab);
-    const params = new URLSearchParams(searchParams);
-    params.set('tab', 'assets');
-    params.set('assetTab', assetTab);
-    setSearchParams(params);
-  };
 
   // -------------------- LOGOUT --------------------
   const handleLogout = () => {
@@ -417,25 +387,30 @@ function StudentDashboard() {
           </div>
         </div>
       </nav>
-      <LoadingOverlay loading={loading} loadMessage={successMessage} />
-
+      <LoadingOverlay loading={isLoading} loadMessage={loadText} />
       <SuccessPopup successMessage={successMessage} />
       <div className="dashboard-content">
         <div className="dashboard-title-bar">
           <h1>Student Dashboard</h1>
         </div>
+
         <nav className="tabs-container">
-          <NavLink className={({ isActive }) => `tab ${isActive ? 'active' : ''}`} to='/student/overview'>Overview</NavLink>
-          <NavLink className={({ isActive }) => `tab ${isActive ? 'active' : ''}`} to='/student/assets'>Assets</NavLink>
-          <NavLink className={({ isActive }) => `tab ${isActive ? 'active' : ''}`} to='/student/inventory'>Inventory</NavLink>
-          <NavLink className={({ isActive }) => `tab ${isActive ? 'active' : ''}`} to='/student/reports'>Reports</NavLink>
+          {routes.map(({ path, label }) => (
+            <NavLink key={path} to={'/student/' + path} className={tabClassName} >{label}</NavLink>
+          ))}
         </nav>
 
-        {activeTab === 'overview' && renderOverview()}
-        {activeTab === 'assets' && renderAssets()}
-       
-        {activeTab === 'inventory' && renderBorrowRecords()}
-        {activeTab === 'reports' && renderReports()}
+        <div className='dashboard-content'>
+          <Routes>
+            {/*Main redirect*/}
+            <Route index element={<Navigate to="/student/overview" replace />} />
+
+            {/*Route mapping*/}
+            {routes.map(({ path, content }) => (
+              <Route key={path} path={path} element={content} />
+            ))}
+          </Routes>
+        </div>
       </div>
     </div>
   );
