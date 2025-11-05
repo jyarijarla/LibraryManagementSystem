@@ -577,31 +577,42 @@ const deleteAsset = async (req, res) => {
 
 // Update/Edit asset
 const updateAsset = async (req, res) => {
+  const connection = await db.promise().getConnection();
   try {
     const assetId = req.params.id;
     const updates = req.body;
     
     if (!assetId) {
+      connection.release();
       return res.writeHead(400, { 'Content-Type': 'application/json' })
         .end(JSON.stringify({ error: 'Asset ID is required' }));
     }
 
+    await connection.beginTransaction();
+
     // Determine which table to update based on the fields present
     let table = '';
     let fields = [];
+    let handleCopies = false;
 
     if (updates.ISBN && updates.Title && updates.Author && updates.Page_Count !== undefined) {
       // Book
       table = 'book';
       fields = ['ISBN', 'Title', 'Author', 'Page_Count'];
+      if (updates.Image_URL !== undefined) fields.push('Image_URL');
+      handleCopies = true;
     } else if (updates.Total_Tracks !== undefined && updates.Artist) {
       // CD
       table = 'cd';
       fields = ['Total_Tracks', 'Total_Duration_In_Minutes', 'Title', 'Artist'];
+      if (updates.Image_URL !== undefined) fields.push('Image_URL');
+      handleCopies = true;
     } else if (updates.ISBN && updates.length !== undefined) {
       // Audiobook
       table = 'audiobook';
       fields = ['ISBN', 'Title', 'Author', 'length'];
+      if (updates.Image_URL !== undefined) fields.push('Image_URL');
+      handleCopies = true;
     } else if (updates.Release_Year !== undefined && updates.Age_Rating) {
       // Movie - table only has Title, Release_Year, Age_Rating, Image_URL
       // Copies are managed through rentables table
@@ -610,15 +621,21 @@ const updateAsset = async (req, res) => {
       if (updates.Image_URL !== undefined) {
         fields.push('Image_URL');
       }
+      handleCopies = true;
     } else if (updates.Model_Num && updates.Type && updates.Description) {
       // Technology
       table = 'technology';
       fields = ['Model_Num', 'Type', 'Description'];
+      if (updates.Image_URL !== undefined) fields.push('Image_URL');
+      handleCopies = true;
     } else if (updates.Room_Number && updates.Capacity !== undefined) {
       // Study Room
       table = 'study_room';
       fields = ['Room_Number', 'Capacity'];
+      if (updates.Image_URL !== undefined) fields.push('Image_URL');
+      handleCopies = false; // Study rooms always have 1 copy
     } else {
+      connection.release();
       return res.writeHead(400, { 'Content-Type': 'application/json' })
         .end(JSON.stringify({ error: 'Invalid update data' }));
     }
@@ -627,36 +644,79 @@ const updateAsset = async (req, res) => {
     const updateFields = fields.filter(f => updates[f] !== undefined);
     const updateValues = updateFields.map(f => updates[f]);
     
-    if (updateFields.length === 0) {
-      return res.writeHead(400, { 'Content-Type': 'application/json' })
-        .end(JSON.stringify({ error: 'No fields to update' }));
-    }
-
-    const setClause = updateFields.map(f => `${f} = ?`).join(', ');
-    const query = `UPDATE ${table} SET ${setClause} WHERE Asset_ID = ?`;
-    
-    db.query(query, [...updateValues, assetId], (err, result) => {
-      if (err) {
-        console.error('Error updating asset:', err);
-        return res.writeHead(500, { 'Content-Type': 'application/json' })
-          .end(JSON.stringify({ error: 'Failed to update asset' }));
-      }
+    if (updateFields.length > 0) {
+      const setClause = updateFields.map(f => `${f} = ?`).join(', ');
+      const query = `UPDATE ${table} SET ${setClause} WHERE Asset_ID = ?`;
+      
+      const [result] = await connection.query(query, [...updateValues, assetId]);
       
       if (result.affectedRows === 0) {
+        await connection.rollback();
+        connection.release();
         return res.writeHead(404, { 'Content-Type': 'application/json' })
           .end(JSON.stringify({ error: 'Asset not found' }));
       }
+    }
+
+    // Handle copies update if Copies field is present
+    if (handleCopies && updates.Copies !== undefined) {
+      const targetCopies = parseInt(updates.Copies) || 0;
       
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ 
-        message: 'Asset updated successfully',
-        assetId: assetId
-      }));
-    });
+      // Get current number of rentables
+      const [countResult] = await connection.query(
+        'SELECT COUNT(*) as currentCount FROM rentable WHERE Asset_ID = ?',
+        [assetId]
+      );
+      const currentCount = countResult[0].currentCount;
+      
+      console.log(`📦 Asset ${assetId}: Current copies = ${currentCount}, Target copies = ${targetCopies}`);
+      
+      if (targetCopies > currentCount) {
+        // Add more copies
+        const copiesToAdd = targetCopies - currentCount;
+        console.log(`➕ Adding ${copiesToAdd} copies`);
+        
+        for (let i = 0; i < copiesToAdd; i++) {
+          await connection.query(
+            'INSERT INTO rentable (Asset_ID, Availability, Fee) VALUES (?, 1, 0.00)',
+            [assetId]
+          );
+        }
+      } else if (targetCopies < currentCount) {
+        // Remove excess copies (only available ones)
+        const copiesToRemove = currentCount - targetCopies;
+        console.log(`➖ Removing ${copiesToRemove} copies`);
+        
+        const [deleteResult] = await connection.query(
+          'DELETE FROM rentable WHERE Asset_ID = ? AND Availability = 1 LIMIT ?',
+          [assetId, copiesToRemove]
+        );
+        
+        if (deleteResult.affectedRows < copiesToRemove) {
+          await connection.rollback();
+          connection.release();
+          return res.writeHead(400, { 'Content-Type': 'application/json' })
+            .end(JSON.stringify({ 
+              error: `Can only remove ${deleteResult.affectedRows} copies. ${copiesToRemove - deleteResult.affectedRows} copies are currently borrowed.` 
+            }));
+        }
+      }
+    }
+
+    await connection.commit();
+    connection.release();
+    
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ 
+      message: 'Asset updated successfully',
+      assetId: assetId
+    }));
   } catch (error) {
+    await connection.rollback();
+    connection.release();
     console.error('Error in updateAsset:', error);
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error' }));
+      .end(JSON.stringify({ error: 'Server error', details: error.message }));
   }
 };
 
