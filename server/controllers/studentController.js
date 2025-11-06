@@ -7,13 +7,13 @@ exports.getAllStudents = (req, res) => {
       u.User_ID as id,
       CONCAT(u.First_Name, ' ', COALESCE(u.Last_Name, '')) as name,
       u.User_Email as email,
-      u.Username as studentId,
+      COALESCE(u.Student_ID, u.Username) as studentId,
       u.User_Phone as phone,
       COUNT(CASE WHEN b.Return_Date IS NULL THEN 1 END) as borrowedBooks,
       'Active' as status
     FROM user u
     LEFT JOIN borrow b ON u.User_ID = b.Borrower_ID
-    WHERE u.Role = 3
+    WHERE u.Role = 1
     GROUP BY u.User_ID
     ORDER BY u.First_Name ASC
   `;
@@ -42,7 +42,7 @@ exports.updateStudent = (req, res) => {
   const query = `
     UPDATE user 
     SET First_Name = ?, Last_Name = ?, User_Email = ?, Username = ?, User_Phone = ?
-    WHERE User_ID = ? AND Role = 3
+    WHERE User_ID = ? AND Role = 1
   `;
   
   db.query(query, [firstName, lastName, email, studentId, phone || null, id], (err, result) => {
@@ -82,7 +82,7 @@ exports.deleteStudent = (req, res) => {
           && res.end(JSON.stringify({ message: 'Cannot delete student with active borrowed items' }));
       }
       
-      db.query('DELETE FROM user WHERE User_ID = ? AND Role = 3', [id], (err, result) => {
+      db.query('DELETE FROM user WHERE User_ID = ? AND Role = 1', [id], (err, result) => {
         if (err) {
           console.error('Error deleting student:', err);
           return res.writeHead(500, { 'Content-Type': 'application/json' })

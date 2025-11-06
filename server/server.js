@@ -8,6 +8,7 @@ const studentController = require('./controllers/studentController');
 const borrowController = require('./controllers/borrowController');
 const reportController = require('./controllers/reportController');
 const uploadController = require('./controllers/uploadController');
+const notificationController = require('./controllers/notificationController');
 
 // Helper to parse JSON body
 function parseBody(req) {
@@ -103,12 +104,17 @@ const routes = [
   { method: 'GET', path: '/api/reports/overdue-items', handler: reportController.getOverdueItems },
   { method: 'GET', path: '/api/reports/inventory-summary', handler: reportController.getInventorySummary },
   
+  // Notification routes
+  { method: 'GET', path: '/api/notifications', handler: notificationController.getAdminNotifications },
+  { method: 'GET', path: '/api/notifications/counts', handler: notificationController.getNotificationCounts },
+  { method: 'GET', path: '/api/notifications/critical', handler: notificationController.getCriticalNotifications },
+  
   // Upload route
   { method: 'POST', path: '/api/upload', handler: uploadController.handleUpload },
 ];
 
-const server = http.createServer(async (req, res) => {
-  // CORS handling
+// Helper to set CORS headers
+function setCorsHeaders(req, res) {
   const allowedOrigins = ['http://localhost:5173', 'http://localhost:5174', 'https://library-management-system-blush-eight.vercel.app'];
   const origin = req.headers.origin;
   if (allowedOrigins.includes(origin)) {
@@ -118,6 +124,43 @@ const server = http.createServer(async (req, res) => {
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+}
+
+// Helper to find matching route
+function findMatchingRoute(method, pathname) {
+  for (const route of routes) {
+    if (route.method === method) {
+      const params = matchRoute(route.path, pathname);
+      if (params !== null) {
+        return { ...route, params };
+      }
+    }
+  }
+  return null;
+}
+
+// Helper to handle matched route
+async function handleMatchedRoute(req, res, matchedRoute, pathname) {
+  // Special handling for upload route (multipart/form-data)
+  if (pathname === '/api/upload') {
+    matchedRoute.handler(req, res);
+    return;
+  }
+  
+  // Parse body for POST/PUT requests
+  if (req.method === 'POST' || req.method === 'PUT') {
+    req.body = await parseBody(req);
+  }
+  
+  // Attach params to request
+  req.params = matchedRoute.params;
+  
+  // Call the handler
+  await matchedRoute.handler(req, res);
+}
+
+const server = http.createServer(async (req, res) => {
+  setCorsHeaders(req, res);
 
   // Handle preflight requests
   if (req.method === 'OPTIONS') {
@@ -131,35 +174,11 @@ const server = http.createServer(async (req, res) => {
   const pathname = urlParts.pathname;
   
   // Find matching route
-  let matchedRoute = null;
-  for (const route of routes) {
-    if (route.method === req.method) {
-      const params = matchRoute(route.path, pathname);
-      if (params !== null) {
-        matchedRoute = { ...route, params };
-        break;
-      }
-    }
-  }
+  const matchedRoute = findMatchingRoute(req.method, pathname);
 
   if (matchedRoute) {
     try {
-      // Special handling for upload route (multipart/form-data)
-      if (pathname === '/api/upload') {
-        matchedRoute.handler(req, res);
-        return;
-      }
-      
-      // Parse body for POST/PUT requests
-      if (req.method === 'POST' || req.method === 'PUT') {
-        req.body = await parseBody(req);
-      }
-      
-      // Attach params to request
-      req.params = matchedRoute.params;
-      
-      // Call the handler
-      await matchedRoute.handler(req, res);
+      await handleMatchedRoute(req, res, matchedRoute, pathname);
     } catch (error) {
       console.error('Server error:', error);
       res.statusCode = 500;

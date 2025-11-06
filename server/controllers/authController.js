@@ -14,8 +14,12 @@ async function login(req, res) {
   }
 
   try {
-    // Query user from database (Role is tinyint: 1=student, 2=admin)
-    const roleValue = role === 'admin' ? 2 : 1;
+    // Query user from database (Role is tinyint: 1=student, 2=admin, 3=librarian)
+    let roleValue;
+    if (role === 'admin') roleValue = 2;
+    else if (role === 'librarian') roleValue = 3;
+    else roleValue = 1; // student
+    
     const query = 'SELECT * FROM user WHERE Username = ? AND Role = ?';
     
     db.query(query, [username, roleValue], async (err, results) => {
@@ -46,7 +50,10 @@ async function login(req, res) {
       }
 
       // Map role to string
-      const userRole = user.Role === 2 ? 'admin' : 'student';
+      let userRole;
+      if (user.Role === 2) userRole = 'admin';
+      else if (user.Role === 3) userRole = 'librarian';
+      else userRole = 'student';
 
       // Return user data (without password) - client will store in localStorage
       res.statusCode = 200;
@@ -76,7 +83,7 @@ async function login(req, res) {
 
 // Signup Handler
 async function signup(req, res) {
-  const { username, password, email, phone, firstName, lastName, dob, role } = req.body;
+  const { username, password, email, phone, firstName, lastName, dob, studentId, role } = req.body;
 
   // Validate input
   if (!username || !password || !email || !firstName || !role) {
@@ -88,6 +95,21 @@ async function signup(req, res) {
     return;
   }
 
+  // Validate Student ID for students
+  if (role === 'student' && !studentId) {
+    res.statusCode = 400;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ message: 'Student ID is required for student accounts' }));
+    return;
+  }
+
+  if (role === 'student' && !/^\d+$/.test(studentId)) {
+    res.statusCode = 400;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ message: 'Student ID must contain only numbers' }));
+    return;
+  }
+
   // Validate password length
   if (password.length < 6) {
     res.statusCode = 400;
@@ -96,11 +118,28 @@ async function signup(req, res) {
     return;
   }
 
+  // Only students can create accounts through signup
+  // Admin and Librarian accounts must be created by library management
+  if (role === 'admin' || role === 'librarian') {
+    res.statusCode = 403;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ 
+      message: 'Admin and Librarian accounts cannot be created through signup. Please contact library management.' 
+    }));
+    return;
+  }
+
   try {
-    // Check if username or email already exists
-    const checkQuery = 'SELECT * FROM user WHERE Username = ? OR User_Email = ?';
+    // Check if username, email, or studentId already exists
+    const checkQuery = role === 'student' 
+      ? 'SELECT * FROM user WHERE Username = ? OR User_Email = ? OR Student_ID = ?'
+      : 'SELECT * FROM user WHERE Username = ? OR User_Email = ?';
     
-    db.query(checkQuery, [username, email], async (err, results) => {
+    const checkParams = role === 'student' 
+      ? [username, email, studentId]
+      : [username, email];
+    
+    db.query(checkQuery, checkParams, async (err, results) => {
       if (err) {
         console.error('Database error:', err);
         res.statusCode = 500;
@@ -123,26 +162,76 @@ async function signup(req, res) {
           res.end(JSON.stringify({ message: 'Email already exists' }));
           return;
         }
+        if (role === 'student' && existingUser.Student_ID === studentId) {
+          res.statusCode = 409;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ message: 'Student ID already exists' }));
+          return;
+        }
       }
 
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Role mapping: student=1, admin=2
-      const roleValue = role === 'admin' ? 2 : 1;
+      // Role mapping: student=1, admin=2, librarian=3
+      let roleValue;
+      if (role === 'admin') roleValue = 2;
+      else if (role === 'librarian') roleValue = 3;
+      else roleValue = 1; // student
 
-      // Insert new user
-      const insertQuery = `
-        INSERT INTO user (Username, Password, User_Email, User_Phone, First_Name, Last_Name, Date_Of_Birth, Role, Balance)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00)
-      `;
+      // Insert new user - use placeholder 'N/A' for Student_ID if column doesn't exist yet
+      const insertQuery = role === 'student'
+        ? `INSERT INTO user (Username, Password, User_Email, User_Phone, First_Name, Last_Name, Date_Of_Birth, Role, Balance, Student_ID)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00, ?)`
+        : `INSERT INTO user (Username, Password, User_Email, User_Phone, First_Name, Last_Name, Date_Of_Birth, Role, Balance)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00)`;
+
+      const insertParams = role === 'student'
+        ? [username, hashedPassword, email, phone || null, firstName, lastName || null, dob || null, roleValue, studentId]
+        : [username, hashedPassword, email, phone || null, firstName, lastName || null, dob || null, roleValue];
 
       db.query(
         insertQuery,
-        [username, hashedPassword, email, phone || null, firstName, lastName || null, dob || null, roleValue],
+        insertParams,
         (err, result) => {
           if (err) {
             console.error('Database error:', err);
+            // If Student_ID column doesn't exist yet, fall back to old insert
+            if (err.code === 'ER_BAD_FIELD_ERROR' && role === 'student') {
+              const fallbackQuery = `
+                INSERT INTO user (Username, Password, User_Email, User_Phone, First_Name, Last_Name, Date_Of_Birth, Role, Balance)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00)
+              `;
+              db.query(
+                fallbackQuery,
+                [username, hashedPassword, email, phone || null, firstName, lastName || null, dob || null, roleValue],
+                (fallbackErr, fallbackResult) => {
+                  if (fallbackErr) {
+                    res.statusCode = 500;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ message: 'Failed to create user', error: fallbackErr.message }));
+                    return;
+                  }
+                  res.statusCode = 201;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({
+                    message: 'Account created successfully (Student ID will be available after database update)',
+                    user: {
+                      id: fallbackResult.insertId,
+                      username,
+                      email,
+                      firstName,
+                      lastName: lastName || null,
+                      phone: phone || null,
+                      dob: dob || null,
+                      role,
+                      balance: 0
+                    }
+                  }));
+                }
+              );
+              return;
+            }
             res.statusCode = 500;
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ message: 'Failed to create user', error: err.message }));
@@ -162,6 +251,7 @@ async function signup(req, res) {
               lastName: lastName || null,
               phone: phone || null,
               dob: dob || null,
+              studentId: studentId || null,
               role,
               balance: 0
             }
