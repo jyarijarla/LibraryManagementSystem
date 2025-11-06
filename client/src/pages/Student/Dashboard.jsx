@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Navigate, NavLink, Routes, Route } from 'react-router-dom';
 import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
 import './Dashboard.css';
+import { Assets } from './Assets';
 
 const API_URL =
   window.location.hostname === 'localhost'
@@ -23,6 +24,11 @@ function StudentDashboard() {
     isLoading: false,
     loadText: 'Loading...'
   });
+
+  const updateLoading = (updates) => {
+    setLoading(prev => ({...prev, ...updates}))
+  }
+
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
@@ -42,7 +48,7 @@ function StudentDashboard() {
     {
       path: 'assets',
       label: 'Assets',
-      content: <Temp />
+      content: <Assets setLoading={updateLoading}/>
     },
     {
       path: 'inventory',

@@ -1,22 +1,11 @@
+function Overview(){
+    
+}
 // -------------------- FETCH DATA (PLACEHOLDER) --------------------
   const fetchData = async () => {
     setLoading(true)
     setError('')
     try {
-      if (activeTab === 'overview') {
-        // Fetch all data for overview - don't fail if one fails
-        console.log('Fetching overview data...')
-        await Promise.allSettled([
-          fetchAssets('books').catch(e => console.error('Books error:', e)),
-          fetchAssets('cds').catch(e => console.error('CDs error:', e)),
-          fetchAssets('audiobooks').catch(e => console.error('Audiobooks error:', e)),
-          fetchAssets('movies').catch(e => console.error('Movies error:', e)),
-          fetchAssets('technology').catch(e => console.error('Technology error:', e)),
-          fetchAssets('study-rooms').catch(e => console.error('Study rooms error:', e)),
-          //fetchStudents().catch(e => console.error('Students error:', e)),
-          fetchBorrowRecords().catch(e => console.error('Borrow records error:', e))
-        ])
-        console.log('Overview data fetch completed')
       } else if (activeTab === 'assets') {
         await fetchAssets(activeAssetTab)
       } //else if (activeTab === 'students') {
@@ -145,8 +134,11 @@
   }
 
   useEffect(() => {
+    () => {
+        const loadAsset = async () =>
+    }
     fetchData();
-  }, [activeTab, activeAssetTab]);
+  }, [activeAssetTab]);
 
   // -------------------- RENDER PLACEHOLDERS --------------------
   const renderOverview = () => (
