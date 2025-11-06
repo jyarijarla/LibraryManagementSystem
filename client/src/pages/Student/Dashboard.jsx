@@ -91,7 +91,7 @@ function StudentDashboard() {
         <div className='dashboard-content'>
           <Routes>
             {/*Main redirect*/}
-            <Route index element={<Navigate to="/student/overview" replace />} />
+            <Route index element={<Navigate to="/student/assets" replace />} />
 
             {/*Route mapping*/}
             {routes.map(({ path, content }) => (
