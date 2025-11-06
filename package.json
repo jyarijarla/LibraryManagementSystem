@@ -11,7 +11,7 @@
     "build": "npm run build --workspace client",
     "preview": "npm run preview --workspace client",
     "lint:client": "npm run lint --workspace client",
-
+    "start": "npm run start --workspace server",
     "db:test": "npm run db:test --workspace server",
     "db:run-cli": "npm run db:run-cli --workspace server",
     "lint:server": "npm run lint --workspace server"
