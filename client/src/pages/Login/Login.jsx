@@ -18,6 +18,7 @@ function Login() {
     firstName: '',
     lastName: '',
     dob: '',
+    studentId: '',
     role: 'student'
   })
   const [error, setError] = useState('')
@@ -69,6 +70,8 @@ function Login() {
         // Redirect based on role
         if (data.user.role === 'admin') {
           navigate('/admin')
+        } else if (data.user.role === 'librarian') {
+          navigate('/librarian')
         } else {
           navigate('/student')
         }
@@ -91,6 +94,17 @@ function Login() {
     if (!formData.username || !formData.email || !formData.password || !formData.confirmPassword || 
         !formData.firstName || !formData.lastName) {
       setError('Please fill in all required fields')
+      return
+    }
+
+    // Student ID validation for students
+    if (formData.role === 'student' && !formData.studentId) {
+      setError('Student ID is required for student accounts')
+      return
+    }
+
+    if (formData.role === 'student' && !/^\d+$/.test(formData.studentId)) {
+      setError('Student ID must contain only numbers')
       return
     }
 
@@ -127,6 +141,7 @@ function Login() {
           firstName: formData.firstName,
           lastName: formData.lastName,
           dob: formData.dob,
+          studentId: formData.studentId,
           role: formData.role
         }),
       })
@@ -186,27 +201,31 @@ function Login() {
         <form onSubmit={isSignUp ? handleSignUpSubmit : handleLoginSubmit} className="login-form">
           {error && <div className="error-message">{error}</div>}
           
-          <div className="form-group">
-            <label>{isSignUp ? 'Register As' : 'Login As'}</label>
-            <div className={`role-selector ${formData.role === 'admin' ? 'admin-selected' : ''}`}>
-              <button
-                type="button"
-                className={`role-button ${formData.role === 'student' ? 'active' : ''}`}
-                onClick={() => setFormData({...formData, role: 'student'})}
+          {!isSignUp && (
+            <div className="form-group">
+              <label htmlFor="role">Login As</label>
+              <select
+                id="role"
+                name="role"
+                value={formData.role}
+                onChange={handleChange}
+                className="role-dropdown"
                 disabled={isLoading}
+                required
               >
-                Student
-              </button>
-              <button
-                type="button"
-                className={`role-button ${formData.role === 'admin' ? 'active' : ''}`}
-                onClick={() => setFormData({...formData, role: 'admin'})}
-                disabled={isLoading}
-              >
-                Admin
-              </button>
+                <option value="student">Student</option>
+                <option value="librarian">Librarian</option>
+                <option value="admin">Admin</option>
+              </select>
             </div>
-          </div>
+          )}
+
+          {isSignUp && (
+            <div className="signup-info">
+              <p>📚 Creating a <strong>Student</strong> account</p>
+              <small>Admin and Librarian accounts are provided by the library</small>
+            </div>
+          )}
 
           {isSignUp && (
             <>
@@ -251,6 +270,22 @@ function Login() {
                   required
                 />
               </div>
+
+              {formData.role === 'student' && (
+                <div className="form-group">
+                  <label htmlFor="studentId">Student ID *</label>
+                  <input
+                    type="text"
+                    id="studentId"
+                    name="studentId"
+                    value={formData.studentId}
+                    onChange={handleChange}
+                    placeholder="Enter your student ID (numbers only)"
+                    disabled={isLoading}
+                    required
+                  />
+                </div>
+              )}
 
               <div className="form-group">
                 <label htmlFor="email">Email *</label>

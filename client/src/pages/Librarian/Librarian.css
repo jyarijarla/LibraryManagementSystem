@@ -1,0 +1,17 @@
+.librarian-dashboard {
+  /* Librarian-specific styling */
+}
+
+.librarian-navbar {
+  background: #059669 !important; /* Green theme for librarian */
+}
+
+.librarian-role {
+  color: #d1fae5 !important;
+}
+
+.dashboard-subtitle {
+  font-size: 14px;
+  color: #666;
+  margin-top: 5px;
+}

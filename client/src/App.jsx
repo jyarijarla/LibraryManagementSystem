@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
 import Login from './pages/Login/Login'
 import Student from './pages/Student/Dashboard'
 import Admin from './pages/Admin/Admin'
+import Librarian from './pages/Librarian/Librarian'
 import BookItem from './pages/BookItem/BookItem'
 import MovieItem from './pages/MovieItem/MovieItem'
 import Home from './pages/Home/Home'
@@ -16,6 +17,7 @@ function AppContent() {
   const pathname = location.pathname.toLowerCase()
   const showNavbar = !pathname.startsWith('/login') && 
                      !pathname.startsWith('/admin') &&
+                     !pathname.startsWith('/librarian') &&
                      !pathname.startsWith('/student')
 
   return (
@@ -26,6 +28,7 @@ function AppContent() {
         <Route path="/login" element={<Login />} />
         <Route path="/student/*" element={<Student />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/librarian" element={<Librarian />} />
         <Route path="/book-item" element={<BookItem />} />
         <Route path="/about" element={<About />} />     
         <Route path="/books" element={<Books />} />

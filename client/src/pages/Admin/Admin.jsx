@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import './Admin.css'
 import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
+import NotificationPanel from '../../components/NotificationPanel/NotificationPanel'
 
 // Use local server for development, production for deployed app
 const API_URL = window.location.hostname === 'localhost' 
@@ -54,6 +55,10 @@ function Admin() {
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
 
+  // Notification state
+  const [showNotifications, setShowNotifications] = useState(false)
+  const [notificationCount, setNotificationCount] = useState(0)
+
   // Function to change tab and update URL
   const changeTab = (tab) => {
     setActiveTab(tab)
@@ -76,6 +81,10 @@ function Admin() {
 
   useEffect(() => {
     fetchData()
+    fetchNotificationCount()
+    // Refresh notification count every 30 seconds
+    const interval = setInterval(fetchNotificationCount, 30000)
+    return () => clearInterval(interval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, activeAssetTab])
 
@@ -83,6 +92,19 @@ function Admin() {
     localStorage.removeItem('token')
     localStorage.removeItem('role')
     navigate('/login')
+  }
+
+  const fetchNotificationCount = async () => {
+    try {
+      const response = await fetch(`${API_URL}/notifications/counts`)
+      if (response.ok) {
+        const data = await response.json()
+        const total = data.overdue_count + data.due_soon_count + data.low_stock_count
+        setNotificationCount(total)
+      }
+    } catch (error) {
+      console.error('Error fetching notification count:', error)
+    }
   }
 
   const fetchData = async () => {
@@ -106,6 +128,8 @@ function Admin() {
       } else if (activeTab === 'assets') {
         await fetchAssets(activeAssetTab)
       } else if (activeTab === 'students') {
+        await fetchStudents()
+      } else if (activeTab === 'users') {
         await fetchStudents()
       } else if (activeTab === 'records') {
         await fetchBorrowRecords()
@@ -818,25 +842,37 @@ function Admin() {
           <thead>
             <tr>
               <th>#</th>
-              <th>User ID</th>
+              <th>Student ID</th>
               <th>Name</th>
               <th>Email</th>
+              <th>Phone</th>
               <th>Active Borrows</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
             {students.length === 0 ? (
               <tr>
-                <td colSpan="5" style={{ textAlign: 'center' }}>No students found</td>
+                <td colSpan="7" style={{ textAlign: 'center' }}>No students found</td>
               </tr>
             ) : (
               students.map((student, index) => (
-                <tr key={student.User_ID}>
+                <tr key={student.id}>
                   <td>{index + 1}</td>
-                  <td>{student.User_ID}</td>
-                  <td>{student.Full_Name}</td>
-                  <td>{student.User_Email}</td>
-                  <td>{student.Active_Borrows || 0}</td>
+                  <td><strong>{student.studentId}</strong></td>
+                  <td>{student.name}</td>
+                  <td>{student.email}</td>
+                  <td>{student.phone || '-'}</td>
+                  <td>
+                    <span className={`status-badge ${student.borrowedBooks > 0 ? 'borrowed' : 'available'}`}>
+                      {student.borrowedBooks}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="status-badge active">
+                      {student.status}
+                    </span>
+                  </td>
                 </tr>
               ))
             )}
@@ -1172,6 +1208,156 @@ function Admin() {
   )
 }
 
+  // User Management - Admin only
+  const renderUserManagement = () => (
+    <div className="tab-content">
+      <div className="section-header">
+        <h2>👤 User & Role Management</h2>
+        <button className="add-button" onClick={() => alert('Create user functionality - Coming soon')}>
+          + Create User
+        </button>
+      </div>
+
+      <ErrorPopup errorMessage={error} />
+
+      <div className="stats-grid" style={{ marginBottom: '20px' }}>
+        <div className="stat-card">
+          <div className="stat-icon blue">👥</div>
+          <div className="stat-details">
+            <h3>{students.length}</h3>
+            <p>Students</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon green">📚</div>
+          <div className="stat-details">
+            <h3>1</h3>
+            <p>Librarians</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon purple">🔐</div>
+          <div className="stat-details">
+            <h3>2</h3>
+            <p>Admins</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="table-container" style={{ marginTop: '20px' }}>
+        <h3>All Users</h3>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Student ID</th>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {students.length === 0 ? (
+              <tr>
+                <td colSpan="7" style={{ textAlign: 'center' }}>No users found</td>
+              </tr>
+            ) : (
+              students.map((student, index) => (
+                <tr key={student.id}>
+                  <td>{index + 1}</td>
+                  <td><strong>{student.studentId}</strong></td>
+                  <td>{student.name}</td>
+                  <td>{student.email}</td>
+                  <td>
+                    <span className="status-badge available">Student</span>
+                  </td>
+                  <td>
+                    <span className="status-badge active">{student.status}</span>
+                  </td>
+                  <td>
+                    <button className="action-btn" onClick={() => alert('Edit user - Coming soon')}>✏️</button>
+                    <button className="action-btn danger" onClick={() => alert('Delete user - Coming soon')}>🗑️</button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+
+  // System Settings - Admin only
+  const renderSystemSettings = () => (
+    <div className="tab-content">
+      <div className="section-header">
+        <h2>⚙️ System Configuration</h2>
+      </div>
+
+      <ErrorPopup errorMessage={error} />
+
+      <div className="settings-grid">
+        <div className="setting-card">
+          <h3>📚 Library Settings</h3>
+          <div className="setting-item">
+            <label>Maximum Borrow Days:</label>
+            <input type="number" defaultValue="14" disabled />
+          </div>
+          <div className="setting-item">
+            <label>Maximum Books Per User:</label>
+            <input type="number" defaultValue="5" disabled />
+          </div>
+          <div className="setting-item">
+            <label>Fine Per Day ($):</label>
+            <input type="number" step="0.01" defaultValue="0.50" disabled />
+          </div>
+          <button className="add-button" onClick={() => alert('Save settings - Coming soon')}>Save Changes</button>
+        </div>
+
+        <div className="setting-card">
+          <h3>📖 Book Categories</h3>
+          <div className="category-list">
+            <span className="category-badge">Fiction</span>
+            <span className="category-badge">Non-Fiction</span>
+            <span className="category-badge">Science</span>
+            <span className="category-badge">History</span>
+            <span className="category-badge">Technology</span>
+          </div>
+          <button className="add-button" onClick={() => alert('Manage categories - Coming soon')}>+ Add Category</button>
+        </div>
+
+        <div className="setting-card">
+          <h3>💾 Database & Backup</h3>
+          <div className="backup-info">
+            <p><strong>Last Backup:</strong> {new Date().toLocaleDateString()}</p>
+            <p><strong>Database Size:</strong> 45.2 MB</p>
+            <p><strong>Status:</strong> <span style={{ color: '#10b981' }}>✓ Healthy</span></p>
+          </div>
+          <button className="add-button" onClick={() => alert('Backup database - Coming soon')}>Backup Now</button>
+        </div>
+
+        <div className="setting-card">
+          <h3>🔐 Security & Access</h3>
+          <div className="setting-item">
+            <label>Enable Two-Factor Auth:</label>
+            <input type="checkbox" disabled />
+          </div>
+          <div className="setting-item">
+            <label>Session Timeout (minutes):</label>
+            <input type="number" defaultValue="30" disabled />
+          </div>
+          <div className="setting-item">
+            <label>Audit Logging:</label>
+            <input type="checkbox" defaultChecked disabled />
+          </div>
+          <button className="add-button" onClick={() => alert('Update security - Coming soon')}>Update Security</button>
+        </div>
+      </div>
+    </div>
+  )
+
   return (
     <div className="dashboard-container">
       {/* Admin Navbar */}
@@ -1181,6 +1367,16 @@ function Admin() {
             <h2 className="admin-navbar-title">📚 Library Management System</h2>
           </div>
           <div className="admin-navbar-right">
+            <button 
+              className="notification-bell" 
+              onClick={() => setShowNotifications(true)}
+              title="View notifications"
+            >
+              🔔
+              {notificationCount > 0 && (
+                <span className="notification-badge">{notificationCount}</span>
+              )}
+            </button>
             <span className="admin-navbar-role">Administrator</span>
             <button className="admin-navbar-logout" onClick={handleLogout}>Logout</button>
           </div>
@@ -1201,39 +1397,39 @@ function Admin() {
             className={`tab ${activeTab === 'overview' ? 'active' : ''}`}
             onClick={() => changeTab('overview')}
           >
-             Overview
+            🏠 Overview
           </button>
           <button 
-            className={`tab ${activeTab === 'assets' ? 'active' : ''}`}
-            onClick={() => changeTab('assets')}
+            className={`tab ${activeTab === 'users' ? 'active' : ''}`}
+            onClick={() => changeTab('users')}
           >
-             Assets
-          </button>
-          <button 
-            className={`tab ${activeTab === 'students' ? 'active' : ''}`}
-            onClick={() => changeTab('students')}
-          >
-             Students
-          </button>
-          <button 
-            className={`tab ${activeTab === 'records' ? 'active' : ''}`}
-            onClick={() => changeTab('records')}
-          >
-             Borrow Records
+            👤 User Management
           </button>
           <button 
             className={`tab ${activeTab === 'reports' ? 'active' : ''}`}
             onClick={() => changeTab('reports')}
           >
-             Reports
+            📊 Reports & Analytics
+          </button>
+          <button 
+            className={`tab ${activeTab === 'students' ? 'active' : ''}`}
+            onClick={() => changeTab('students')}
+          >
+            👥 All Users
+          </button>
+          <button 
+            className={`tab ${activeTab === 'settings' ? 'active' : ''}`}
+            onClick={() => changeTab('settings')}
+          >
+            ⚙️ System Settings
           </button>
         </div>
 
         {activeTab === 'overview' && renderOverview()}
-        {activeTab === 'assets' && renderAssets()}
-        {activeTab === 'students' && renderStudents()}
-        {activeTab === 'records' && renderBorrowRecords()}
+        {activeTab === 'users' && renderUserManagement()}
         {activeTab === 'reports' && renderReports()}
+        {activeTab === 'students' && renderStudents()}
+        {activeTab === 'settings' && renderSystemSettings()}
       </div>
 
       {/* Asset Modal */}
@@ -1348,6 +1544,11 @@ function Admin() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Notification Panel */}
+      {showNotifications && (
+        <NotificationPanel onClose={() => setShowNotifications(false)} />
       )}
     </div>
   )
