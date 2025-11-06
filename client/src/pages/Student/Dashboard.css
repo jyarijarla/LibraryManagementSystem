@@ -1,4 +1,4 @@
-.dashboard-container {
+.student-dashboard-container {
   width: 100%;
   min-height: 100vh;
   background: #f9fafb;
@@ -67,7 +67,7 @@
 }
 
 /* Dashboard Title Bar (not sticky, inside content) */
-.dashboard-title-bar {
+.student-dashboard-title-bar {
   background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
   padding: 24px 40px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
@@ -77,22 +77,22 @@
   margin-bottom: 0;
 }
 
-.dashboard-title-bar h1 {
+.student-dashboard-title-bar h1 {
   color: white;
   font-size: 28px;
   margin: 0;
   font-weight: 700;
 }
 
-.dashboard-content {
-  padding: 32px 40px;
+.student-dashboard-content {
+  padding: 20px;
   max-width: 1400px;
   margin: 0 auto;
   background: white;
 }
 
 /* Tabs */
-.tabs-container {
+.student-tabs-container {
   display: flex;
   gap: 8px;
   margin-bottom: 30px;
@@ -829,19 +829,19 @@
     display: none;
   }
 
-  .dashboard-title-bar {
+  .student-dashboard-title-bar {
     padding: 16px 20px;
   }
 
-  .dashboard-title-bar h1 {
+  .student-dashboard-title-bar h1 {
     font-size: 22px;
   }
 
-  .dashboard-content {
+  .student-dashboard-content {
     padding: 20px;
   }
 
-  .tabs-container {
+  .student-tabs-container {
     overflow-x: auto;
   }
 

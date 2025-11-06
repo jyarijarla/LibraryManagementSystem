@@ -63,7 +63,7 @@ function StudentDashboard() {
   ]
   // -------------------- MAIN RENDER --------------------
   return (
-    <div className="dashboard-container">
+    <div className="student-dashboard-container">
       <nav className="student-navbar">
         <div className="student-navbar-content">
           <div className="student-navbar-left">
@@ -77,18 +77,18 @@ function StudentDashboard() {
       </nav>
       <LoadingOverlay loading={isLoading} loadMessage={loadText} />
       <SuccessPopup successMessage={successMessage} />
-      <div className="dashboard-content">
-        <div className="dashboard-title-bar">
+      <div className="student-dashboard-content">
+        <div className="student-dashboard-title-bar">
           <h1>Student Dashboard</h1>
         </div>
 
-        <nav className="tabs-container">
+        <nav className="student-tabs-container">
           {routes.map(({ path, label }) => (
             <NavLink key={path} to={'/student/' + path} className={tabClassName} >{label}</NavLink>
           ))}
         </nav>
 
-        <div className='dashboard-content'>
+        <div className='student-dashboard-innercontent'>
           <Routes>
             {/*Main redirect*/}
             <Route index element={<Navigate to="/student/assets" replace />} />
