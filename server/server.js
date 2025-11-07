@@ -95,7 +95,9 @@ const routes = [
   
   // Borrow routes
   { method: 'GET', path: '/api/borrow-records', handler: borrowController.getAllRecords },
+  { method: 'POST', path: '/api/borrow/issue', handler: borrowController.issueBook },
   { method: 'PUT', path: '/api/borrow-records/:id/return', handler: borrowController.returnBook },
+  { method: 'PUT', path: '/api/borrow-records/:id/renew', handler: borrowController.renewBook },
   { method: 'GET', path: '/api/dashboard/stats', handler: borrowController.getDashboardStats },
   
   // Report routes
@@ -115,7 +117,7 @@ const routes = [
 
 // Helper to set CORS headers
 function setCorsHeaders(req, res) {
-  const allowedOrigins = ['http://localhost:5173', 'http://localhost:5174', 'https://library-management-system-blush-eight.vercel.app'];
+  const allowedOrigins = ['http://localhost:5173', 'https://library-management-system-blush-eight.vercel.app'];
   const origin = req.headers.origin;
   if (allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
