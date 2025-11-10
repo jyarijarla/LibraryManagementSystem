@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
-
+import { useOverlay } from '../../components/FeedbackUI/OverlayContext'
+import { useLoading } from '../../components/FeedbackUI/LoadingContext'
 const API_URL = window.location.hostname === 'localhost' 
 ? 'http://localhost:3000/api'
 : 'https://librarymanagementsystem-z2yw.onrender.com/api'
@@ -35,8 +36,9 @@ const getAssetImagePath = (assetType, assetId, extension = 'png') => {
 // Default to .png, but can be .jpg, .jpeg, .gif, .webp, etc.
 return `/assets/${assetType}/${assetId}.${extension}`
 }
-export function Assets({ setLoading }){
+export function Assets(){
     const [error, setError] = useState('')
+    const { setLoading } = useLoading();
 
     const [searchParams, setSearchParams] = useSearchParams()
     const [activeAssetTab, setActiveAssetTab] = useState(searchParams.get('type') || 'books')
