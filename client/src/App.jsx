@@ -9,7 +9,7 @@ import Home from './pages/Home/Home'
 import About from './pages/About/About'      
 import Books from './pages/Books/Books'     
 import './App.css'
-import NavBar from './components/Navbar'
+// import NavBar from './components/Navbar'
 import Movies from './pages/Movie/Movies'
 
 function AppContent() {
@@ -22,7 +22,7 @@ function AppContent() {
 
   return (
     <>
-      {showNavbar && <NavBar />}
+      {/* {showNavbar && <NavBar />} */}
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />

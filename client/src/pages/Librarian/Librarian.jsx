@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { motion } from 'framer-motion'
+import { 
+  Home, BookOpen, RefreshCw, Users, DollarSign, 
+  FileText, LogOut, Search, Calendar, User,
+  TrendingUp, TrendingDown, BookMarked, AlertCircle,
+  Library, UserPlus, Clock, Menu, X
+} from 'lucide-react'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import '../Admin/Admin.css'
 import './Librarian.css'
 import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
@@ -14,102 +22,73 @@ const getAssetImagePath = (assetType, assetId, extension = 'png') => {
   return `/assets/${assetType}/${assetId}.${extension}`
 }
 
-// Card Component for Dashboard Stats
-const Card = ({ title, value, icon, details, gradient }) => {
+// Modern Stat Card Component with Animation
+const StatCard = ({ title, value, change, isIncrease, icon: Icon, gradient, delay = 0 }) => {
   return (
-    <div className="bg-white p-6 rounded-xl shadow-md flex flex-col justify-between hover:shadow-lg transition-shadow duration-300">
-      <div className="flex justify-between items-start">
-        <h3 className="text-base font-medium text-gray-600">{title}</h3>
-        <div className={`p-3 rounded-lg ${gradient}`}>
-          {icon}
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay }}
+      className="bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 p-6"
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex-1">
+          <p className="text-sm font-medium text-gray-600 mb-1">{title}</p>
+          <h3 className="text-3xl font-bold text-gray-900">{value}</h3>
+          {change && (
+            <div className="flex items-center mt-2">
+              {isIncrease ? (
+                <TrendingUp className="w-4 h-4 text-green-500 mr-1" />
+              ) : (
+                <TrendingDown className="w-4 h-4 text-red-500 mr-1" />
+              )}
+              <span className={`text-sm font-medium ${isIncrease ? 'text-green-600' : 'text-red-600'}`}>
+                {change}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className={`p-4 rounded-lg ${gradient}`}>
+          <Icon className="w-6 h-6 text-white" />
         </div>
       </div>
-      <div className="mt-4">
-        <p className="text-3xl font-bold text-gray-800">{value}</p>
-        {details && <p className="text-xs text-gray-400 mt-1">{details}</p>}
-      </div>
-    </div>
+    </motion.div>
   )
 }
 
-// Icon Components for Sidebar & Dashboard
-const HomeIcon = ({ className = '' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-  </svg>
-)
-
-const BookIcon = ({ className = '' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-  </svg>
-)
-
-const MembersIcon = ({ className = '' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-  </svg>
-)
-
-const FinesIcon = ({ className = '' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-)
-
-const IssueReturnIcon = ({ className = '' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-  </svg>
-)
-
-const ReportsIcon = ({ className = '' }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-  </svg>
-)
-
-// NavItem Component for Sidebar
-const NavItem = ({ icon, label, isActive, onClick }) => {
+// NavItem Component for Modern Sidebar
+const NavItem = ({ icon: Icon, label, isActive, onClick }) => {
   return (
-    <a
-      href="#"
-      onClick={(e) => {
-        e.preventDefault()
-        onClick()
-      }}
+    <button
+      onClick={onClick}
       className={`
-        relative flex items-center px-6 py-3 text-sm font-medium transition-all duration-200
+        w-full flex items-center px-6 py-3 text-sm font-medium transition-all duration-200
         ${isActive 
-          ? 'bg-indigo-600 text-white' 
+          ? 'bg-indigo-600 text-white border-l-4 border-sky-400' 
           : 'text-gray-300 hover:bg-slate-700 hover:text-white'
         }
       `}
     >
-      {isActive && (
-        <span className="absolute left-0 top-0 bottom-0 w-1 bg-sky-400"></span>
-      )}
-      <span className="mr-3">
-        {React.cloneElement(icon, { className: 'w-5 h-5' })}
-      </span>
+      <Icon className="w-5 h-5 mr-3" />
       <span>{label}</span>
-    </a>
+    </button>
   )
 }
 
 // LibrarianSidebar Component
 const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOpen }) => {
   const navItems = [
-    { label: 'Dashboard', icon: <HomeIcon />, page: 'overview' },
-    { label: 'Manage Books', icon: <BookIcon />, page: 'books' },
-    { label: 'Issue / Return', icon: <IssueReturnIcon />, page: 'issue-return' },
-    { label: 'Members', icon: <MembersIcon />, page: 'members' },
-    { label: 'Fines & Payments', icon: <FinesIcon />, page: 'fines' },
-    { label: 'All Records', icon: <ReportsIcon />, page: 'records' }
+    { label: 'Dashboard', icon: Home, page: 'overview' },
+    { label: 'Manage Assets', icon: BookOpen, page: 'books' },
+    { label: 'Issue / Return', icon: RefreshCw, page: 'issue-return' },
+    { label: 'Members', icon: Users, page: 'members' },
+    { label: 'Fines & Payments', icon: DollarSign, page: 'fines' },
+    { label: 'All Records', icon: FileText, page: 'records' }
   ]
 
   return (
     <>
+      {/* Mobile overlay */}
       <div
         className={`
           fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity duration-300 md:hidden
@@ -118,6 +97,7 @@ const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOp
         onClick={() => setSidebarOpen(false)}
       ></div>
 
+      {/* Sidebar */}
       <aside
         className={`
           fixed top-0 left-0 h-full w-64 bg-slate-800 z-50 transition-transform duration-300 ease-in-out
@@ -125,11 +105,17 @@ const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOp
           md:relative md:translate-x-0
         `}
       >
-        <div className="px-6 py-5 border-b border-slate-700">
-          <h1 className="text-2xl font-bold text-white">📚 LMS</h1>
+        {/* Logo/Brand */}
+        <div className="px-6 py-5 border-b border-slate-700 flex items-center gap-3">
+          <Library className="w-8 h-8 text-sky-400" />
+          <div>
+            <h1 className="text-2xl font-bold text-white">LMS</h1>
+            <p className="text-xs text-gray-400">Library Management</p>
+          </div>
         </div>
 
-        <nav className="mt-6">
+        {/* Navigation */}
+        <nav className="mt-6 space-y-1">
           {navItems.map((item) => (
             <NavItem
               key={item.page}
@@ -143,8 +129,91 @@ const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOp
             />
           ))}
         </nav>
+
+        {/* Logout button at bottom */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-700">
+          <button
+            onClick={() => {
+              localStorage.removeItem('token')
+              window.location.href = '/login'
+            }}
+            className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-300 hover:bg-slate-700 hover:text-white rounded-lg transition-all duration-200"
+          >
+            <LogOut className="w-5 h-5 mr-3" />
+            <span>Logout</span>
+          </button>
+        </div>
       </aside>
     </>
+  )
+}
+
+// TopNavbar Component
+const TopNavbar = ({ sidebarOpen, setSidebarOpen, onLogout }) => {
+  const [searchQuery, setSearchQuery] = useState('')
+  const [dateRange, setDateRange] = useState('today')
+
+  return (
+    <nav className="bg-white border-b border-gray-200 shadow-sm z-30">
+      <div className="px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center flex-1 gap-4">
+          {/* Mobile menu button */}
+          <button
+            className="md:hidden text-gray-600 hover:text-gray-900 focus:outline-none"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+          >
+            {sidebarOpen ? (
+              <X className="w-6 h-6" />
+            ) : (
+              <Menu className="w-6 h-6" />
+            )}
+          </button>
+
+          {/* Search Bar */}
+          <div className="flex-1 max-w-2xl">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search assets, members, transactions..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Right Section */}
+        <div className="flex items-center gap-4">
+          {/* Date Range Selector */}
+          <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
+            <Calendar className="w-5 h-5 text-gray-500" />
+            <select
+              value={dateRange}
+              onChange={(e) => setDateRange(e.target.value)}
+              className="bg-transparent text-sm font-medium text-gray-700 focus:outline-none"
+            >
+              <option value="today">Today</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="year">This Year</option>
+            </select>
+          </div>
+
+          {/* User Profile */}
+          <div className="flex items-center gap-3 px-3 py-2 bg-indigo-50 rounded-lg border border-indigo-100">
+            <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center">
+              <User className="w-5 h-5 text-white" />
+            </div>
+            <div className="hidden md:block">
+              <p className="text-sm font-semibold text-gray-900">Librarian</p>
+              <p className="text-xs text-gray-500">Admin Access</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </nav>
   )
 }
 
@@ -190,6 +259,7 @@ function Librarian() {
   })
   const [recentTransactions, setRecentTransactions] = useState([])
   const [overdueItems, setOverdueItems] = useState([])
+  const [popularBooks, setPopularBooks] = useState([])
   
   // Search States
   const [searchTerm, setSearchTerm] = useState('')
@@ -228,6 +298,27 @@ function Librarian() {
   const [imageFile, setImageFile] = useState(null)
   const [imagePreview, setImagePreview] = useState(null)
 
+  // Member Management States
+  const [members, setMembers] = useState([])
+  const [memberSearch, setMemberSearch] = useState('')
+  const [memberStatusFilter, setMemberStatusFilter] = useState('all') // all, active, suspended
+  const [showMemberModal, setShowMemberModal] = useState(false)
+  const [showMemberProfileModal, setShowMemberProfileModal] = useState(false)
+  const [memberModalMode, setMemberModalMode] = useState('add') // add or edit
+  const [selectedMember, setSelectedMember] = useState(null)
+  const [memberProfile, setMemberProfile] = useState(null)
+  const [memberForm, setMemberForm] = useState({
+    username: '',
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    dateOfBirth: '',
+    status: 'active'
+  })
+  const [memberPage, setMemberPage] = useState(1)
+  const [memberTotalPages, setMemberTotalPages] = useState(1)
+
   // Function to change tab and update URL
   const changeTab = (tab) => {
     setActiveTab(tab)
@@ -253,6 +344,14 @@ function Librarian() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, activeAssetTab])
 
+  // Refetch members when search, filter, or page changes
+  useEffect(() => {
+    if (activeTab === 'members') {
+      fetchMembers()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memberSearch, memberStatusFilter, memberPage])
+
   const handleLogout = () => {
     localStorage.removeItem('token')
     localStorage.removeItem('role')
@@ -267,7 +366,8 @@ function Librarian() {
         await Promise.all([
           fetchDashboardStats(),
           fetchRecentTransactions(),
-          fetchOverdueItems()
+          fetchOverdueItems(),
+          fetchPopularBooks()
         ])
       } else if (activeTab === 'books') {
         await fetchAssets(activeAssetTab)
@@ -283,7 +383,7 @@ function Librarian() {
           fetchAssets('study-rooms')
         ])
       } else if (activeTab === 'members') {
-        await fetchStudents()
+        await fetchMembers()
       } else if (activeTab === 'fines') {
         await fetchFines()
       } else if (activeTab === 'records') {
@@ -337,12 +437,26 @@ function Librarian() {
       const response = await fetch(`${API_URL}/borrow-records`)
       if (response.ok) {
         const data = await response.json()
-        // Get last 5 transactions
-        const recent = data.slice(0, 5)
+        // Get last 10 transactions sorted by date
+        const recent = data.slice(0, 10)
         setRecentTransactions(recent)
       }
     } catch (error) {
       console.error('Error fetching recent transactions:', error)
+    }
+  }
+
+  const fetchPopularBooks = async () => {
+    try {
+      const response = await fetch(`${API_URL}/reports/most-borrowed-assets`)
+      if (response.ok) {
+        const data = await response.json()
+        // Get top 5 most borrowed books
+        setPopularBooks(data.slice(0, 5))
+      }
+    } catch (error) {
+      console.error('Error fetching popular books:', error)
+      setPopularBooks([])
     }
   }
 
@@ -405,6 +519,175 @@ function Librarian() {
     } catch (error) {
       console.error('Error fetching students:', error)
     }
+  }
+
+  // Member Management Functions
+  const fetchMembers = async () => {
+    try {
+      const params = new URLSearchParams({
+        search: memberSearch,
+        status: memberStatusFilter,
+        page: memberPage,
+        limit: 20
+      })
+      
+      const response = await fetch(`${API_URL}/members?${params}`)
+      if (!response.ok) throw new Error('Failed to fetch members')
+      const data = await response.json()
+      
+      setMembers(data.members)
+      setMemberTotalPages(data.pagination.totalPages)
+    } catch (error) {
+      console.error('Error fetching members:', error)
+      setError('Failed to fetch members')
+    }
+  }
+
+  const fetchMemberProfile = async (memberId) => {
+    try {
+      const response = await fetch(`${API_URL}/members/${memberId}`)
+      if (!response.ok) throw new Error('Failed to fetch member profile')
+      const data = await response.json()
+      
+      setMemberProfile(data)
+      setShowMemberProfileModal(true)
+    } catch (error) {
+      console.error('Error fetching member profile:', error)
+      setError('Failed to fetch member profile')
+    }
+  }
+
+  const handleAddMember = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    setSuccessMessage('')
+
+    try {
+      const response = await fetch(`${API_URL}/members`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(memberForm),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to add member')
+      }
+
+      setSuccessMessage('Member added successfully!')
+      setTimeout(() => setSuccessMessage(''), 5000) // Auto-hide after 5 seconds
+      setShowMemberModal(false)
+      setMemberForm({
+        username: '',
+        firstName: '',
+        lastName: '',
+        email: '',
+        phone: '',
+        dateOfBirth: '',
+        status: 'active'
+      })
+      await fetchMembers()
+    } catch (err) {
+      console.error('Error adding member:', err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleEditMember = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    setSuccessMessage('')
+
+    try {
+      const response = await fetch(`${API_URL}/members/${selectedMember.User_ID}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(memberForm),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to update member')
+      }
+
+      setSuccessMessage('Member updated successfully!')
+      setTimeout(() => setSuccessMessage(''), 5000) // Auto-hide after 5 seconds
+      setShowMemberModal(false)
+      setSelectedMember(null)
+      await fetchMembers()
+    } catch (err) {
+      console.error('Error updating member:', err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDeleteMember = async (memberId) => {
+    if (!window.confirm('Are you sure you want to delete this member? This action cannot be undone.')) {
+      return
+    }
+
+    setLoading(true)
+    setError('')
+    setSuccessMessage('')
+
+    try {
+      const response = await fetch(`${API_URL}/members/${memberId}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to delete member')
+      }
+
+      setSuccessMessage('Member deleted successfully!')
+      setTimeout(() => setSuccessMessage(''), 5000) // Auto-hide after 5 seconds
+      await fetchMembers()
+    } catch (err) {
+      console.error('Error deleting member:', err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const openAddMemberModal = () => {
+    setMemberModalMode('add')
+    setSelectedMember(null)
+    setMemberForm({
+      username: '',
+      firstName: '',
+      lastName: '',
+      email: '',
+      phone: '',
+      status: 'active'
+    })
+    setShowMemberModal(true)
+  }
+
+  const openEditMemberModal = (member) => {
+    setMemberModalMode('edit')
+    setSelectedMember(member)
+    setMemberForm({
+      username: member.Username,
+      firstName: member.First_Name,
+      lastName: member.Last_Name,
+      email: member.User_Email,
+      phone: member.Phone_Number || '',
+      dateOfBirth: member.Date_Of_Birth ? member.Date_Of_Birth.split('T')[0] : '',
+      status: member.Account_Status
+    })
+    setShowMemberModal(true)
   }
 
   const fetchBorrowRecords = async () => {
@@ -813,7 +1096,7 @@ function Librarian() {
         throw new Error(data.message || 'Failed to return book')
       }
       
-      setSuccessMessage(`✅ Book returned successfully! ${fineAmount > 0 ? `Fine recorded: $${fineAmount.toFixed(2)}` : ''}`)
+      setSuccessMessage(`Book returned successfully! ${fineAmount > 0 ? `Fine recorded: $${fineAmount.toFixed(2)}` : ''}`)
       setTimeout(() => setSuccessMessage(''), 3000)
       
       await fetchData()
@@ -863,84 +1146,240 @@ function Librarian() {
     
     return (
       <div className="p-6">
-        <h2 className="text-3xl font-bold text-gray-800 mb-6">Dashboard Overview</h2>
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Dashboard Overview</h2>
+          <p className="text-gray-600">Track library performance and manage operations at a glance</p>
+        </div>
         
-        {/* Stats Cards Grid */}
+        {/* Stats Cards Grid with Animations */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card
+          <StatCard
             title="Total Books"
             value={loading ? '...' : dashboardStats.totalBooks}
-            icon={<BookIcon className="h-6 w-6 text-white" />}
-            details={`${dashboardStats.availableBooks} Available / ${dashboardStats.borrowedBooks} Borrowed / ${dashboardStats.reservedBooks} Reserved`}
-            gradient="from-cyan-500 to-blue-500 bg-gradient-to-br"
+            change={`${dashboardStats.availableBooks} Available`}
+            isIncrease={dashboardStats.availableBooks > 0}
+            icon={BookMarked}
+            gradient="bg-gradient-to-br from-cyan-500 to-blue-600"
+            delay={0}
           />
           
-          <Card
+          <StatCard
             title="Active Members"
             value={loading ? '...' : dashboardStats.activeMembers}
-            icon={<MembersIcon className="h-6 w-6 text-white" />}
-            gradient="from-green-400 to-emerald-500 bg-gradient-to-br"
+            change="+12% from last month"
+            isIncrease={true}
+            icon={Users}
+            gradient="bg-gradient-to-br from-green-500 to-emerald-600"
+            delay={0.1}
           />
           
-          <Card
-            title="Overdue Books"
+          <StatCard
+            title="Overdue Items"
             value={loading ? '...' : overdueItems.length}
-            icon={<BookIcon className="h-6 w-6 text-white" />}
-            gradient="from-amber-400 to-orange-500 bg-gradient-to-br"
+            change={overdueItems.length > 0 ? 'Needs attention' : 'All clear'}
+            isIncrease={false}
+            icon={AlertCircle}
+            gradient="bg-gradient-to-br from-amber-500 to-orange-600"
+            delay={0.2}
           />
           
-          <Card
+          <StatCard
             title="Unpaid Fines"
             value={loading ? '...' : `$${unpaidFines.toFixed(2)}`}
-            icon={<FinesIcon className="h-6 w-6 text-white" />}
-            gradient="from-red-500 to-pink-500 bg-gradient-to-br"
+            change={overdueItems.length > 0 ? `${overdueItems.length} items` : 'No fines'}
+            isIncrease={false}
+            icon={DollarSign}
+            gradient="bg-gradient-to-br from-red-500 to-pink-600"
+            delay={0.3}
           />
         </div>
 
+        {/* Additional Stats Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <StatCard
+            title="Borrowed Today"
+            value={loading ? '...' : dashboardStats.borrowedBooks}
+            change="+8% from yesterday"
+            isIncrease={true}
+            icon={BookOpen}
+            gradient="bg-gradient-to-br from-purple-500 to-indigo-600"
+            delay={0.4}
+          />
+          
+          <StatCard
+            title="Returned Today"
+            value={loading ? '...' : recentTransactions.filter(t => t.Return_Date !== null).length}
+            change="On track"
+            isIncrease={true}
+            icon={RefreshCw}
+            gradient="bg-gradient-to-br from-teal-500 to-cyan-600"
+            delay={0.5}
+          />
+          
+          <StatCard
+            title="Reserved Items"
+            value={loading ? '...' : dashboardStats.reservedBooks}
+            change="Upcoming pickups"
+            isIncrease={true}
+            icon={Clock}
+            gradient="bg-gradient-to-br from-blue-500 to-violet-600"
+            delay={0.6}
+          />
+          
+          <StatCard
+            title="New Members"
+            value={loading ? '...' : '5'}
+            change="This week"
+            isIncrease={true}
+            icon={UserPlus}
+            gradient="bg-gradient-to-br from-rose-500 to-pink-600"
+            delay={0.7}
+          />
+        </div>
+
+        {/* Charts Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Borrowing Trend Chart */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.8 }}
+            className="bg-white rounded-xl shadow-md p-6"
+          >
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Borrowing Trends</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart
+                data={[
+                  { name: 'Mon', borrowed: 12, returned: 8 },
+                  { name: 'Tue', borrowed: 19, returned: 15 },
+                  { name: 'Wed', borrowed: 15, returned: 12 },
+                  { name: 'Thu', borrowed: 22, returned: 18 },
+                  { name: 'Fri', borrowed: 28, returned: 20 },
+                  { name: 'Sat', borrowed: 25, returned: 22 },
+                  { name: 'Sun', borrowed: 18, returned: 16 },
+                ]}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="borrowed" stroke="#3b82f6" strokeWidth={2} />
+                <Line type="monotone" dataKey="returned" stroke="#10b981" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          </motion.div>
+
+          {/* Top Books */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.9 }}
+            className="bg-white rounded-xl shadow-md p-6"
+          >
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Most Popular Books</h3>
+            <div className="space-y-4">
+              {loading ? (
+                <div className="text-center text-gray-500 py-4">Loading...</div>
+              ) : popularBooks.length === 0 ? (
+                <div className="text-center text-gray-500 py-4">No data available</div>
+              ) : (
+                popularBooks.map((book, index) => (
+                  <div key={index} className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                        <span className="text-sm font-bold text-indigo-600">#{index + 1}</span>
+                      </div>
+                      <div className="flex-1">
+                        <span className="text-sm font-medium text-gray-900 block">{book.Title}</span>
+                        <span className="text-xs text-gray-500">{book.Total_Copies} {book.Total_Copies === 1 ? 'copy' : 'copies'} available</span>
+                      </div>
+                    </div>
+                    <span className="text-sm font-semibold text-indigo-600">{book.Total_Borrows} borrows</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        </div>
+
         {/* Tables Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Recent Transactions Table */}
-          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+        <div className="grid grid-cols-1 gap-6">
+          {/* Recent Transactions Table - Full Width */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 1.0 }}
+            className="bg-white rounded-xl shadow-md overflow-hidden"
+          >
             <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-800">Recent Transactions</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Recent Transactions</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Member</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Book Title</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#ID</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ISBN</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Author</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Member</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issued Date</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Return Date</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan="4" className="px-6 py-4 text-center text-gray-500">Loading...</td>
+                      <td colSpan="7" className="px-6 py-4 text-center text-gray-500">Loading...</td>
                     </tr>
                   ) : recentTransactions.length === 0 ? (
                     <tr>
-                      <td colSpan="4" className="px-6 py-4 text-center text-gray-500">No recent transactions</td>
+                      <td colSpan="7" className="px-6 py-4 text-center text-gray-500">No recent transactions</td>
                     </tr>
                   ) : (
-                    recentTransactions.slice(0, 5).map((transaction, index) => (
+                    recentTransactions.slice(0, 10).map((transaction, index) => (
                       <tr key={transaction.Borrow_ID || index} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100 transition-colors`}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          #{transaction.Borrow_ID}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {transaction.ISBN || 'N/A'}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-gray-900">
+                          {transaction.Title}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-gray-600">
+                          {transaction.Author_Artist || 'N/A'}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                           {transaction.First_Name} {transaction.Last_Name}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{transaction.Title}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            transaction.Return_Date === null 
-                              ? 'bg-blue-100 text-blue-800' 
-                              : 'bg-green-100 text-green-800'
-                          }`}>
-                            {transaction.Return_Date === null ? 'Issue' : 'Return'}
-                          </span>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {new Date(transaction.Borrow_Date).toLocaleString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {new Date(transaction.Borrow_Date).toLocaleDateString()}
+                        <td className="px-4 py-4 whitespace-nowrap text-sm">
+                          {transaction.Return_Date ? (
+                            <span className="text-green-600 font-medium">
+                              {new Date(transaction.Return_Date).toLocaleString('en-US', {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                              Not Returned
+                            </span>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -948,12 +1387,17 @@ function Librarian() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </motion.div>
 
-          {/* Overdue Books Table */}
-          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+          {/* Overdue Books Table - Full Width */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 1.1 }}
+            className="bg-white rounded-xl shadow-md overflow-hidden"
+          >
             <div className="px-6 py-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-800">Overdue Books</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Overdue Books</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
@@ -962,26 +1406,30 @@ function Librarian() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Member</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Book</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Days Late</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fine</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan="3" className="px-6 py-4 text-center text-gray-500">Loading...</td>
+                      <td colSpan="4" className="px-6 py-4 text-center text-gray-500">Loading...</td>
                     </tr>
                   ) : overdueItems.length === 0 ? (
                     <tr>
-                      <td colSpan="3" className="px-6 py-4 text-center text-gray-500">No overdue books</td>
+                      <td colSpan="4" className="px-6 py-4 text-center text-green-600 font-medium">No overdue books - All clear!</td>
                     </tr>
                   ) : (
                     overdueItems.map((item, index) => (
                       <tr key={item.Borrow_ID || index} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100 transition-colors`}>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {item.First_Name} {item.Last_Name}
+                          {item.Borrower_Name}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{item.Title}</td>
+                        <td className="px-6 py-4 text-sm text-gray-900">{item.Title}</td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-red-600 font-bold text-sm">{item.days_overdue}</span>
+                          <span className="text-red-600 font-bold text-sm">{item.Days_Overdue} days</span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-red-600">
+                          ${parseFloat(item.Estimated_Late_Fee || 0).toFixed(2)}
                         </td>
                       </tr>
                     ))
@@ -989,7 +1437,7 @@ function Librarian() {
                 </tbody>
               </table>
             </div>
-          </div>
+          </motion.div>
         </div>
       </div>
     )
@@ -1000,46 +1448,141 @@ function Librarian() {
     const data = getCurrentAssetData()
 
     return (
-      <div className="tab-content">
-        <div className="section-header">
-          <h2>{activeAssetTab.charAt(0).toUpperCase() + activeAssetTab.slice(1)}</h2>
-          <button className="add-button" onClick={openAddAssetModal}>
-            + Add {activeAssetTab.slice(0, -1)}
-          </button>
+      <div className="p-6">
+        {/* Page Header */}
+        <div className="mb-6">
+          <h2 className="text-3xl font-bold text-gray-800 mb-2">Manage Assets</h2>
+          <p className="text-gray-600">Browse, add, edit, and manage all library assets across different categories</p>
         </div>
 
-        <ErrorPopup errorMessage={error} />
+        <ErrorPopup errorMessage={error} onClose={() => setError('')} />
+        <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
 
-        <div className="asset-tabs">
-          <button className={`asset-tab ${activeAssetTab === 'books' ? 'active' : ''}`} onClick={() => changeAssetTab('books')}>📚 Books</button>
-          <button className={`asset-tab ${activeAssetTab === 'cds' ? 'active' : ''}`} onClick={() => changeAssetTab('cds')}>💿 CDs</button>
-          <button className={`asset-tab ${activeAssetTab === 'audiobooks' ? 'active' : ''}`} onClick={() => changeAssetTab('audiobooks')}>🎧 Audiobooks</button>
-          <button className={`asset-tab ${activeAssetTab === 'movies' ? 'active' : ''}`} onClick={() => changeAssetTab('movies')}>🎬 Movies</button>
-          <button className={`asset-tab ${activeAssetTab === 'technology' ? 'active' : ''}`} onClick={() => changeAssetTab('technology')}>💻 Technology</button>
-          <button className={`asset-tab ${activeAssetTab === 'study-rooms' ? 'active' : ''}`} onClick={() => changeAssetTab('study-rooms')}>🚪 Study Rooms</button>
+        {/* Asset Category Tabs */}
+        <div className="bg-white rounded-lg shadow-md mb-6 overflow-hidden">
+          <div className="flex flex-wrap border-b border-gray-200">
+            <button 
+              className={`flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
+                activeAssetTab === 'books' 
+                  ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' 
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`} 
+              onClick={() => changeAssetTab('books')}
+            >
+              <span>Books</span>
+            </button>
+            <button 
+              className={`flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
+                activeAssetTab === 'cds' 
+                  ? 'bg-purple-50 text-purple-700 border-b-2 border-purple-500' 
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`} 
+              onClick={() => changeAssetTab('cds')}
+            >
+              <span>CDs</span>
+            </button>
+            <button 
+              className={`flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
+                activeAssetTab === 'audiobooks' 
+                  ? 'bg-green-50 text-green-700 border-b-2 border-green-500' 
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`} 
+              onClick={() => changeAssetTab('audiobooks')}
+            >
+              <span>Audiobooks</span>
+            </button>
+            <button 
+              className={`flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
+                activeAssetTab === 'movies' 
+                  ? 'bg-red-50 text-red-700 border-b-2 border-red-500' 
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`} 
+              onClick={() => changeAssetTab('movies')}
+            >
+              <span>Movies</span>
+            </button>
+            <button 
+              className={`flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
+                activeAssetTab === 'technology' 
+                  ? 'bg-indigo-50 text-indigo-700 border-b-2 border-indigo-500' 
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`} 
+              onClick={() => changeAssetTab('technology')}
+            >
+              <span>Technology</span>
+            </button>
+            <button 
+              className={`flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
+                activeAssetTab === 'study-rooms' 
+                  ? 'bg-amber-50 text-amber-700 border-b-2 border-amber-500' 
+                  : 'text-gray-600 hover:bg-gray-50'
+              }`} 
+              onClick={() => changeAssetTab('study-rooms')}
+            >
+              <span>Study Rooms</span>
+            </button>
+          </div>
+
+          {/* Action Bar */}
+          <div className="p-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-gray-700">
+                Total {activeAssetTab}: <span className="text-blue-600 font-bold">{data.length}</span>
+              </span>
+              <span className="text-gray-400">•</span>
+              <span className="text-sm text-gray-600">
+                Available: <span className="text-green-600 font-semibold">
+                  {data.reduce((sum, item) => sum + (parseInt(item.Available_Copies) || 0), 0)}
+                </span>
+              </span>
+            </div>
+            <button 
+              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-md hover:shadow-lg font-medium text-sm flex items-center gap-2"
+              onClick={openAddAssetModal}
+            >
+              <span className="text-lg">+</span>
+              <span>Add {activeAssetTab.charAt(0).toUpperCase() + activeAssetTab.slice(1, -1)}</span>
+            </button>
+          </div>
         </div>
 
-        <div className="cards-container">
+        {/* Assets Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {data.length === 0 ? (
-            <div className="empty-state">
-              <span className="empty-icon">📭</span>
-              <p>No {activeAssetTab} found</p>
+            <div className="col-span-full flex flex-col items-center justify-center py-16 bg-white rounded-xl border-2 border-dashed border-gray-300">
+              <p className="text-gray-500 text-lg font-medium">No {activeAssetTab} found</p>
+              <p className="text-gray-400 text-sm mt-1">Click "Add {activeAssetTab.slice(0, -1)}" to get started</p>
             </div>
           ) : (
             data.map((item, index) => (
-              <div key={item.Asset_ID} className="asset-card">
-                <div className="card-header">
-                  <span className="card-number">#{index + 1}</span>
-                  <div className="card-actions">
-                    <button className="icon-btn edit-icon" onClick={() => openEditAssetModal(item)} title="Edit">✏️</button>
-                    <button className="icon-btn delete-icon" onClick={() => openDeleteModal(item)} title="Delete">✕</button>
+              <div key={item.Asset_ID} className="bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group border border-gray-200">
+                {/* Card Header */}
+                <div className="p-3 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200 flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-600 bg-white px-3 py-1 rounded-full">#{index + 1}</span>
+                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <button 
+                      className="px-2 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-xs font-medium"
+                      onClick={() => openEditAssetModal(item)} 
+                      title="Edit"
+                    >
+                      Edit
+                    </button>
+                    <button 
+                      className="px-2 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-xs font-medium"
+                      onClick={() => openDeleteModal(item)} 
+                      title="Delete"
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
                 
-                <div className="card-image">
+                {/* Card Image */}
+                <div className="relative w-full bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden" style={{ height: '450px' }}>
                   <img 
                     src={item.Image_URL ? `${item.Image_URL}?t=${imageRefreshKey}` : `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'png')}?t=${imageRefreshKey}`}
                     alt={item.Title || item.Room_Number || 'Asset'}
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
                     onLoad={(e) => {
                       e.target.style.display = 'block'
                       const placeholder = e.target.nextElementSibling
@@ -1056,18 +1599,34 @@ function Librarian() {
                       }
                     }}
                   />
-                  <div className="image-placeholder-card">
-                    <span>N/A</span>
+                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-200 to-gray-300" style={{ display: 'none' }}>
+                    <div className="text-center">
+                      <span className="text-gray-500 text-sm font-medium">No Image</span>
+                    </div>
                   </div>
                 </div>
                 
-                <div className="card-body">
-                  {columns.slice(1).map(col => (
-                    <div key={col.key} className="card-field">
-                      <span className="field-label">{col.label}:</span>
-                      <span className="field-value">{renderCellContent(item, col, index)}</span>
-                    </div>
-                  ))}
+                {/* Card Body */}
+                <div className="p-4 space-y-2">
+                  {columns.slice(1).map(col => {
+                    const value = renderCellContent(item, col, index)
+                    if (col.key === 'Available_Copies' || col.key === 'Availability') {
+                      return (
+                        <div key={col.key} className="flex items-center justify-between py-2 border-t border-gray-100">
+                          <span className="text-xs font-medium text-gray-500 uppercase">{col.label}</span>
+                          {value}
+                        </div>
+                      )
+                    }
+                    return (
+                      <div key={col.key} className="flex items-start justify-between py-1">
+                        <span className="text-xs font-medium text-gray-500">{col.label}:</span>
+                        <span className="text-sm text-gray-800 font-medium text-right max-w-[60%] truncate" title={value}>
+                          {value}
+                        </span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             ))
@@ -1077,105 +1636,724 @@ function Librarian() {
     )
   }
 
-  const renderStudents = () => (
-    <div className="tab-content">
-      <div className="section-header">
-        <h2>💳 Member Assistance</h2>
+  const renderMembers = () => (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="p-6"
+    >
+      {/* Header Section */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Manage Members</h2>
+          <p className="text-sm text-gray-600 mt-1">View and manage library member accounts</p>
+        </div>
+        <button 
+          className="flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all duration-200 shadow-md hover:shadow-lg"
+          onClick={openAddMemberModal}
+        >
+          <UserPlus className="w-5 h-5" />
+          Add New Member
+        </button>
       </div>
 
-      <ErrorPopup errorMessage={error} />
+      <ErrorPopup errorMessage={error} onClose={() => setError('')} />
+      <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
 
-      <div className="table-container"  style={{ marginTop: '20px' }}>
-        <h3>All Members</h3>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Student ID</th>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Phone</th>
-              <th>Active Borrows</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {students.length === 0 ? (
+      {/* Search and Filter Controls */}
+      <div className="flex gap-4 mb-6 flex-wrap">
+        <div className="flex-1 min-w-[300px]">
+          <div className="relative">
+            <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Search by name, email, or username..."
+              value={memberSearch}
+              onChange={(e) => {
+                setMemberSearch(e.target.value)
+                setMemberPage(1)
+              }}
+              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
+            />
+          </div>
+        </div>
+        
+        <select
+          value={memberStatusFilter}
+          onChange={(e) => {
+            setMemberStatusFilter(e.target.value)
+            setMemberPage(1)
+          }}
+          className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 bg-white cursor-pointer transition-all"
+        >
+          <option value="all">All Status</option>
+          <option value="active">Active</option>
+          <option value="suspended">Suspended</option>
+        </select>
+      </div>
+
+      {/* Members Table */}
+      <div className="bg-white rounded-xl shadow-md overflow-hidden">
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-4 border-b border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-800">Member Directory</h3>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <td colSpan="7" style={{ textAlign: 'center' }}>No students found</td>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Member ID</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Name</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Email</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Phone</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Borrowed Books</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Fines</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
               </tr>
-            ) : (
-              students.map((student, index) => (
-                <tr key={student.id}>
-                  <td>{index + 1}</td>
-                  <td><strong>{student.studentId}</strong></td>
-                  <td>{student.name}</td>
-                  <td>{student.email}</td>
-                  <td>{student.phone || '-'}</td>
-                  <td>
-                    <span className={`status-badge ${student.borrowedBooks > 0 ? 'borrowed' : 'available'}`}>
-                      {student.borrowedBooks}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="status-badge active">
-                      {student.status}
-                    </span>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {members.length === 0 ? (
+                <tr>
+                  <td colSpan="8" className="px-6 py-12 text-center">
+                    <Users className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-500 font-medium">
+                      {memberSearch || memberStatusFilter !== 'all' 
+                        ? 'No members found matching your criteria' 
+                        : 'No members registered yet'}
+                    </p>
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                members.map((member, index) => (
+                  <motion.tr
+                    key={member.User_ID}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.3, delay: index * 0.05 }}
+                    className="hover:bg-gray-50 transition-colors"
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm font-bold text-gray-900">M{String(member.User_ID).padStart(3, '0')}</span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-r from-green-400 to-emerald-500 flex items-center justify-center text-white font-semibold mr-3">
+                          {member.First_Name.charAt(0)}{member.Last_Name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{member.First_Name} {member.Last_Name}</p>
+                          <p className="text-xs text-gray-500">@{member.Username}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{member.User_Email}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{member.Phone_Number || '-'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                        member.Borrowed_Count > 0 
+                          ? 'bg-blue-100 text-blue-800' 
+                          : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {member.Borrowed_Count} {member.Borrowed_Count === 1 ? 'book' : 'books'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`text-sm font-semibold ${
+                        parseFloat(member.Outstanding_Fines) > 0 ? 'text-red-600' : 'text-gray-400'
+                      }`}>
+                        ${parseFloat(member.Outstanding_Fines).toFixed(2)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                        member.Account_Status === 'active' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        ✓ {member.Account_Status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => fetchMemberProfile(member.User_ID)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-500 text-white text-xs font-medium rounded-lg hover:bg-blue-600 transition-colors"
+                          title="View Profile"
+                        >
+                          <Search className="w-3.5 h-3.5" />
+                          View
+                        </button>
+                        <button
+                          onClick={() => openEditMemberModal(member)}
+                          className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                          title="Edit"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteMember(member.User_ID)}
+                          className="px-3 py-1.5 bg-red-100 text-red-700 text-xs font-medium rounded-lg hover:bg-red-200 transition-colors"
+                          title="Delete"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </motion.tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+
+      {/* Pagination Controls */}
+      {memberTotalPages > 1 && (
+        <div className="flex items-center justify-between mt-6 px-4">
+          <button
+            onClick={() => setMemberPage(Math.max(1, memberPage - 1))}
+            disabled={memberPage === 1}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              memberPage === 1
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 shadow-sm'
+            }`}
+          >
+            ← Previous
+          </button>
+          <span className="text-sm text-gray-600 font-medium">
+            Page {memberPage} of {memberTotalPages}
+          </span>
+          <button
+            onClick={() => setMemberPage(Math.min(memberTotalPages, memberPage + 1))}
+            disabled={memberPage === memberTotalPages}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              memberPage === memberTotalPages
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 shadow-sm'
+            }`}
+          >
+            Next →
+          </button>
+        </div>
+      )}
+    </motion.div>
+  )
+
+  const renderMemberModals = () => (
+    <>
+      {/* Add/Edit Member Modal */}
+      {showMemberModal && (
+        <div className="modal-overlay" onClick={() => setShowMemberModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{memberModalMode === 'add' ? 'Add New Member' : 'Edit Member'}</h3>
+              <button className="modal-close" onClick={() => setShowMemberModal(false)}>×</button>
+            </div>
+            
+            <form onSubmit={memberModalMode === 'add' ? handleAddMember : handleEditMember}>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>Username *</label>
+                  <input
+                    type="text"
+                    value={memberForm.username}
+                    onChange={(e) => setMemberForm({...memberForm, username: e.target.value})}
+                    required
+                    disabled={memberModalMode === 'edit'}
+                    className="form-input"
+                    placeholder="Enter username"
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label>First Name *</label>
+                  <input
+                    type="text"
+                    value={memberForm.firstName}
+                    onChange={(e) => setMemberForm({...memberForm, firstName: e.target.value})}
+                    required
+                    className="form-input"
+                    placeholder="Enter first name"
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label>Last Name *</label>
+                  <input
+                    type="text"
+                    value={memberForm.lastName}
+                    onChange={(e) => setMemberForm({...memberForm, lastName: e.target.value})}
+                    required
+                    className="form-input"
+                    placeholder="Enter last name"
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label>Email *</label>
+                  <input
+                    type="email"
+                    value={memberForm.email}
+                    onChange={(e) => setMemberForm({...memberForm, email: e.target.value})}
+                    required
+                    className="form-input"
+                    placeholder="member@example.com"
+                  />
+                </div>
+                
+                <div className="form-group">
+                  <label>Phone</label>
+                  <input
+                    type="tel"
+                    value={memberForm.phone}
+                    onChange={(e) => setMemberForm({...memberForm, phone: e.target.value})}
+                    className="form-input"
+                    placeholder="(123) 456-7890"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Date of Birth *</label>
+                  <input
+                    type="date"
+                    value={memberForm.dateOfBirth}
+                    onChange={(e) => setMemberForm({...memberForm, dateOfBirth: e.target.value})}
+                    required
+                    className="form-input"
+                    max={new Date().toISOString().split('T')[0]}
+                  />
+                </div>
+              </div>
+              
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setShowMemberModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" disabled={loading}>
+                  {loading ? 'Saving...' : memberModalMode === 'add' ? 'Add Member' : 'Update Member'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modern Member Detail Modal */}
+      {showMemberProfileModal && memberProfile && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 overflow-y-auto"
+          onClick={() => setShowMemberProfileModal(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.3 }}
+            className="bg-white rounded-2xl shadow-2xl max-w-6xl w-full my-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-8 py-6 rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center text-green-600 font-bold text-2xl shadow-lg">
+                    {memberProfile.member.First_Name.charAt(0)}{memberProfile.member.Last_Name.charAt(0)}
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-white">
+                      {memberProfile.member.First_Name} {memberProfile.member.Last_Name}
+                    </h3>
+                    <p className="text-green-100">Member ID: M{String(memberProfile.member.User_ID).padStart(3, '0')}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowMemberProfileModal(false)}
+                  className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition-all"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-8 max-h-[calc(100vh-200px)] overflow-y-auto">
+              {/* Member Info Card */}
+              <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 mb-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <User className="w-5 h-5 text-gray-600" />
+                  <h4 className="text-lg font-semibold text-gray-900">Personal Information</h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium text-gray-500 uppercase">Username</span>
+                    <span className="text-sm font-medium text-gray-900 mt-1">@{memberProfile.member.Username}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium text-gray-500 uppercase">Email</span>
+                    <span className="text-sm font-medium text-gray-900 mt-1">{memberProfile.member.User_Email}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium text-gray-500 uppercase">Phone</span>
+                    <span className="text-sm font-medium text-gray-900 mt-1">{memberProfile.member.Phone_Number || 'N/A'}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium text-gray-500 uppercase">Membership Type</span>
+                    <span className="text-sm font-medium text-gray-900 mt-1">Student</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium text-gray-500 uppercase">Account Status</span>
+                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1 w-fit">
+                      ✓ {memberProfile.member.Account_Status}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium text-gray-500 uppercase">Registered On</span>
+                    <span className="text-sm font-medium text-gray-900 mt-1">Jan 10, 2025</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions Panel */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-6">
+                <div className="flex flex-wrap gap-3">
+                  <button className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all shadow-sm">
+                    <BookOpen className="w-4 h-4" />
+                    Issue New Book
+                  </button>
+                  <button className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all shadow-sm">
+                    <RefreshCw className="w-4 h-4" />
+                    Renew All
+                  </button>
+                  <button className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all shadow-sm">
+                    <DollarSign className="w-4 h-4" />
+                    View Fines
+                  </button>
+                  <button className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all">
+                    <AlertCircle className="w-4 h-4" />
+                    Suspend Member
+                  </button>
+                </div>
+              </div>
+
+              {/* Currently Borrowed Books */}
+              <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <BookMarked className="w-5 h-5 text-gray-600" />
+                    <h4 className="text-lg font-semibold text-gray-900">Currently Borrowed Books</h4>
+                  </div>
+                  <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                    {memberProfile.currentBorrows.length} active
+                  </span>
+                </div>
+                
+                {memberProfile.currentBorrows.length === 0 ? (
+                  <div className="text-center py-8">
+                    <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500">No active borrows</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Book ID</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Title</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Type</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Issue Date</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Due Date</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Days Left</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Fine</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {memberProfile.currentBorrows.map((borrow, idx) => {
+                          const dueDate = new Date(borrow.Due_Date)
+                          const today = new Date()
+                          const daysLeft = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
+                          const isOverdue = daysLeft < 0
+                          const fineAmount = parseFloat(borrow.Fine_Amount) || 0
+
+                          return (
+                            <tr key={idx} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                                B{String(borrow.Borrow_ID).padStart(3, '0')}
+                              </td>
+                              <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                                {borrow.Asset_Title}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
+                                  borrow.Asset_Type === 'Book' ? 'bg-blue-100 text-blue-800' :
+                                  borrow.Asset_Type === 'CD' ? 'bg-purple-100 text-purple-800' :
+                                  borrow.Asset_Type === 'Movie' ? 'bg-red-100 text-red-800' :
+                                  'bg-green-100 text-green-800'
+                                }`}>
+                                  {borrow.Asset_Type}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600">
+                                {new Date(borrow.Borrow_Date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600">
+                                {dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              </td>
+                              <td className="px-4 py-3">
+                                {isOverdue ? (
+                                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600">
+                                    <AlertCircle className="w-3.5 h-3.5" />
+                                    Overdue ({Math.abs(daysLeft)} days)
+                                  </span>
+                                ) : (
+                                  <span className={`text-xs font-medium ${daysLeft <= 3 ? 'text-orange-600' : 'text-gray-600'}`}>
+                                    {daysLeft} days
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`text-sm font-bold ${fineAmount > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                                  ${fineAmount.toFixed(2)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex gap-2">
+                                  <button className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded hover:bg-blue-200 transition-colors">
+                                    <Clock className="w-3 h-3" />
+                                    Renew
+                                  </button>
+                                  <button className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded hover:bg-green-200 transition-colors">
+                                    <BookOpen className="w-3 h-3" />
+                                    Return
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Borrowing History */}
+              <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 mb-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <FileText className="w-5 h-5 text-gray-600" />
+                  <h4 className="text-lg font-semibold text-gray-900">Borrowing History (Past Transactions)</h4>
+                </div>
+                
+                {memberProfile.borrowingHistory.length === 0 ? (
+                  <div className="text-center py-8">
+                    <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500">No borrowing history</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Book ID</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Title</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Issue Date</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Return Date</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Fine Paid</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {memberProfile.borrowingHistory.map((borrow, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                              B{String(borrow.Borrow_ID).padStart(3, '0')}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900">{borrow.Asset_Title}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {new Date(borrow.Borrow_Date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {borrow.Return_Date 
+                                ? new Date(borrow.Return_Date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                : <span className="text-orange-600 font-medium">Not returned</span>
+                              }
+                            </td>
+                            <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                              {borrow.Fee_Incurred ? `$${parseFloat(borrow.Fee_Incurred).toFixed(2)}` : '$0.00'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Fine Summary */}
+              <div className="bg-gradient-to-r from-orange-50 to-red-50 rounded-xl shadow-md border border-orange-200 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="w-5 h-5 text-orange-600" />
+                    <h4 className="text-lg font-semibold text-gray-900">Fine Summary</h4>
+                  </div>
+                  {memberProfile.finesSummary.unpaidFines > 0 && (
+                    <button className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all shadow-sm">
+                      <DollarSign className="w-4 h-4" />
+                      Mark as Paid
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white rounded-lg p-4 shadow-sm">
+                    <p className="text-sm text-gray-600 mb-1">Total Outstanding Fine</p>
+                    <p className="text-3xl font-bold text-red-600">
+                      ${parseFloat(memberProfile.finesSummary.unpaidFines || 0).toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="bg-white rounded-lg p-4 shadow-sm">
+                    <p className="text-sm text-gray-600 mb-1">Total Fines (All Time)</p>
+                    <p className="text-3xl font-bold text-gray-900">
+                      ${parseFloat(memberProfile.finesSummary.totalFines || 0).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Footer */}
+            <div className="bg-gray-50 px-8 py-4 rounded-b-2xl flex justify-end gap-3">
+              <button 
+                onClick={() => setShowMemberProfileModal(false)}
+                className="px-6 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </>
   )
 
   const renderBorrowRecords = () => (
-    <div className="tab-content">
-      <h2>Borrow Records</h2>
-      <ErrorPopup errorMessage={error} />
+    <div className="p-6">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">All Borrow Records</h2>
+          <p className="text-gray-600">Complete history of all borrowing transactions</p>
+        </div>
 
-      <div className="table-container">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>ID</th>
-              <th>Borrower</th>
-              <th>Item</th>
-              <th>Borrow Date</th>
-              <th>Due Date</th>
-              <th>Return Date</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {borrowRecords.length === 0 ? (
-              <tr>
-                <td colSpan="8" style={{ textAlign: 'center' }}>No records found</td>
-              </tr>
-            ) : (
-              borrowRecords.map((record, index) => (
-                <tr key={record.Borrow_ID}>
-                  <td>{index + 1}</td>
-                  <td>{record.Borrow_ID}</td>
-                  <td>{record.Borrower_Name}</td>
-                  <td>{record.Item_Title}</td>
-                  <td>{new Date(record.Borrow_Date).toLocaleDateString()}</td>
-                  <td>{new Date(record.Due_Date).toLocaleDateString()}</td>
-                  <td>{record.Return_Date ? new Date(record.Return_Date).toLocaleDateString() : '-'}</td>
-                  <td>
-                    <span className={`status-badge ${record.Return_Date ? 'returned' : 'borrowed'}`}>
-                      {record.Return_Date ? 'Returned' : 'Borrowed'}
-                    </span>
-                  </td>
+        <ErrorPopup errorMessage={error} onClose={() => setError('')} />
+        <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
+
+        <div className="bg-white rounded-xl shadow-md overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gradient-to-r from-indigo-50 to-purple-50">
+                <tr>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">#</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Borrow ID</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Borrower</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Item Title</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Asset Type</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Borrow Date</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Due Date</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Return Date</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {loading ? (
+                  <tr>
+                    <td colSpan="9" className="px-6 py-12 text-center">
+                      <div className="flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                        <span className="ml-3 text-gray-600">Loading records...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : borrowRecords.length === 0 ? (
+                  <tr>
+                    <td colSpan="9" className="px-6 py-12 text-center">
+                      <BookOpen className="mx-auto h-12 w-12 text-gray-400 mb-3" />
+                      <p className="text-gray-500 font-medium">No borrow records found</p>
+                    </td>
+                  </tr>
+                ) : (
+                  borrowRecords.map((record, index) => (
+                    <motion.tr 
+                      key={record.Borrow_ID}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">#{index + 1}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
+                        {record.Borrow_ID}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {record.First_Name} {record.Last_Name}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{record.Title}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          record.Asset_Type === 'Book' ? 'bg-blue-100 text-blue-800' :
+                          record.Asset_Type === 'CD' ? 'bg-purple-100 text-purple-800' :
+                          record.Asset_Type === 'Movie' ? 'bg-red-100 text-red-800' :
+                          record.Asset_Type === 'Audiobook' ? 'bg-green-100 text-green-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {record.Asset_Type}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {new Date(record.Borrow_Date).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {new Date(record.Due_Date).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {record.Return_Date ? 
+                          new Date(record.Return_Date).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          }) : 
+                          <span className="text-gray-400">Not returned</span>
+                        }
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          record.Return_Date 
+                            ? 'bg-green-100 text-green-800' 
+                            : new Date(record.Due_Date) < new Date() 
+                              ? 'bg-red-100 text-red-800' 
+                              : 'bg-yellow-100 text-yellow-800'
+                        }`}>
+                          {record.Return_Date ? 'Returned' : new Date(record.Due_Date) < new Date() ? 'Overdue' : 'Active'}
+                        </span>
+                      </td>
+                    </motion.tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </motion.div>
     </div>
   )
 
@@ -1183,7 +2361,10 @@ function Librarian() {
   const renderIssueReturn = () => {
     return (
       <div className="p-6">
-        <h2 className="text-3xl font-bold text-gray-800 mb-6">📤📥 Issue & Return Management</h2>
+        <h2 className="text-3xl font-bold text-gray-800 mb-6">Issue & Return Management</h2>
+        
+        <ErrorPopup errorMessage={error} onClose={() => setError('')} />
+        <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
         
         {/* Sub-tabs for Issue/Return/Renew */}
         <div className="bg-white rounded-lg shadow-md mb-6">
@@ -1238,7 +2419,7 @@ function Librarian() {
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder="🔍 Click or type to search students..."
+                        placeholder="Click or type to search students..."
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         value={studentSearch}
                         onChange={(e) => {
@@ -1313,7 +2494,7 @@ function Librarian() {
                           return member ? (
                             <div className="bg-white p-3 rounded border border-gray-200">
                               <div className="font-semibold text-gray-800 mb-2">
-                                ✅ Selected: {member.name}
+                                Selected: {member.name}
                               </div>
                               <div><strong>Email:</strong> {member.email}</div>
                               <div><strong>Phone:</strong> {member.phone || 'N/A'}</div>
@@ -1343,19 +2524,19 @@ function Librarian() {
                         setAssetSearch('')
                       }}
                     >
-                      <option value="books">📚 Books</option>
-                      <option value="cds">💿 CDs</option>
-                      <option value="audiobooks">🎧 Audiobooks</option>
-                      <option value="movies">🎬 Movies</option>
-                      <option value="technology">💻 Technology</option>
-                      <option value="study-rooms">🚪 Study Rooms</option>
+                      <option value="books">Books</option>
+                      <option value="cds">CDs</option>
+                      <option value="audiobooks">Audiobooks</option>
+                      <option value="movies">Movies</option>
+                      <option value="technology">Technology</option>
+                      <option value="study-rooms">Study Rooms</option>
                     </select>
 
                     {/* Asset Search */}
                     <div className="relative">
                       <input
                         type="text"
-                        placeholder={`🔍 Click or type to search ${selectedAssetType}...`}
+                        placeholder={`Click or type to search ${selectedAssetType}...`}
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         value={assetSearch}
                         onChange={(e) => {
@@ -1429,7 +2610,7 @@ function Librarian() {
                     {issueForm.assetId && (
                       <div className="mt-3 p-3 bg-white rounded border border-gray-200 text-sm">
                         <div className="font-semibold text-gray-800">
-                          ✅ Selected: {issueForm.assetTitle}
+                          Selected: {issueForm.assetTitle}
                         </div>
                       </div>
                     )}
@@ -1483,7 +2664,7 @@ function Librarian() {
                     disabled={!issueForm.memberId || !issueForm.assetId || loading}
                     onClick={handleIssueBook}
                   >
-                    {loading ? '⌛ Processing...' : '✓ Confirm Issue'}
+                    {loading ? 'Processing...' : 'Confirm Issue'}
                   </button>
                 </div>
               </div>
@@ -1525,14 +2706,32 @@ function Librarian() {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {borrowRecords.filter(r => !r.Return_Date).length === 0 ? (
+                        {borrowRecords
+                          .filter(r => !r.Return_Date)
+                          .filter(r => {
+                            if (!searchTerm) return true;
+                            const search = searchTerm.toLowerCase();
+                            const memberName = `${r.First_Name} ${r.Last_Name}`.toLowerCase();
+                            const title = (r.Title || '').toLowerCase();
+                            return memberName.includes(search) || title.includes(search);
+                          })
+                          .length === 0 ? (
                           <tr>
                             <td colSpan="9" className="px-6 py-8 text-center text-gray-500">
-                              No active borrows at the moment
+                              {searchTerm ? 'No matching active borrows found' : 'No active borrows at the moment'}
                             </td>
                           </tr>
                         ) : (
-                          borrowRecords.filter(r => !r.Return_Date).map((record, index) => {
+                          borrowRecords
+                            .filter(r => !r.Return_Date)
+                            .filter(r => {
+                              if (!searchTerm) return true;
+                              const search = searchTerm.toLowerCase();
+                              const memberName = `${r.First_Name} ${r.Last_Name}`.toLowerCase();
+                              const title = (r.Title || '').toLowerCase();
+                              return memberName.includes(search) || title.includes(search);
+                            })
+                            .map((record, index) => {
                             const dueDate = new Date(record.Due_Date)
                             const today = new Date()
                             const daysLeft = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
@@ -1587,7 +2786,7 @@ function Librarian() {
                                     disabled={loading}
                                     onClick={() => handleReturnBook(record.Borrow_ID, fineAmount)}
                                   >
-                                    ✓ Mark Returned
+                                    Mark Returned
                                   </button>
                                 </td>
                               </tr>
@@ -1608,7 +2807,7 @@ function Librarian() {
                 
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                   <p className="text-sm text-blue-800">
-                    <strong>ℹ️ Renewal Policy:</strong> Assets can be renewed once if no other member has reserved them. 
+                    <strong>Renewal Policy:</strong> Assets can be renewed once if no other member has reserved them. 
                     The new due date will be 14 days from today.
                   </p>
                 </div>
@@ -1692,7 +2891,6 @@ function Librarian() {
                   {borrowRecords.filter(r => !r.Return_Date).length}
                 </p>
               </div>
-              <span className="text-4xl">📚</span>
             </div>
           </div>
 
@@ -1704,7 +2902,6 @@ function Librarian() {
                   {overdueItems.length}
                 </p>
               </div>
-              <span className="text-4xl">⚠️</span>
             </div>
           </div>
 
@@ -1716,7 +2913,7 @@ function Librarian() {
                   {borrowRecords.filter(r => r.Return_Date && new Date(r.Return_Date).toDateString() === new Date().toDateString()).length}
                 </p>
               </div>
-              <span className="text-4xl">✅</span>
+              <span className="text-4xl">📦</span>
             </div>
           </div>
         </div>
@@ -1724,134 +2921,198 @@ function Librarian() {
     )
   }
   const renderFineManagement = () => (
-    <div className="tab-content">
-      <div className="section-header">
-        <h2>💰 Fine & Payment Management</h2>
-        <button className="add-button" onClick={() => alert('Generate Fine Report - Coming soon!')}>
-          📊 Generate Report
-        </button>
-      </div>
-
-      <ErrorPopup errorMessage={error} />
-
-      {/* Summary Stats */}
-      <div className="stats-grid" style={{ marginBottom: '30px' }}>
-        <div className="stat-card">
-          <div className="stat-icon orange">💰</div>
-          <div className="stat-details">
-            <h3>${fines.reduce((sum, f) => sum + parseFloat(f.balance || 0), 0).toFixed(2)}</h3>
-            <p>Total Unpaid Fines</p>
+    <div className="p-6">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">Fine & Payment Management</h2>
+            <p className="text-gray-600">Track and manage member fines and outstanding balances</p>
           </div>
+          <button 
+            className="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2 font-medium shadow-md hover:shadow-lg"
+            onClick={() => alert('Generate Fine Report - Coming soon!')}
+          >
+            <FileText className="w-5 h-5" />
+            Generate Report
+          </button>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon red">👥</div>
-          <div className="stat-details">
-            <h3>{fines.length}</h3>
-            <p>Members with Fines</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon purple">📋</div>
-          <div className="stat-details">
-            <h3>{overdueItems.length}</h3>
-            <p>Active Overdue Items</p>
-          </div>
-        </div>
-      </div>
 
-      {/* Fines Table */}
-      <div className="table-container">
-        <h3>Member Fines & Balances</h3>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Student ID</th>
-              <th>Member Name</th>
-              <th>Email</th>
-              <th>Phone</th>
-              <th>Outstanding Balance</th>
-              <th>Active Borrows</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {fines.length === 0 ? (
-              <tr>
-                <td colSpan="9" style={{ textAlign: 'center', color: '#27ae60' }}>
-                  ✓ No outstanding fines - All members are current!
-                </td>
-              </tr>
-            ) : (
-              fines.map((member, index) => (
-                <tr key={member.id}>
-                  <td>{index + 1}</td>
-                  <td><strong>{member.studentId}</strong></td>
-                  <td>{member.name}</td>
-                  <td>{member.email}</td>
-                  <td>{member.phone || '-'}</td>
-                  <td>
-                    <span style={{ 
-                      color: '#e67e22', 
-                      fontWeight: 'bold', 
-                      fontSize: '16px' 
-                    }}>
-                      ${parseFloat(member.balance || 0).toFixed(2)}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`status-badge ${member.borrowedBooks > 0 ? 'borrowed' : 'available'}`}>
-                      {member.borrowedBooks}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="status-badge" style={{ 
-                      backgroundColor: parseFloat(member.balance) > 50 ? '#e74c3c' : '#f39c12' 
-                    }}>
-                      {parseFloat(member.balance) > 50 ? 'High' : 'Moderate'}
-                    </span>
-                  </td>
-                  <td>
-                    <button 
-                      className="action-btn success" 
-                      onClick={() => alert(`Record payment for ${member.name}`)}
-                      title="Record Payment"
-                    >
-                      💳 Pay
-                    </button>
-                    <button 
-                      className="action-btn" 
-                      onClick={() => alert(`View fine details for ${member.name}`)}
-                      title="View Details"
-                    >
-                      👁️ Details
-                    </button>
-                  </td>
+        <ErrorPopup errorMessage={error} onClose={() => setError('')} />
+        <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
+
+        {/* Summary Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <StatCard
+            title="Total Unpaid Fines"
+            value={`$${fines.reduce((sum, f) => sum + parseFloat(f.balance || 0), 0).toFixed(2)}`}
+            change={`${fines.length} members`}
+            isIncrease={false}
+            icon={DollarSign}
+            gradient="bg-gradient-to-br from-orange-500 to-red-600"
+            delay={0}
+          />
+          <StatCard
+            title="Members with Fines"
+            value={fines.length}
+            change="Requires attention"
+            isIncrease={false}
+            icon={Users}
+            gradient="bg-gradient-to-br from-red-500 to-pink-600"
+            delay={0.1}
+          />
+          <StatCard
+            title="Active Overdue Items"
+            value={overdueItems.length}
+            change="Items pending return"
+            isIncrease={false}
+            icon={AlertCircle}
+            gradient="bg-gradient-to-br from-purple-500 to-indigo-600"
+            delay={0.2}
+          />
+        </div>
+
+        {/* Fines Table */}
+        <div className="bg-white rounded-xl shadow-md overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-900">Member Fines & Balances</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gradient-to-r from-orange-50 to-red-50">
+                <tr>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">#</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Student ID</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Member Name</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Email</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Phone</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Balance</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Active Borrows</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Priority</th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {loading ? (
+                  <tr>
+                    <td colSpan="9" className="px-6 py-12 text-center">
+                      <div className="flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                        <span className="ml-3 text-gray-600">Loading fines...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : fines.length === 0 ? (
+                  <tr>
+                    <td colSpan="9" className="px-6 py-12 text-center">
+                      <DollarSign className="mx-auto h-12 w-12 text-green-400 mb-3" />
+                      <p className="text-green-600 font-medium text-lg">No outstanding fines - All members are current!</p>
+                    </td>
+                  </tr>
+                ) : (
+                  fines.map((member, index) => {
+                    const balance = parseFloat(member.balance || 0);
+                    return (
+                      <motion.tr
+                        key={member.id}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: index * 0.05 }}
+                        className="hover:bg-gray-50 transition-colors"
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">#{index + 1}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
+                          {member.studentId}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
+                          {member.name}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {member.email}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {member.phone || '-'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <span className="text-orange-600 font-bold text-lg">
+                            ${balance.toFixed(2)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                            member.borrowedBooks > 0 ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {member.borrowedBooks} items
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                            balance > 50 ? 'bg-red-100 text-red-800' : 
+                            balance > 20 ? 'bg-orange-100 text-orange-800' : 
+                            'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {balance > 50 ? 'High' : balance > 20 ? 'Moderate' : 'Low'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                          <button
+                            className="inline-flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs font-medium"
+                            onClick={() => alert(`Record payment for ${member.name}`)}
+                            title="Record Payment"
+                          >
+                            <DollarSign className="w-4 h-4 mr-1" />
+                            Pay
+                          </button>
+                          <button
+                            className="inline-flex items-center px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-xs font-medium"
+                            onClick={() => alert(`View fine details for ${member.name}`)}
+                            title="View Details"
+                          >
+                            Details
+                          </button>
+                        </td>
+                      </motion.tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-      {/* Fine Calculation Info */}
-      <div style={{ 
-        backgroundColor: '#e8f4fd', 
-        border: '1px solid #3498db', 
-        borderRadius: '8px', 
-        padding: '15px',
-        marginTop: '20px'
-      }}>
-        <h4 style={{ color: '#2980b9', marginBottom: '10px' }}>ℹ️ Fine Calculation Policy</h4>
-        <ul style={{ marginLeft: '20px', color: '#34495e' }}>
-          <li>Standard fine rate: <strong>$0.50 per day</strong> per overdue item</li>
-          <li>Grace period: <strong>No fines</strong> for first 2 days after due date</li>
-          <li>Maximum fine per item: <strong>$50.00</strong></li>
-          <li>Payment methods: Cash, Card, Online Transfer</li>
-          <li>Members with fines over $20 may have borrowing privileges suspended</li>
-        </ul>
-      </div>
+        {/* Fine Calculation Info */}
+        <div className="mt-8 bg-blue-50 border border-blue-200 rounded-xl p-6">
+          <h4 className="text-blue-900 font-semibold text-lg mb-4 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5" />
+            Fine Calculation Policy
+          </h4>
+          <ul className="space-y-2 text-gray-700">
+            <li className="flex items-start gap-2">
+              <span className="text-blue-600 font-bold">•</span>
+              <span>Standard fine rate: <strong>$0.50 per day</strong> per overdue item</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-blue-600 font-bold">•</span>
+              <span>Grace period: <strong>No fines</strong> for first 2 days after due date</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-blue-600 font-bold">•</span>
+              <span>Maximum fine per item: <strong>$50.00</strong></span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-blue-600 font-bold">•</span>
+              <span>Payment methods: Cash, Card, Online Transfer</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-blue-600 font-bold">•</span>
+              <span>Members with fines over $20 may have borrowing privileges suspended</span>
+            </li>
+          </ul>
+        </div>
+      </motion.div>
     </div>
   )
 
@@ -1868,47 +3129,31 @@ function Librarian() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Navbar */}
-        <nav className="bg-slate-800 text-white shadow-lg z-30">
-          <div className="px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center">
-              {/* Mobile menu button */}
-              <button
-                className="md:hidden mr-4 text-gray-300 hover:text-white focus:outline-none"
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-              >
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-              <h2 className="text-xl font-bold">📚 Library Management System</h2>
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm bg-indigo-600 px-3 py-1 rounded-full">Librarian</span>
-              <button 
-                className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm font-medium transition-colors"
-                onClick={handleLogout}
-              >
-                Logout
-              </button>
-            </div>
-          </div>
-        </nav>
+        <TopNavbar 
+          sidebarOpen={sidebarOpen} 
+          setSidebarOpen={setSidebarOpen} 
+          onLogout={handleLogout} 
+        />
 
         {/* Content Area */}
-        <div className="flex-1 overflow-auto">
-          <LoadingOverlay loading={loading} loadMessage={successMessage} />
-          <SuccessPopup successMessage={successMessage} />
+        <div className="flex-1 overflow-auto bg-gray-50">
+          <LoadingOverlay isLoading={loading} message="Processing..." />
+          <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
+          <ErrorPopup errorMessage={error} onClose={() => setError('')} />
           
           <div className="dashboard-content">
             {activeTab === 'overview' && renderDashboardOverview()}
             {activeTab === 'books' && renderAssets()}
             {activeTab === 'issue-return' && renderIssueReturn()}
-            {activeTab === 'members' && renderStudents()}
+            {activeTab === 'members' && renderMembers()}
             {activeTab === 'fines' && renderFineManagement()}
             {activeTab === 'records' && renderBorrowRecords()}
           </div>
         </div>
       </div>
+
+      {/* Member Modals */}
+      {renderMemberModals()}
 
       {/* Asset Modal (same as Admin) */}
       {showAssetModal && (

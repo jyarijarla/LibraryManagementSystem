@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import './Admin.css'
 import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
-import NotificationPanel from '../../components/NotificationPanel/NotificationPanel'
+// import NotificationPanel from '../../components/NotificationPanel/NotificationPanel'
 
 // Use local server for development, production for deployed app
 const API_URL = window.location.hostname === 'localhost' 
@@ -1547,9 +1547,9 @@ function Admin() {
       )}
 
       {/* Notification Panel */}
-      {showNotifications && (
+      {/* {showNotifications && (
         <NotificationPanel onClose={() => setShowNotifications(false)} />
-      )}
+      )} */}
     </div>
   )
 }

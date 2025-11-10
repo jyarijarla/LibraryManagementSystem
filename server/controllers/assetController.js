@@ -498,72 +498,96 @@ const deleteAsset = async (req, res) => {
         .end(JSON.stringify({ error: 'Asset ID is required' }));
     }
 
-    // First, delete any borrow records that reference this asset through rentable table
-    const deleteBorrowQuery = `
-      DELETE b FROM borrow b
+    // First, check if asset has any active (unreturned) borrows
+    const checkActiveQuery = `
+      SELECT COUNT(*) as active_count
+      FROM borrow b
       JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
-      WHERE r.Asset_ID = ?
+      WHERE r.Asset_ID = ? AND b.Return_Date IS NULL
     `;
     
-    db.query(deleteBorrowQuery, [assetId], (err) => {
+    db.query(checkActiveQuery, [assetId], (err, results) => {
       if (err) {
-        console.error('Error deleting borrow records:', err);
+        console.error('Error checking active borrows:', err);
         return res.writeHead(500, { 'Content-Type': 'application/json' })
-          .end(JSON.stringify({ error: 'Failed to delete borrow records', details: err.message }));
+          .end(JSON.stringify({ error: 'Failed to check active borrows', details: err.message }));
       }
 
-      // Then delete from rentable table
-      const deleteRentableQuery = 'DELETE FROM rentable WHERE Asset_ID = ?';
+      if (results[0].active_count > 0) {
+        return res.writeHead(400, { 'Content-Type': 'application/json' })
+          .end(JSON.stringify({ 
+            error: 'Cannot delete asset with active borrows', 
+            message: `This asset has ${results[0].active_count} active borrow(s). Please return all copies before deleting.`
+          }));
+      }
+
+      // Delete ALL borrow records (including returned ones) that reference this asset
+      const deleteBorrowQuery = `
+        DELETE b FROM borrow b
+        JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
+        WHERE r.Asset_ID = ?
+      `;
       
-      db.query(deleteRentableQuery, [assetId], (err) => {
+      db.query(deleteBorrowQuery, [assetId], (err) => {
         if (err) {
-          console.error('Error deleting rentable records:', err);
+          console.error('Error deleting borrow records:', err);
           return res.writeHead(500, { 'Content-Type': 'application/json' })
-            .end(JSON.stringify({ error: 'Failed to delete rentable records', details: err.message }));
+            .end(JSON.stringify({ error: 'Failed to delete borrow records', details: err.message }));
         }
 
-        // Now delete from child tables and then asset table
-        // Use a single query that deletes from all child tables
-        // We'll delete from whichever table has this Asset_ID
-        const deleteChildrenQuery = `
-          DELETE book, cd, audiobook, movie, technology, study_room
-          FROM asset
-          LEFT JOIN book ON asset.Asset_ID = book.Asset_ID
-          LEFT JOIN cd ON asset.Asset_ID = cd.Asset_ID
-          LEFT JOIN audiobook ON asset.Asset_ID = audiobook.Asset_ID
-          LEFT JOIN movie ON asset.Asset_ID = movie.Asset_ID
-          LEFT JOIN technology ON asset.Asset_ID = technology.Asset_ID
-          LEFT JOIN study_room ON asset.Asset_ID = study_room.Asset_ID
-          WHERE asset.Asset_ID = ?
-        `;
-
-        db.query(deleteChildrenQuery, [assetId], (err) => {
+        // Then delete from rentable table
+        const deleteRentableQuery = 'DELETE FROM rentable WHERE Asset_ID = ?';
+        
+        db.query(deleteRentableQuery, [assetId], (err) => {
           if (err) {
-            console.error('Error deleting from child tables:', err);
+            console.error('Error deleting rentable records:', err);
             return res.writeHead(500, { 'Content-Type': 'application/json' })
-              .end(JSON.stringify({ error: 'Failed to delete from child tables', details: err.message }));
+              .end(JSON.stringify({ error: 'Failed to delete rentable records', details: err.message }));
           }
 
-          // Finally delete from asset table
-          const deleteAssetQuery = 'DELETE FROM asset WHERE Asset_ID = ?';
+          // Now delete from child tables and then asset table
+          // Use a single query that deletes from all child tables
+          // We'll delete from whichever table has this Asset_ID
+          const deleteChildrenQuery = `
+            DELETE book, cd, audiobook, movie, technology, study_room
+            FROM asset
+            LEFT JOIN book ON asset.Asset_ID = book.Asset_ID
+            LEFT JOIN cd ON asset.Asset_ID = cd.Asset_ID
+            LEFT JOIN audiobook ON asset.Asset_ID = audiobook.Asset_ID
+            LEFT JOIN movie ON asset.Asset_ID = movie.Asset_ID
+            LEFT JOIN technology ON asset.Asset_ID = technology.Asset_ID
+            LEFT JOIN study_room ON asset.Asset_ID = study_room.Asset_ID
+            WHERE asset.Asset_ID = ?
+          `;
 
-          db.query(deleteAssetQuery, [assetId], (err, result) => {
+          db.query(deleteChildrenQuery, [assetId], (err) => {
             if (err) {
-              console.error('Error deleting asset:', err);
+              console.error('Error deleting from child tables:', err);
               return res.writeHead(500, { 'Content-Type': 'application/json' })
-                .end(JSON.stringify({ error: 'Failed to delete asset', details: err.message }));
+                .end(JSON.stringify({ error: 'Failed to delete from child tables', details: err.message }));
             }
-            
-            if (result.affectedRows === 0) {
-              return res.writeHead(404, { 'Content-Type': 'application/json' })
-                .end(JSON.stringify({ error: 'Asset not found' }));
-            }
-            
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ 
-              message: 'Asset deleted successfully',
-              assetId: assetId
-            }));
+
+            // Finally delete from asset table
+            const deleteAssetQuery = 'DELETE FROM asset WHERE Asset_ID = ?';
+
+            db.query(deleteAssetQuery, [assetId], (err, result) => {
+              if (err) {
+                console.error('Error deleting asset:', err);
+                return res.writeHead(500, { 'Content-Type': 'application/json' })
+                  .end(JSON.stringify({ error: 'Failed to delete asset', details: err.message }));
+              }
+              
+              if (result.affectedRows === 0) {
+                return res.writeHead(404, { 'Content-Type': 'application/json' })
+                  .end(JSON.stringify({ error: 'Asset not found' }));
+              }
+              
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ 
+                message: 'Asset deleted successfully',
+                assetId: assetId
+              }));
+            });
           });
         });
       });

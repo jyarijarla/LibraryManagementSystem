@@ -1,42 +1,58 @@
-import './FeedbackUI.css'
-export const LoadingOverlay = ({loading, loadMessage}) => {
-    if(!loading) return null;
-    return(
-        <div className="loading-overlay">
-            <div className="book-loader-container">
-                <div className="book-loader">
-                    <div className="book-base">
-                        <div className="book-left"></div>
-                        <div className="book-right"></div>
-                    </div>
-                    <div className="book-page"></div>
-                    <div className="book-page"></div>
-                    <div className="book-page"></div>
-                    <div className="book-spine"></div>
-                </div>
-                <span className="loading-text loading-dots">
-                    {loadMessage || 'Loading'}
-                </span>
-            </div>
-        </div>
-    )
-}
+import React from 'react';
+import './FeedbackUI.css';
 
-export const SuccessPopup = ({successMessage}) => {
-    if(!successMessage) return null;
-    return (
-    <div className="success-popup">
-        <div className="success-popup-content">
-            <span className="success-icon">✓</span>
-            <span className="success-text">{successMessage}</span>
-        </div>
+// Loading Overlay Component
+export const LoadingOverlay = ({ isLoading, message = 'Loading...' }) => {
+  if (!isLoading) return null;
+  
+  return (
+    <div className="loading-overlay">
+      <div className="loading-spinner"></div>
+      <p className="loading-message">{message}</p>
     </div>
-    )
-}
+  );
+};
 
-export const ErrorPopup = ({errorMessage}) => {
-    if(!errorMessage) return null;
-    return (
-        <div className="error-message">{errorMessage}</div>
-    )
-}
+// Success Popup Component
+export const SuccessPopup = ({ message, onClose }) => {
+  if (!message) return null;
+  
+  // Auto-hide after 5 seconds
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (onClose) onClose();
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [message, onClose]);
+  
+  return (
+    <div className="popup-overlay">
+      <div className="popup-content success-popup">
+        <div className="popup-icon">✓</div>
+        <p className="popup-message">{message}</p>
+      </div>
+    </div>
+  );
+};
+
+// Error Popup Component
+export const ErrorPopup = ({ errorMessage, onClose }) => {
+  if (!errorMessage) return null;
+  
+  // Auto-hide after 5 seconds
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (onClose) onClose();
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [errorMessage, onClose]);
+  
+  return (
+    <div className="popup-overlay">
+      <div className="popup-content error-popup">
+        <div className="popup-icon">✕</div>
+        <p className="popup-message">{errorMessage}</p>
+      </div>
+    </div>
+  );
+};

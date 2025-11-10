@@ -2,22 +2,30 @@ const db = require('../db');
 
 // Report 1: Most Borrowed Assets
 const getMostBorrowedAssets = (req, res) => {
-  // Simplified query for current database schema - only checking books
   const query = `
     SELECT 
-      r.Rentable_ID,
-      COALESCE(b.Title, 'Unknown') AS Title,
-      'Book' AS Type,
-      COUNT(br.Borrow_ID) AS Total_Borrows,
-      r.Num_Copies AS Total_Copies,
-      r.Num_Available AS Available_Copies,
-      ROUND((COUNT(br.Borrow_ID) / NULLIF(r.Num_Copies, 0)), 2) AS Borrow_Rate_Per_Copy
-    FROM rentable r
-    LEFT JOIN borrow br ON r.Rentable_ID = br.Rentable_ID
-    LEFT JOIN asset a ON r.Asset_ID = a.Asset_ID
-    LEFT JOIN book b ON a.Asset_ID = b.Asset_ID
-    GROUP BY r.Rentable_ID, Title, Type, r.Num_Copies, r.Num_Available
-    HAVING COUNT(br.Borrow_ID) > 0
+      a.Asset_ID,
+      COALESCE(bk.Title, cd.Title, ab.Title, mv.Title, 'Unknown') AS Title,
+      CASE
+        WHEN bk.Asset_ID IS NOT NULL THEN 'Book'
+        WHEN cd.Asset_ID IS NOT NULL THEN 'CD'
+        WHEN ab.Asset_ID IS NOT NULL THEN 'Audiobook'
+        WHEN mv.Asset_ID IS NOT NULL THEN 'Movie'
+        ELSE 'Other'
+      END AS Type,
+      COUNT(b.Borrow_ID) AS Total_Borrows,
+      COUNT(DISTINCT r.Rentable_ID) AS Total_Copies,
+      SUM(CASE WHEN r.Availability = 1 THEN 1 ELSE 0 END) AS Available_Copies
+    FROM asset a
+    LEFT JOIN rentable r ON a.Asset_ID = r.Asset_ID
+    LEFT JOIN borrow b ON r.Rentable_ID = b.Rentable_ID
+    LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
+    LEFT JOIN cd ON a.Asset_ID = cd.Asset_ID
+    LEFT JOIN audiobook ab ON a.Asset_ID = ab.Asset_ID
+    LEFT JOIN movie mv ON a.Asset_ID = mv.Asset_ID
+    WHERE bk.Asset_ID IS NOT NULL OR cd.Asset_ID IS NOT NULL OR ab.Asset_ID IS NOT NULL OR mv.Asset_ID IS NOT NULL
+    GROUP BY a.Asset_ID, Title, Type
+    HAVING COUNT(b.Borrow_ID) > 0
     ORDER BY Total_Borrows DESC
     LIMIT 10
   `;

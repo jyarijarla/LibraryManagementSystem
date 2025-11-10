@@ -9,6 +9,7 @@ const borrowController = require('./controllers/borrowController');
 const reportController = require('./controllers/reportController');
 const uploadController = require('./controllers/uploadController');
 const notificationController = require('./controllers/notificationController');
+const memberController = require('./controllers/memberController');
 
 // Helper to parse JSON body
 function parseBody(req) {
@@ -93,6 +94,14 @@ const routes = [
   { method: 'PUT', path: '/api/students/:id', handler: studentController.updateStudent },
   { method: 'DELETE', path: '/api/students/:id', handler: studentController.deleteStudent },
   
+  // Member routes
+  { method: 'GET', path: '/api/members', handler: memberController.getAllMembers },
+  { method: 'GET', path: '/api/members/:id', handler: memberController.getMemberProfile },
+  { method: 'POST', path: '/api/members', handler: memberController.addMember },
+  { method: 'PUT', path: '/api/members/:id', handler: memberController.updateMember },
+  { method: 'DELETE', path: '/api/members/:id', handler: memberController.deleteMember },
+  { method: 'GET', path: '/api/members/:id/activity', handler: memberController.getMemberActivity },
+  
   // Borrow routes
   { method: 'GET', path: '/api/borrow-records', handler: borrowController.getAllRecords },
   { method: 'POST', path: '/api/borrow/issue', handler: borrowController.issueBook },
@@ -102,6 +111,7 @@ const routes = [
   
   // Report routes
   { method: 'GET', path: '/api/reports/most-borrowed', handler: reportController.getMostBorrowedAssets },
+  { method: 'GET', path: '/api/reports/most-borrowed-assets', handler: reportController.getMostBorrowedAssets },
   { method: 'GET', path: '/api/reports/active-borrowers', handler: reportController.getActiveBorrowers },
   { method: 'GET', path: '/api/reports/overdue-items', handler: reportController.getOverdueItems },
   { method: 'GET', path: '/api/reports/inventory-summary', handler: reportController.getInventorySummary },
@@ -142,7 +152,7 @@ function findMatchingRoute(method, pathname) {
 }
 
 // Helper to handle matched route
-async function handleMatchedRoute(req, res, matchedRoute, pathname) {
+async function handleMatchedRoute(req, res, matchedRoute, pathname, urlParts) {
   // Special handling for upload route (multipart/form-data)
   if (pathname === '/api/upload') {
     matchedRoute.handler(req, res);
@@ -156,6 +166,12 @@ async function handleMatchedRoute(req, res, matchedRoute, pathname) {
   
   // Attach params to request
   req.params = matchedRoute.params;
+  
+  // Parse and attach query parameters
+  req.query = {};
+  urlParts.searchParams.forEach((value, key) => {
+    req.query[key] = value;
+  });
   
   // Call the handler
   await matchedRoute.handler(req, res);
@@ -180,7 +196,7 @@ const server = http.createServer(async (req, res) => {
 
   if (matchedRoute) {
     try {
-      await handleMatchedRoute(req, res, matchedRoute, pathname);
+      await handleMatchedRoute(req, res, matchedRoute, pathname, urlParts);
     } catch (error) {
       console.error('Server error:', error);
       res.statusCode = 500;
