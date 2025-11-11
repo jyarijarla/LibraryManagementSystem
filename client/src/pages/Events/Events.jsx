@@ -12,60 +12,52 @@ const Events = () => {
 
   // Fetch events from backend
   useEffect(() => {
-    const fetchEvents = async () => {
-      try {
-        // TODO: Replace with your API
-        const res = await fetch("/api/events");
-        const data = await res.json();
-        setEvents(data);
-      } catch (error) {
-        console.error("Error fetching events:", error);
-      } finally {
+    fetch('http://localhost:3000/api/calendar')
+      .then(res => res.json())
+      .then(data => {
+        setEvents(data || []);
         setLoading(false);
-      }
-    };
+      })
 
-    fetchEvents();
+      .catch(err => {
+
+        console.error(err);
+        setEvents([]);
+        setLoading(false);
+
+      });
+
   }, []);
 
-  return (
-    <div className="events-page">
-      {/* Page Header */}
-      <header className="events-header">
-        <h1>Library Events</h1>
-        <p>Discover upcoming activities, workshops, and community gatherings.</p>
-      </header>
+        if (loading) return <div className="events-loading">Loading events...</div>;
+        if (!events.length) return <div className="events-loading">No events found</div>;
 
-      {/* Filters/Search (Optional) */}
-      {/* <div className="events-filters">
-        <input type="text" placeholder="Search events..." />
-        <select>
-          <option>All</option>
-          <option>Kids</option>
-          <option>Teens</option>
-          <option>Adults</option>
-        </select>
-      </div> */}
-
-      {/* Events List */}
-      <section className="events-list">
-        {loading ? (
-          <p>Loading events...</p>
-        ) : events.length === 0 ? (
-          <p>No events found.</p>
-        ) : (
-          events.map((event) => (
-            <div key={event.id} className="event-card">
-              <h3>{event.title}</h3>
-              <p>{event.date} — {event.time}</p>
-              <p>{event.description}</p>
-              <button>View Details</button>
+ return (
+    <div className="events-container">
+      <h1 className="library-events-bubble">Events!</h1>
+      <div className="events-grid">
+        {events.map(event => (
+          <div key={event.event_id} className="event-card">
+            {event.image_url && <img src={event.image_url} alt={event.title} className="event-image" />}
+            <div className="event-content">
+              <h2 className="event-title">{event.title}</h2>
+              <p className="event-date">
+                {event.event_date ? new Date(event.event_date).toLocaleDateString() : ''}
+                {event.start_time ? ` @ ${event.start_time.slice(0,5)}` : ''}
+                {event.end_time ? ` - ${event.end_time.slice(0,5)}` : ''}
+              </p>
+              {event.details && <p className="event-details">{event.details}</p>}
+              {event.recurring && <span className="event-recurring">🔁 Recurring</span>}
             </div>
-          ))
-        )}
-      </section>
+          </div>
+        ))}
+      </div>
     </div>
   );
-};
+}
+
+
+
+
 
 export default Events;
