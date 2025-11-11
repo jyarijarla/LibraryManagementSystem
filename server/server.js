@@ -10,6 +10,7 @@ const reportController = require('./controllers/reportController');
 const uploadController = require('./controllers/uploadController');
 const notificationController = require('./controllers/notificationController');
 const memberController = require('./controllers/memberController');
+const eventController = require('./controllers/eventController');
 
 // Helper to parse JSON body
 function parseBody(req) {
@@ -88,6 +89,9 @@ const routes = [
   { method: 'POST', path: '/api/assets/study-rooms', handler: assetController.addStudyRoom },
   { method: 'PUT', path: '/api/assets/study-rooms/:id', handler: assetController.updateAsset },
   { method: 'DELETE', path: '/api/assets/study-rooms/:id', handler: assetController.deleteAsset },
+
+  // Event routes
+   {method: 'GET', path: '/api/events', handler: eventController.getAllEvents},
   
   // Student routes
   { method: 'GET', path: '/api/students', handler: studentController.getAllStudents },
