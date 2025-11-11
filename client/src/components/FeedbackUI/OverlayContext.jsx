@@ -4,16 +4,20 @@ import { createContext, useContext, useState } from 'react'
 const OverlayContext = createContext();
 export const OverlayProvider = ({ children }) => {
     const [overlayContent, setOverlayContent] = useState(null);
+    const closeOverlay = () => setOverlayContent(null);
     return (
-        <OverlayContext.Provider value={{setOverlayContent}}>
+        <OverlayContext.Provider value={{setOverlayContent, closeOverlay}}>
+            {children} 
             {overlayContent && (
                 <div className='overlay-wrapper'>
                     {overlayContent}
                 </div>
             )}
-            {children}
         </OverlayContext.Provider>
     )
 };
 
-export const useOverlay = () => useContext(OverlayContext);
+export const useOverlay = () => {
+    const context = useContext(OverlayContext);
+    if(!context) throw new Error("useOverlay needs to be in Overlay Provider");
+}
