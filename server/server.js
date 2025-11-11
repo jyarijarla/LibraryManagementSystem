@@ -9,12 +9,8 @@ const borrowController = require('./controllers/borrowController');
 const reportController = require('./controllers/reportController');
 const uploadController = require('./controllers/uploadController');
 const notificationController = require('./controllers/notificationController');
-<<<<<<< HEAD
-const memberController = require('./controllers/memberController');
-=======
 const eventController = require('./controllers/eventController');
 
->>>>>>> da9ad85909783d94d652ca9eca48a8b3c4425d71
 
 // Helper to parse JSON body
 function parseBody(req) {
