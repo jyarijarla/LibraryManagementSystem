@@ -5,13 +5,11 @@ const http = require("node:http");
 const authController = require('./controllers/authController');
 const assetController = require('./controllers/assetController');
 const studentController = require('./controllers/studentController');
-const memberController = require('./controllers/memberController');
 const borrowController = require('./controllers/borrowController');
 const reportController = require('./controllers/reportController');
 const uploadController = require('./controllers/uploadController');
 const notificationController = require('./controllers/notificationController');
-const eventController = require('./controllers/eventController');
-
+const memberController = require('./controllers/memberController');
 
 // Helper to parse JSON body
 function parseBody(req) {
@@ -55,19 +53,6 @@ const routes = [
   { method: 'POST', path: '/api/login', handler: authController },
   { method: 'POST', path: '/api/logout', handler: authController },
   
-  // Event Route
-
-  // Add this under "// Event Route"
-  {method: 'GET', path: '/api/events', handler: eventController.getAllEvents},
-
-  // for the future when librarians can add events
-
-  //{ method: 'POST', path: '/api/events', handler: eventController.addEvent },
-  //{ method: 'PUT', path: '/api/events/:id', handler: eventController.updateEvent },
-  //{ method: 'DELETE', path: '/api/events/:id', handler: eventController.deleteEvent },
-
-
-
   // Asset routes - Books
   { method: 'GET', path: '/api/assets/books', handler: assetController.getAllBooks },
   { method: 'POST', path: '/api/assets/books', handler: assetController.addBook },
@@ -172,8 +157,6 @@ function findMatchingRoute(method, pathname) {
   }
   return null;
 }
-
-
 
 // Helper to handle matched route
 async function handleMatchedRoute(req, res, matchedRoute, pathname, urlParts) {

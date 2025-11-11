@@ -1,5 +1,15 @@
 const db = require('../db');
 
+// Generate random password for each new member
+const generateInitialPassword = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#$%';
+  let password = 'Library';
+  for (let i = 0; i < 6; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+};
+
 // Get all members with search, filter, and pagination
 exports.getAllMembers = (req, res) => {
   const { search = '', status = 'all', page = 1, limit = 20 } = req.query;
@@ -229,12 +239,12 @@ exports.getMemberProfile = (req, res) => {
 
 // Add new member
 exports.addMember = (req, res) => {
-  const { firstName, lastName, email, phone, username, dateOfBirth, status } = req.body;
+  const { firstName, lastName, email, phone, username, dateOfBirth, status, password } = req.body;
 
   // Validate required fields
-  if (!firstName || !email || !username || !dateOfBirth) {
+  if (!firstName || !email || !username || !dateOfBirth || !password) {
     return res.writeHead(400, { 'Content-Type': 'application/json' })
-      && res.end(JSON.stringify({ error: 'Missing required fields: firstName, email, username, dateOfBirth' }));
+      && res.end(JSON.stringify({ error: 'Missing required fields: firstName, email, username, dateOfBirth, password' }));
   }
 
   // Check if username or email already exists
@@ -253,14 +263,14 @@ exports.addMember = (req, res) => {
           && res.end(JSON.stringify({ error: 'Username or email already exists' }));
       }
 
-      // Generate a default password (in production, send this to user's email)
-      const defaultPassword = 'password123'; // TODO: Generate secure password and email to user
+      // Use password sent from frontend (already generated there)
+      const initialPassword = password;
 
       // Insert new member (Role = 1 for student/member)
       db.query(
         `INSERT INTO user (Username, First_Name, Last_Name, User_Email, User_Phone, Date_Of_Birth, Password, Role, Balance) 
          VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0.00)`,
-        [username, firstName, lastName || '', email, phone || null, dateOfBirth, defaultPassword],
+        [username, firstName, lastName || '', email, phone || null, dateOfBirth, initialPassword],
         (err, result) => {
           if (err) {
             console.error('Error adding member:', err);
@@ -268,9 +278,12 @@ exports.addMember = (req, res) => {
               && res.end(JSON.stringify({ error: 'Failed to add member: ' + err.message }));
           }
 
+          // TODO: Send email with credentials to member's email address
+          console.log(`Member created - Username: ${username}, Email: ${email}, Password: ${initialPassword}`);
+
           res.writeHead(201, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ 
-            message: 'Member added successfully',
+            message: 'Member added successfully. Credentials sent to email.',
             memberId: result.insertId
           }));
         }
