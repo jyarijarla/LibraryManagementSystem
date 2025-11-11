@@ -12,7 +12,7 @@ const Events = () => {
 
   // Fetch events from backend
   useEffect(() => {
-    fetch('http://localhost:3000/api/calendar')
+    fetch('http://localhost:3000/api/events')
       .then(res => res.json())
       .then(data => {
         setEvents(data || []);
@@ -37,17 +37,17 @@ const Events = () => {
       <h1 className="library-events-bubble">Events!</h1>
       <div className="events-grid">
         {events.map(event => (
-          <div key={event.event_id} className="event-card">
-            {event.image_url && <img src={event.image_url} alt={event.title} className="event-image" />}
+          <div key={event.Event_ID} className="event-card">
+            {event.Image_URL && <img src={event.Image_URL} alt={Event.Title} className="event-image" />}
             <div className="event-content">
-              <h2 className="event-title">{event.title}</h2>
+              <h2 className="event-title">{event.Title}</h2>
               <p className="event-date">
-                {event.event_date ? new Date(event.event_date).toLocaleDateString() : ''}
-                {event.start_time ? ` @ ${event.start_time.slice(0,5)}` : ''}
-                {event.end_time ? ` - ${event.end_time.slice(0,5)}` : ''}
+                {event.Event_Date ? new Date(event.Event_Date).toLocaleDateString() : ''}
+                {event.Start_Time ? ` @ ${event.Start_Time.slice(0,5)}` : ''}
+                {event.End_Time ? ` - ${event.End_Time.slice(0,5)}` : ''}
               </p>
-              {event.details && <p className="event-details">{event.details}</p>}
-              {event.recurring && <span className="event-recurring">🔁 Recurring</span>}
+              {event.Details && <p className="event-details">{event.Details}</p>}
+              {event.Recurring && <span className="event-recurring">🔁 Recurring</span>}
             </div>
           </div>
         ))}
