@@ -5,6 +5,7 @@ const http = require("node:http");
 const authController = require('./controllers/authController');
 const assetController = require('./controllers/assetController');
 const studentController = require('./controllers/studentController');
+const memberController = require('./controllers/memberController');
 const borrowController = require('./controllers/borrowController');
 const reportController = require('./controllers/reportController');
 const uploadController = require('./controllers/uploadController');
@@ -129,6 +130,13 @@ const routes = [
   { method: 'GET', path: '/api/reports/active-borrowers', handler: reportController.getActiveBorrowers },
   { method: 'GET', path: '/api/reports/overdue-items', handler: reportController.getOverdueItems },
   { method: 'GET', path: '/api/reports/inventory-summary', handler: reportController.getInventorySummary },
+  
+  // Librarian Report routes
+  { method: 'GET', path: '/api/reports/librarian/:id/summary', handler: reportController.getLibrarianSummary },
+  { method: 'GET', path: '/api/reports/librarian/:id/transactions', handler: reportController.getLibrarianTransactions },
+  { method: 'GET', path: '/api/reports/librarian/:id/daily-activity', handler: reportController.getLibrarianDailyActivity },
+  { method: 'GET', path: '/api/reports/librarian/:id/members', handler: reportController.getLibrarianMembers },
+  { method: 'GET', path: '/api/reports/librarian/:id/books', handler: reportController.getLibrarianBooks },
   
   // Notification routes
   { method: 'GET', path: '/api/notifications', handler: notificationController.getAdminNotifications },

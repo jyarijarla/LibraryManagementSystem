@@ -11,6 +11,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import '../Admin/Admin.css'
 import './Librarian.css'
 import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
+import LibrarianReport from '../LibrarianReport/LibrarianReport'
 
 // Use local server for development, production for deployed app
 const API_URL = window.location.hostname === 'localhost' 
@@ -83,7 +84,8 @@ const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOp
     { label: 'Issue / Return', icon: RefreshCw, page: 'issue-return' },
     { label: 'Members', icon: Users, page: 'members' },
     { label: 'Fines & Payments', icon: DollarSign, page: 'fines' },
-    { label: 'All Records', icon: FileText, page: 'records' }
+    { label: 'All Records', icon: FileText, page: 'records' },
+    { label: 'My Activity Report', icon: TrendingUp, page: 'report' }
   ]
 
   return (
@@ -3148,6 +3150,7 @@ function Librarian() {
             {activeTab === 'members' && renderMembers()}
             {activeTab === 'fines' && renderFineManagement()}
             {activeTab === 'records' && renderBorrowRecords()}
+            {activeTab === 'report' && <LibrarianReport />}
           </div>
         </div>
       </div>
