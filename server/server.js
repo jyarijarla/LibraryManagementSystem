@@ -130,13 +130,6 @@ const routes = [
   { method: 'GET', path: '/api/reports/overdue-items', handler: reportController.getOverdueItems },
   { method: 'GET', path: '/api/reports/inventory-summary', handler: reportController.getInventorySummary },
   
-  // Librarian Report routes
-  { method: 'GET', path: '/api/reports/librarian/:id/summary', handler: reportController.getLibrarianSummary },
-  { method: 'GET', path: '/api/reports/librarian/:id/transactions', handler: reportController.getLibrarianTransactions },
-  { method: 'GET', path: '/api/reports/librarian/:id/daily-activity', handler: reportController.getLibrarianDailyActivity },
-  { method: 'GET', path: '/api/reports/librarian/:id/members', handler: reportController.getLibrarianMembers },
-  { method: 'GET', path: '/api/reports/librarian/:id/books', handler: reportController.getLibrarianBooks },
-  
   // Notification routes
   { method: 'GET', path: '/api/notifications', handler: notificationController.getAdminNotifications },
   { method: 'GET', path: '/api/notifications/counts', handler: notificationController.getNotificationCounts },

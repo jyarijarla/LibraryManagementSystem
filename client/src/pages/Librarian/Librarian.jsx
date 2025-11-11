@@ -5,13 +5,12 @@ import {
   Home, BookOpen, RefreshCw, Users, DollarSign, 
   FileText, LogOut, Search, Calendar, User,
   TrendingUp, TrendingDown, BookMarked, AlertCircle,
-  Library, UserPlus, Clock, Menu, X, BarChart3
+  Library, UserPlus, Clock, Menu, X
 } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import '../Admin/Admin.css'
 import './Librarian.css'
 import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
-import LibrarianReport from '../LibrarianReport/LibrarianReport'
 
 // Use local server for development, production for deployed app
 const API_URL = window.location.hostname === 'localhost' 
@@ -84,8 +83,7 @@ const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOp
     { label: 'Issue / Return', icon: RefreshCw, page: 'issue-return' },
     { label: 'Members', icon: Users, page: 'members' },
     { label: 'Fines & Payments', icon: DollarSign, page: 'fines' },
-    { label: 'All Records', icon: FileText, page: 'records' },
-    { label: 'My Reports', icon: BarChart3, page: 'my-reports' }
+    { label: 'All Records', icon: FileText, page: 'records' }
   ]
 
   return (
@@ -309,7 +307,6 @@ function Librarian() {
   const [memberModalMode, setMemberModalMode] = useState('add') // add or edit
   const [selectedMember, setSelectedMember] = useState(null)
   const [memberProfile, setMemberProfile] = useState(null)
-  const [generatedPassword, setGeneratedPassword] = useState('') // Store generated password
   const [memberForm, setMemberForm] = useState({
     username: '',
     firstName: '',
@@ -572,17 +569,16 @@ function Librarian() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(memberForm), // Includes password from form
+        body: JSON.stringify(memberForm),
       })
 
-      const data = await response.json()
-
       if (!response.ok) {
+        const data = await response.json()
         throw new Error(data.error || 'Failed to add member')
       }
 
-      setSuccessMessage('Member added successfully! Login credentials have been sent to their email.')
-      setTimeout(() => setSuccessMessage(''), 5000)
+      setSuccessMessage('Member added successfully!')
+      setTimeout(() => setSuccessMessage(''), 5000) // Auto-hide after 5 seconds
       setShowMemberModal(false)
       setMemberForm({
         username: '',
@@ -593,7 +589,6 @@ function Librarian() {
         dateOfBirth: '',
         status: 'active'
       })
-      setGeneratedPassword('') // Reset after successful add
       await fetchMembers()
     } catch (err) {
       console.error('Error adding member:', err)
@@ -666,29 +661,16 @@ function Librarian() {
     }
   }
 
-  // Function to generate initial password on frontend
-  const generateInitialPassword = () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#$%';
-    let password = 'Library';
-    for (let i = 0; i < 6; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return password;
-  }
-
   const openAddMemberModal = () => {
     setMemberModalMode('add')
     setSelectedMember(null)
-    const newPassword = generateInitialPassword() // Generate password immediately
-    setGeneratedPassword(newPassword) // Display it to librarian
     setMemberForm({
       username: '',
       firstName: '',
       lastName: '',
       email: '',
       phone: '',
-      status: 'active',
-      password: newPassword // Include in form data
+      status: 'active'
     })
     setShowMemberModal(true)
   }
@@ -1862,236 +1844,100 @@ function Librarian() {
 
   const renderMemberModals = () => (
     <>
-      {/* Modern Add/Edit Member Modal */}
+      {/* Add/Edit Member Modal */}
       {showMemberModal && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
-          onClick={() => setShowMemberModal(false)}
-        >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3 }}
-            className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-8 py-6 rounded-t-2xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center">
-                    <UserPlus className="w-6 h-6 text-green-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-bold text-white">
-                      {memberModalMode === 'add' ? 'Add New Member' : 'Edit Member'}
-                    </h3>
-                    <p className="text-green-100 text-sm">
-                      {memberModalMode === 'add' ? 'Register a new library member' : 'Update member information'}
-                    </p>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setShowMemberModal(false)}
-                  className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition-all"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
+        <div className="modal-overlay" onClick={() => setShowMemberModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{memberModalMode === 'add' ? 'Add New Member' : 'Edit Member'}</h3>
+              <button className="modal-close" onClick={() => setShowMemberModal(false)}>×</button>
             </div>
-
-            {/* Form */}
-            <form onSubmit={memberModalMode === 'add' ? handleAddMember : handleEditMember} className="p-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Username */}
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Username *
-                  </label>
-                  <div className="relative">
-                    <User className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={memberForm.username}
-                      onChange={(e) => setMemberForm({...memberForm, username: e.target.value})}
-                      required
-                      disabled={memberModalMode === 'edit'}
-                      className={`w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                        memberModalMode === 'edit' ? 'bg-gray-100 cursor-not-allowed' : ''
-                      }`}
-                      placeholder="johndoe123"
-                    />
-                  </div>
-                  {memberModalMode === 'edit' && (
-                    <p className="text-xs text-gray-500 mt-1">Username cannot be changed</p>
-                  )}
+            
+            <form onSubmit={memberModalMode === 'add' ? handleAddMember : handleEditMember}>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>Username *</label>
+                  <input
+                    type="text"
+                    value={memberForm.username}
+                    onChange={(e) => setMemberForm({...memberForm, username: e.target.value})}
+                    required
+                    disabled={memberModalMode === 'edit'}
+                    className="form-input"
+                    placeholder="Enter username"
+                  />
                 </div>
                 
-                {/* First Name */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    First Name *
-                  </label>
+                <div className="form-group">
+                  <label>First Name *</label>
                   <input
                     type="text"
                     value={memberForm.firstName}
                     onChange={(e) => setMemberForm({...memberForm, firstName: e.target.value})}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                    placeholder="John"
+                    className="form-input"
+                    placeholder="Enter first name"
                   />
                 </div>
                 
-                {/* Last Name */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Last Name *
-                  </label>
+                <div className="form-group">
+                  <label>Last Name *</label>
                   <input
                     type="text"
                     value={memberForm.lastName}
                     onChange={(e) => setMemberForm({...memberForm, lastName: e.target.value})}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                    placeholder="Doe"
+                    className="form-input"
+                    placeholder="Enter last name"
                   />
                 </div>
                 
-                {/* Email */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Email Address *
-                  </label>
-                  <div className="relative">
-                    <svg className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                    <input
-                      type="email"
-                      value={memberForm.email}
-                      onChange={(e) => setMemberForm({...memberForm, email: e.target.value})}
-                      required
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                      placeholder="john@university.edu"
-                    />
-                  </div>
+                <div className="form-group">
+                  <label>Email *</label>
+                  <input
+                    type="email"
+                    value={memberForm.email}
+                    onChange={(e) => setMemberForm({...memberForm, email: e.target.value})}
+                    required
+                    className="form-input"
+                    placeholder="member@example.com"
+                  />
                 </div>
                 
-                {/* Phone */}
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Phone Number
-                  </label>
-                  <div className="relative">
-                    <svg className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                    </svg>
-                    <input
-                      type="tel"
-                      value={memberForm.phone}
-                      onChange={(e) => setMemberForm({...memberForm, phone: e.target.value})}
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                      placeholder="+1 (555) 123-4567"
-                    />
-                  </div>
+                <div className="form-group">
+                  <label>Phone</label>
+                  <input
+                    type="tel"
+                    value={memberForm.phone}
+                    onChange={(e) => setMemberForm({...memberForm, phone: e.target.value})}
+                    className="form-input"
+                    placeholder="(123) 456-7890"
+                  />
                 </div>
 
-                {/* Date of Birth */}
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Date of Birth *
-                  </label>
-                  <div className="relative">
-                    <Calendar className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-                    <input
-                      type="date"
-                      value={memberForm.dateOfBirth}
-                      onChange={(e) => setMemberForm({...memberForm, dateOfBirth: e.target.value})}
-                      required
-                      className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
-                      max={new Date().toISOString().split('T')[0]}
-                    />
-                  </div>
+                <div className="form-group">
+                  <label>Date of Birth *</label>
+                  <input
+                    type="date"
+                    value={memberForm.dateOfBirth}
+                    onChange={(e) => setMemberForm({...memberForm, dateOfBirth: e.target.value})}
+                    required
+                    className="form-input"
+                    max={new Date().toISOString().split('T')[0]}
+                  />
                 </div>
-
-                {/* Initial Password Display (Only for Add Mode) */}
-                {memberModalMode === 'add' && (
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Initial Password
-                    </label>
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                          </svg>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <p className="font-mono text-lg font-bold text-blue-900">
-                                {generatedPassword}
-                              </p>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(generatedPassword)
-                                  setSuccessMessage('Password copied to clipboard!')
-                                  setTimeout(() => setSuccessMessage(''), 2000)
-                                }}
-                                className="text-blue-600 hover:text-blue-800 transition-colors"
-                                title="Copy password"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                </svg>
-                              </button>
-                            </div>
-                            <p className="text-xs text-blue-700 mt-1">
-                              This password will be automatically sent to the member's email
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-blue-600">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                          </svg>
-                          Auto-send enabled
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
               
-              {/* Footer Actions */}
-              <div className="flex gap-3 mt-8 pt-6 border-t border-gray-200">
-                <button 
-                  type="button" 
-                  onClick={() => setShowMemberModal(false)}
-                  className="flex-1 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all font-semibold"
-                >
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setShowMemberModal(false)}>
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
-                  disabled={loading}
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all font-semibold shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      Saving...
-                    </span>
-                  ) : (
-                    memberModalMode === 'add' ? '✓ Add Member' : '✓ Update Member'
-                  )}
+                <button type="submit" className="btn-primary" disabled={loading}>
+                  {loading ? 'Saving...' : memberModalMode === 'add' ? 'Add Member' : 'Update Member'}
                 </button>
               </div>
             </form>
-          </motion.div>
+          </div>
         </div>
       )}
 
@@ -2171,75 +2017,21 @@ function Librarian() {
               {/* Actions Panel */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-6">
                 <div className="flex flex-wrap gap-3">
-                  <button 
-                    onClick={() => {
-                      setShowMemberProfileModal(false)
-                      changeTab('issue-return')
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all shadow-sm"
-                  >
+                  <button className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all shadow-sm">
                     <BookOpen className="w-4 h-4" />
                     Issue New Book
                   </button>
-                  <button 
-                    onClick={async () => {
-                      if (memberProfile.currentBorrows.length === 0) {
-                        alert('No books to renew')
-                        return
-                      }
-                      const confirm = window.confirm(`Renew all ${memberProfile.currentBorrows.length} borrowed books?`)
-                      if (!confirm) return
-                      
-                      setLoading(true)
-                      try {
-                        for (const borrow of memberProfile.currentBorrows) {
-                          const newDueDate = new Date()
-                          newDueDate.setDate(newDueDate.getDate() + 14)
-                          const formattedDate = newDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                          await handleRenewBook(borrow.Borrow_ID, formattedDate)
-                        }
-                        await fetchMemberProfile(memberProfile.member.User_ID)
-                        setSuccessMessage('All books renewed successfully!')
-                        setTimeout(() => setSuccessMessage(''), 3000)
-                      } catch (error) {
-                        setError('Failed to renew all books')
-                        setTimeout(() => setError(''), 5000)
-                      } finally {
-                        setLoading(false)
-                      }
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all shadow-sm"
-                  >
+                  <button className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all shadow-sm">
                     <RefreshCw className="w-4 h-4" />
                     Renew All
                   </button>
-                  <button 
-                    onClick={() => {
-                      setShowMemberProfileModal(false)
-                      changeTab('fines')
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all shadow-sm"
-                  >
+                  <button className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all shadow-sm">
                     <DollarSign className="w-4 h-4" />
                     View Fines
                   </button>
-                  <button 
-                    onClick={() => {
-                      const action = memberProfile.member.Account_Status === 'active' ? 'suspend' : 'activate'
-                      const confirm = window.confirm(`Are you sure you want to ${action} this member?`)
-                      if (!confirm) return
-                      
-                      alert('Member status update functionality will be implemented in the backend')
-                      // TODO: Implement backend API for member status update
-                    }}
-                    className={`inline-flex items-center gap-2 px-4 py-2 text-white rounded-lg transition-all ${
-                      memberProfile.member.Account_Status === 'active' 
-                        ? 'bg-yellow-500 hover:bg-yellow-600' 
-                        : 'bg-green-500 hover:bg-green-600'
-                    }`}
-                  >
+                  <button className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all">
                     <AlertCircle className="w-4 h-4" />
-                    {memberProfile.member.Account_Status === 'active' ? 'Suspend' : 'Activate'} Member
+                    Suspend Member
                   </button>
                 </div>
               </div>
@@ -2327,28 +2119,11 @@ function Librarian() {
                               </td>
                               <td className="px-4 py-3">
                                 <div className="flex gap-2">
-                                  <button 
-                                    onClick={async () => {
-                                      const newDueDate = new Date()
-                                      newDueDate.setDate(newDueDate.getDate() + 14)
-                                      const formattedDate = newDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                                      await handleRenewBook(borrow.Borrow_ID, formattedDate)
-                                      // Refresh member profile after renewal
-                                      await fetchMemberProfile(memberProfile.member.User_ID)
-                                    }}
-                                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded hover:bg-blue-200 transition-colors"
-                                  >
+                                  <button className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded hover:bg-blue-200 transition-colors">
                                     <Clock className="w-3 h-3" />
                                     Renew
                                   </button>
-                                  <button 
-                                    onClick={async () => {
-                                      await handleReturnBook(borrow.Borrow_ID, fineAmount)
-                                      // Refresh member profile after return
-                                      await fetchMemberProfile(memberProfile.member.User_ID)
-                                    }}
-                                    className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded hover:bg-green-200 transition-colors"
-                                  >
+                                  <button className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded hover:bg-green-200 transition-colors">
                                     <BookOpen className="w-3 h-3" />
                                     Return
                                   </button>
@@ -2422,33 +2197,7 @@ function Librarian() {
                     <h4 className="text-lg font-semibold text-gray-900">Fine Summary</h4>
                   </div>
                   {memberProfile.finesSummary.unpaidFines > 0 && (
-                    <button 
-                      onClick={async () => {
-                        const fineAmount = parseFloat(memberProfile.finesSummary.unpaidFines || 0)
-                        const confirm = window.confirm(`Mark fine of $${fineAmount.toFixed(2)} as paid?`)
-                        if (!confirm) return
-                        
-                        setLoading(true)
-                        try {
-                          // Pay all outstanding fines
-                          for (const borrow of memberProfile.currentBorrows) {
-                            const borrowFine = parseFloat(borrow.Fine_Amount) || 0
-                            if (borrowFine > 0) {
-                              await handleReturnBook(borrow.Borrow_ID, borrowFine)
-                            }
-                          }
-                          await fetchMemberProfile(memberProfile.member.User_ID)
-                          setSuccessMessage('Fine marked as paid successfully!')
-                          setTimeout(() => setSuccessMessage(''), 3000)
-                        } catch (error) {
-                          setError('Failed to mark fine as paid')
-                          setTimeout(() => setError(''), 5000)
-                        } finally {
-                          setLoading(false)
-                        }
-                      }}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all shadow-sm"
-                    >
+                    <button className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all shadow-sm">
                       <DollarSign className="w-4 h-4" />
                       Mark as Paid
                     </button>
@@ -3399,7 +3148,6 @@ function Librarian() {
             {activeTab === 'members' && renderMembers()}
             {activeTab === 'fines' && renderFineManagement()}
             {activeTab === 'records' && renderBorrowRecords()}
-            {activeTab === 'my-reports' && <LibrarianReport />}
           </div>
         </div>
       </div>

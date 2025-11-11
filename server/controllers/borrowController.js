@@ -56,13 +56,10 @@ exports.issueBook = (req, res) => {
           
           const rentableId = rentableResults[0].Rentable_ID;
           
-          // Get librarian ID from authenticated user (if available)
-          const librarianId = req.user?.id || null;
-          
-          // Insert borrow record with Processed_By field
+          // Insert borrow record
           db.query(
-            'INSERT INTO borrow (Borrower_ID, Rentable_ID, Borrow_Date, Due_Date, Processed_By) VALUES (?, ?, ?, ?, ?)',
-            [memberId, rentableId, issueDate, dueDate, librarianId],
+            'INSERT INTO borrow (Borrower_ID, Rentable_ID, Borrow_Date, Due_Date) VALUES (?, ?, ?, ?)',
+            [memberId, rentableId, issueDate, dueDate],
             (err, insertResult) => {
               if (err) {
                 console.error('Error inserting borrow record:', err);
@@ -186,9 +183,9 @@ exports.renewBook = (req, res) => {
       && res.end(JSON.stringify({ message: 'New due date is required' }));
   }
   
-  // Update due date and set renew date for active borrow
+  // Update due date for active borrow
   db.query(
-    'UPDATE borrow SET Due_Date = ?, Renew_Date = CURDATE() WHERE Borrow_ID = ? AND Return_Date IS NULL',
+    'UPDATE borrow SET Due_Date = ? WHERE Borrow_ID = ? AND Return_Date IS NULL',
     [newDueDate, id],
     (err, result) => {
       if (err) {
