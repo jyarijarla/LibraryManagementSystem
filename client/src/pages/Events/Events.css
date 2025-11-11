@@ -1,0 +1,20 @@
+.home-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center; /* centers vertically */
+  align-items: center;     /* centers horizontally */
+  position: relative;      /* keeps footer positioned correctly */
+  width: 100%;
+  min-height: 100vh;       /* full screen height */
+  background-image: 
+    linear-gradient(rgba(142, 99, 99, 0.7), rgba(241, 235, 235, 0.7)),
+    url('/login.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  padding: 175px;
+  margin: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  animation: fadeIn 0.8s ease-in;
+}

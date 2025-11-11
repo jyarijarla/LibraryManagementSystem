@@ -5,8 +5,8 @@ import { Menu, X } from 'lucide-react';
 const links = [
   { name: 'Home', path: '/' },
   { name: 'About', path: '/about' },
-  { name: 'Books', path: '/books' },
-  { name: 'Movies', path: '/movies' },
+  { name: 'Events', path: '/events' },
+  //{ name: 'Movies', path: '/movies' },
   { name: 'Login', path: '/login' },
 ];
 

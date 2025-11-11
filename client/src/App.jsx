@@ -11,6 +11,7 @@ import Books from './pages/Books/Books'
 import './App.css'
 import NavBar from './components/Navbar'
 import Movies from './pages/Movie/Movies'
+import Events from './pages/Events/Events'
 
 function AppContent() {
   const location = useLocation()
@@ -36,6 +37,7 @@ function AppContent() {
         <Route path="/movies" element={<Movies />} />
         <Route path="/movies/:id" element={<MovieItem />} />
         <Route path="/movie-item" element={<MovieItem />} />
+        <Route path="/events" element={<Events/>} />
       </Routes>
     </>
   )
