@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Navigate, NavLink, Routes, Route } from 'react-router-dom';
 import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
+import { OverlayProvider } from '../../components/FeedbackUI/OverlayContext'
 import './Dashboard.css';
 import { Assets } from './Assets';
+import { LoadingProvider } from '../../components/FeedbackUI/LoadingContext';
 
 const API_URL =
   window.location.hostname === 'localhost'
@@ -20,14 +22,6 @@ function StudentDashboard() {
   const navigate = useNavigate();
 
   // -------------------- UI STATES --------------------
-  const [{ isLoading, loadText }, setLoading] = useState({
-    isLoading: false,
-    loadText: 'Loading...'
-  });
-
-  const updateLoading = (updates) => {
-    setLoading(prev => ({...prev, ...updates}))
-  }
 
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -48,7 +42,7 @@ function StudentDashboard() {
     {
       path: 'assets',
       label: 'Assets',
-      content: <Assets setLoading={updateLoading}/>
+      content: <Assets />
     },
     {
       path: 'inventory',
@@ -59,6 +53,11 @@ function StudentDashboard() {
       path: 'reports',
       label: 'Reports',
       content: <Temp />
+    },
+    {
+      path: 'test',
+      label: 'Test',
+      content: <div><LoadingOverlay loading={true} loadMessage={"Test"} /></div>
     }
   ]
   // -------------------- MAIN RENDER --------------------
@@ -75,31 +74,34 @@ function StudentDashboard() {
           </div>
         </div>
       </nav>
-      <LoadingOverlay loading={isLoading} loadMessage={loadText} />
-      <SuccessPopup successMessage={successMessage} />
-      <div className="student-dashboard-content">
-        <div className="student-dashboard-title-bar">
-          <h1>Student Dashboard</h1>
-        </div>
+      <OverlayProvider>
+        <LoadingProvider>
+          <SuccessPopup successMessage={successMessage} />
+          <div className="student-dashboard-content">
+            <div className="student-dashboard-title-bar">
+              <h1>Student Dashboard</h1>
+            </div>
 
-        <nav className="student-tabs-container">
-          {routes.map(({ path, label }) => (
-            <NavLink key={path} to={'/student/' + path} className={tabClassName} >{label}</NavLink>
-          ))}
-        </nav>
+            <nav className="student-tabs-container">
+              {routes.map(({ path, label }) => (
+                <NavLink key={path} to={'/student/' + path} className={tabClassName} >{label}</NavLink>
+              ))}
+            </nav>
 
-        <div className='student-dashboard-innercontent'>
-          <Routes>
-            {/*Main redirect*/}
-            <Route index element={<Navigate to="/student/assets" replace />} />
+            <div className='student-dashboard-innercontent'>
+              <Routes>
+                {/*Main redirect*/}
+                <Route index element={<Navigate to="/student/assets" replace />} />
 
-            {/*Route mapping*/}
-            {routes.map(({ path, content }) => (
-              <Route key={path} path={path} element={content} />
-            ))}
-          </Routes>
-        </div>
-      </div>
+                {/*Route mapping*/}
+                {routes.map(({ path, content }) => (
+                  <Route key={path} path={path} element={content} />
+                ))}
+              </Routes>
+            </div>
+          </div>
+        </LoadingProvider>
+      </OverlayProvider>
     </div>
   );
 
