@@ -5,8 +5,8 @@ import { Menu, X } from 'lucide-react';
 const links = [
   { name: 'Home', path: '/' },
   { name: 'About', path: '/about' },
-  { name: 'Books', path: '/books' },
-  { name: 'Movies',path: '/movies' },
+ // { name: 'Books', path: '/books' },
+ // { name: 'Movies',path: '/movies' },
   { name: 'Events', path: '/events'},
   { name: 'Login', path: '/login' },
 ];
@@ -38,7 +38,7 @@ function NavBar() {
             ))}
           </div>
 
-          {/* Hamburger Button */}
+          {/*  */}
           <div className="md:hidden flex items-center">
             <button onClick={() => setIsOpen(!isOpen)} className="focus:outline-none">
               {isOpen ? <X size={24} /> : <Menu size={24} />}
