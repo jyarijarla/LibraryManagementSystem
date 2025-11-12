@@ -6,7 +6,7 @@
       "use": "@vercel/static-build",
       "config": {
         "distDir": "dist",
-        "buildCommand": "npm run build --workspace client"
+        "buildCommand": "npm ci --workspace client && npm run build --workspace client"
       }
     }
   ],
