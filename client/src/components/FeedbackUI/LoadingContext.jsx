@@ -14,7 +14,7 @@ export const LoadingProvider = ({ children }) => {
     }
     return (
         <LoadingContext.Provider value={{ isLoading, loadText, setLoading}}>
-            <LoadingOverlay loading={isLoading} loadMessage={loadText} />
+            <LoadingOverlay isLoading={isLoading} message={loadText} />
             {children}
         </LoadingContext.Provider>
     )
@@ -23,4 +23,5 @@ export const LoadingProvider = ({ children }) => {
 export const useLoading = () => {
     const context = useContext(LoadingContext);
     if(!context) throw new Error("useLoading  needs to be in Loading Provider");
+    return context;
 }
