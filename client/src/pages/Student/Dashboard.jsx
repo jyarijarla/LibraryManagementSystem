@@ -4,7 +4,19 @@ import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/Feedb
 import './Dashboard.css';
 import { Assets } from './Assets';
 import { OverlayProvider } from '../../components/FeedbackUI/OverlayContext';
-import { LoadingProvider } from '../../components/FeedbackUI/LoadingContext';
+import { LoadingProvider, useLoading } from '../../components/FeedbackUI/LoadingContext';
+
+function TestLoad() {
+  const { setLoading } = useLoading();
+  return (
+    <div onClick={() => {
+      setLoading({ isLoading: true });
+      setTimeout(() => setLoading({ isLoading: false }), 2000);
+    }}>
+      Click to test
+    </div>
+  );
+}
 
 const API_URL =
   window.location.hostname === 'localhost'
@@ -53,7 +65,12 @@ function StudentDashboard() {
       path: 'reports',
       label: 'Reports',
       content: <Temp />
-    }
+    },
+    {
+    path: 'test-loading',
+    label: 'Test Loading',
+    content: <TestLoad />
+  }
   ]
   // -------------------- MAIN RENDER --------------------
   return (

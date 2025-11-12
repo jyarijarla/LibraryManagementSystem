@@ -10,6 +10,7 @@ export const LoadingProvider = ({ children }) => {
     });
 
     const setLoading = (updates) => {
+        alert(`setLoading called: ${JSON.stringify(updates)}`);
         setLoadingState(prev => ({...prev, ...updates}))
     }
     return (

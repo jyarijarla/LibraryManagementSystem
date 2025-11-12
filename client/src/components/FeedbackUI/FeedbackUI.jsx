@@ -2,8 +2,8 @@ import React from 'react';
 import './FeedbackUI.css';
 
 // Loading Overlay Component
-export const LoadingOverlay = ({ isLoading, message = 'Loading...' }) => {
-  if (!isLoading) return null;
+export const LoadingOverlay = ({ loading, loadMessage = "Loading..." }) => {
+  if (!loading) return null;
   
   return (
     <div className="loading-overlay">
