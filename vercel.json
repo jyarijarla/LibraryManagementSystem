@@ -1,5 +1,19 @@
 {
-  "buildCommand": "npm run build --workspace client",
-  "outputDirectory": "client/dist",
-  "framework": "vite"
+  "version": 3,
+  "builds": [
+    {
+      "src": "client/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist",
+        "buildCommand": "npm run build --workspace client"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ]
 }
