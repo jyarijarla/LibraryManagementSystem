@@ -10,9 +10,13 @@ const Events = () => {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
 
+const API_URL = window.location.hostname === 'localhost' 
+  ? 'http://localhost:3000/api'
+  : 'https://librarymanagementsystem-z2yw.onrender.com/api'
+
   // Fetch events from backend
   useEffect(() => {
-    fetch('http://localhost:3000/api/events')
+    fetch(`${API_URL}/events`)
       .then(res => res.json())
       .then(data => {
         setEvents(data || []);
