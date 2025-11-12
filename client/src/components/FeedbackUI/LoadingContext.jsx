@@ -23,4 +23,5 @@ export const LoadingProvider = ({ children }) => {
 export const useLoading = () => {
     const context = useContext(LoadingContext);
     if(!context) throw new Error("useLoading  needs to be in Loading Provider");
+    return context;
 }

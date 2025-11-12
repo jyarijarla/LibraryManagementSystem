@@ -1,6 +1,8 @@
 //Not done yet
 function Overview(){
-    
+    return (
+      <div></div>
+    )
 }
 // -------------------- FETCH DATA (PLACEHOLDER) --------------------
   const fetchData = async () => {
@@ -134,7 +136,7 @@ function Overview(){
     }
   }
 
-  useEffect(() => {
+  useEffect (() => {
     () => {
         const loadAsset = async () =>
     }
