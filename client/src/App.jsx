@@ -9,7 +9,7 @@ import Home from './pages/Home/Home'
 import About from './pages/About/About'      
 import Books from './pages/Books/Books'     
 import './App.css'
-import NavBar from './components/Navbar'
+import NavBar from './components/NavBar'
 import Movies from './pages/Movie/Movies'
 import Events from './pages/Events/Events'
 
