@@ -9,8 +9,9 @@ import Home from './pages/Home/Home'
 import About from './pages/About/About'      
 import Books from './pages/Books/Books'     
 import './App.css'
-// import NavBar from './components/Navbar'
+import NavBar from './components/NavBar'
 import Movies from './pages/Movie/Movies'
+import Events from './pages/Events/Events'
 
 function AppContent() {
   const location = useLocation()
@@ -22,7 +23,7 @@ function AppContent() {
 
   return (
     <>
-      {/* {showNavbar && <NavBar />} */}
+      {showNavbar && <NavBar />}
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
@@ -36,6 +37,7 @@ function AppContent() {
         <Route path="/movies" element={<Movies />} />
         <Route path="/movies/:id" element={<MovieItem />} />
         <Route path="/movie-item" element={<MovieItem />} />
+        <Route path="/events" element={<Events/>} />
       </Routes>
     </>
   )
