@@ -20,7 +20,9 @@ import {
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import './LibrarianReport.css'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const API_URL = window.location.hostname === 'localhost' 
+  ? 'http://localhost:3000/api'
+  : 'https://librarymanagementsystem-z2yw.onrender.com/api'
 
 function LibrarianReport() {
   const [summary, setSummary] = useState({
