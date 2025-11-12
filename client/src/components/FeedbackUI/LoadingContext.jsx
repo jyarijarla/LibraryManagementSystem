@@ -10,12 +10,11 @@ export const LoadingProvider = ({ children }) => {
     });
 
     const setLoading = (updates) => {
-        alert(`setLoading called: ${JSON.stringify(updates)}`);
         setLoadingState(prev => ({...prev, ...updates}))
     }
     return (
         <LoadingContext.Provider value={{ isLoading, loadText, setLoading}}>
-            <LoadingOverlay loading={isLoading} loadMessage={loadText} />
+            <LoadingOverlay isLoading={isLoading} message={loadText} />
             {children}
         </LoadingContext.Provider>
     )
