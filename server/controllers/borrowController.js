@@ -1,8 +1,5 @@
 const db = require('../db');
 
-exports.borrowAsset = (req, res) => {
-  const { userID, assetId, assetType}
-}
 
 // Issue any asset (book, CD, audiobook, movie, technology, study-room)
 exports.issueBook = (req, res) => {
