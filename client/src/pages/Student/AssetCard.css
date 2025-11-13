@@ -1,0 +1,64 @@
+
+.asset-card-content {
+  justify-self: center;
+  width: 100%;
+  height: calc(100%-50px);
+  margin: 50px;
+  background-color: white;
+}
+
+.asset-card-header {
+  height: 48px;
+  padding: 10px;
+  background-image: linear-gradient(to right, brown, red);
+}
+.asset-card-scroll-wrapper {
+  overflow-y: auto;
+  height: 100%;
+}
+.asset-card-inner-content {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+}
+.asset-close-button {
+  justify-self: right;
+  right: 0px;
+}
+.asset-close-button :hover{
+  background-color: black;
+}
+.asset-card-image {
+  position: relative;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  font-size: 48px;
+  font-weight: 700;
+  color: #9ca3af;
+}
+.asset-card-image-content{
+  
+}
+.asset-image-placeholder-card {
+  position: relative;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  font-size: 48px;
+  font-weight: 700;
+  color: #9ca3af;
+}
+.asset-close-x:hover {
+  stroke: white;
+}

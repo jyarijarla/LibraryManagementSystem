@@ -20,4 +20,5 @@ export const OverlayProvider = ({ children }) => {
 export const useOverlay = () => {
     const context = useContext(OverlayContext);
     if(!context) throw new Error("useOverlay needs to be in Overlay Provider");
+    return context;
 }
