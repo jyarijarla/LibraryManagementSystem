@@ -86,10 +86,12 @@ const getAllAudiobooks = async (req, res) => {
 const getAllMovies = async (req, res) => {
   try {
     const query = `
-      SELECT m.Asset_ID, m.Title, m.Release_Year, m.Age_Rating, m.Available_Copies, m.Image_URL
+      SELECT m.Asset_ID, m.Title, m.Release_Year, m.Age_Rating, m.Copies, m.Available_Copies, m.Image_URL
       FROM movie_inventory m
       ORDER BY m.Title
     `;
+    
+    console.log('🎬 getAllMovies - Executing query:', query);
     
     db.query(query, (err, results) => {
       if (err) {
@@ -97,6 +99,7 @@ const getAllMovies = async (req, res) => {
         return res.writeHead(500, { 'Content-Type': 'application/json' })
           .end(JSON.stringify({ error: 'Database error' }));
       }
+      console.log('✅ Movies fetched successfully, count:', results.length);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(results));
     });
@@ -111,24 +114,37 @@ const getAllMovies = async (req, res) => {
 const getAllTechnology = async (req, res) => {
   try {
     const query = `
-      SELECT t.Asset_ID, t.Model_Num, t.Type, t.Description, t.Copies, t.Image_URL
-      FROM technology_inventory t
+      SELECT 
+        t.Asset_ID, 
+        t.Model_Num, 
+        t.Type, 
+        t.Description,
+        t.Image_URL,
+        (SELECT COUNT(*) FROM rentable r WHERE r.Asset_ID = t.Asset_ID) as Copies,
+        (SELECT COUNT(*) FROM rentable r WHERE r.Asset_ID = t.Asset_ID AND r.Status = 1) as Available_Copies
+      FROM technology t
       ORDER BY t.Type, t.Model_Num
     `;
     
+    console.log('🔧 getAllTechnology - Executing query');
+    
     db.query(query, (err, results) => {
       if (err) {
-        console.error('Error fetching technology:', err);
+        console.error('❌ Error fetching technology:', err);
         return res.writeHead(500, { 'Content-Type': 'application/json' })
-          .end(JSON.stringify({ error: 'Database error' }));
+          .end(JSON.stringify({ error: 'Database error', details: err.message }));
+      }
+      console.log('✅ Technology items fetched:', results.length);
+      if (results.length > 0) {
+        console.log('📊 Sample:', results[0]);
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(results));
     });
   } catch (error) {
-    console.error('Error in getAllTechnology:', error);
+    console.error('❌ Error in getAllTechnology:', error);
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error' }));
+      .end(JSON.stringify({ error: 'Server error', details: error.message }));
   }
 };
 
@@ -415,8 +431,8 @@ const addTechnology = async (req, res) => {
     //insert into technology
     try{
       const technologyQuery = 'INSERT INTO technology (Asset_ID, Model_Num, Type, Description, Image_URL) VALUES (?, ?, ?, ?, ?)';
-      await connection.query(technologyQuery, [newAssetId, Model_Num, Type, Description, Copies, Image_URL || null]);
-      console.log("technology inserted");
+      await connection.query(technologyQuery, [newAssetId, Model_Num, Type, Description, Image_URL || null]);
+      console.log("✅ Technology inserted - Asset_ID:", newAssetId, "Quantity:", Copies);
     } catch (error) {
       console.log(error)
       throw new Error('Technology Creation Failed')
@@ -428,7 +444,8 @@ const addTechnology = async (req, res) => {
     res.writeHead(201, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ 
       message: 'Technology added successfully',
-      assetId: newAssetId
+      assetId: newAssetId,
+      quantity: Copies
     }));
   } catch (error) {
     await connection.rollback();
