@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Home, BookOpen, RefreshCw, Users, DollarSign, 
   FileText, LogOut, Search, Calendar, User,
   TrendingUp, TrendingDown, BookMarked, AlertCircle,
-  Library, UserPlus, Clock, Menu, X, BarChart3
+  Library, UserPlus, Clock, Menu, X, BarChart3,
+  Package, CheckCircle, Plus, Edit2, Trash2,
+  Barcode, Music, Shield, Hash, Tag, Info, MapPin,
+  Disc, Headphones, Film, Laptop, Building2, BookOpenCheck,
+  Image, Upload, Save, XCircle
 } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import '../Admin/Admin.css'
@@ -888,6 +892,61 @@ function Librarian() {
     setShowDeleteModal(true)
   }
 
+  // Helper function to get asset theme (used in both renderAssets and modals)
+  const getAssetTheme = (assetType = activeAssetTab) => {
+    const themes = {
+      'books': { 
+        Icon: BookOpen, 
+        color: 'blue', 
+        gradient: 'from-blue-500 to-cyan-600', 
+        bg: 'bg-blue-50', 
+        text: 'text-blue-700', 
+        border: 'border-blue-500' 
+      },
+      'cds': { 
+        Icon: Disc, 
+        color: 'purple', 
+        gradient: 'from-purple-500 to-pink-600', 
+        bg: 'bg-purple-50', 
+        text: 'text-purple-700', 
+        border: 'border-purple-500' 
+      },
+      'audiobooks': { 
+        Icon: Headphones, 
+        color: 'green', 
+        gradient: 'from-green-500 to-emerald-600', 
+        bg: 'bg-green-50', 
+        text: 'text-green-700', 
+        border: 'border-green-500' 
+      },
+      'movies': { 
+        Icon: Film, 
+        color: 'red', 
+        gradient: 'from-red-500 to-rose-600', 
+        bg: 'bg-red-50', 
+        text: 'text-red-700', 
+        border: 'border-red-500' 
+      },
+      'technology': { 
+        Icon: Laptop, 
+        color: 'indigo', 
+        gradient: 'from-indigo-500 to-violet-600', 
+        bg: 'bg-indigo-50', 
+        text: 'text-indigo-700', 
+        border: 'border-indigo-500' 
+      },
+      'study-rooms': { 
+        Icon: Building2, 
+        color: 'amber', 
+        gradient: 'from-amber-500 to-orange-600', 
+        bg: 'bg-amber-50', 
+        text: 'text-amber-700', 
+        border: 'border-amber-500' 
+      }
+    }
+    return themes[assetType] || themes.books
+  }
+
   const getAssetFormFields = () => {
     switch(activeAssetTab) {
       case 'books':
@@ -926,7 +985,7 @@ function Librarian() {
           { name: 'Model_Num', type: 'number', label: 'Model Number', required: true },
           { name: 'Type', type: 'number', label: 'Type', required: true },
           { name: 'Description', type: 'text', label: 'Description', required: true },
-          { name: 'Copies', type: 'number', label: 'Copies', required: true }
+          { name: 'Copies', type: 'number', label: 'Quantity', required: true }
         ]
       case 'study-rooms':
         return [
@@ -984,7 +1043,8 @@ function Librarian() {
           { key: 'Model_Num', label: 'Model #' },
           { key: 'Type', label: 'Type' },
           { key: 'Description', label: 'Description' },
-          { key: 'Copies', label: 'Quantity' }
+          { key: 'Copies', label: 'Total Quantity' },
+          { key: 'Available_Copies', label: 'Available' }
         ]
       case 'study-rooms':
         return [
@@ -1465,191 +1525,455 @@ function Librarian() {
     const columns = getAssetTableColumns()
     const data = getCurrentAssetData()
 
+    // Get theme from centralized helper function
+    const theme = getAssetTheme()
+
+    // Calculate statistics
+    const totalAssets = data.length
+    const totalCopies = data.reduce((sum, item) => sum + (parseInt(item.Copies) || 0), 0)
+    const availableCopies = data.reduce((sum, item) => sum + (parseInt(item.Available_Copies) || 0), 0)
+    const borrowedCopies = totalCopies - availableCopies
+
+    // Filter data based on search
+    const filteredData = data.filter(item => {
+      if (!searchTerm) return true
+      const searchLower = searchTerm.toLowerCase()
+      return (
+        item.Title?.toLowerCase().includes(searchLower) ||
+        item.Author?.toLowerCase().includes(searchLower) ||
+        item.Artist?.toLowerCase().includes(searchLower) ||
+        item.ISBN?.toLowerCase().includes(searchLower) ||
+        item.Model_Num?.toString().includes(searchLower) ||
+        item.Room_Number?.toLowerCase().includes(searchLower)
+      )
+    })
+
     return (
       <div className="p-6">
-        {/* Page Header */}
+        {/* Header Section */}
         <div className="mb-6">
-          <h2 className="text-3xl font-bold text-gray-800 mb-2">Manage Assets</h2>
-          <p className="text-gray-600">Browse, add, edit, and manage all library assets across different categories</p>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Library Assets Management</h2>
+          <p className="text-gray-600">Browse, add, edit, and manage all library-owned items in one unified control center</p>
         </div>
 
         <ErrorPopup errorMessage={error} onClose={() => setError('')} />
         <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
 
-        {/* Asset Category Tabs */}
-        <div className="bg-white rounded-lg shadow-md mb-6 overflow-hidden">
+        {/* Summary Analytics Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            className="bg-white rounded-xl shadow-md p-4 border border-gray-200"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Total {activeAssetTab.charAt(0).toUpperCase() + activeAssetTab.slice(1)}</p>
+                <h3 className="text-2xl font-bold text-gray-900 mt-1">{totalAssets}</h3>
+              </div>
+              <div className={`p-3 rounded-lg bg-gradient-to-br ${theme.gradient}`}>
+                <theme.Icon className="w-6 h-6 text-white" />
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.1 }}
+            className="bg-white rounded-xl shadow-md p-4 border border-gray-200"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Total Copies</p>
+                <h3 className="text-2xl font-bold text-gray-900 mt-1">{totalCopies}</h3>
+              </div>
+              <div className="p-3 rounded-lg bg-gradient-to-br from-gray-500 to-gray-600">
+                <Package className="w-6 h-6 text-white" />
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.2 }}
+            className="bg-white rounded-xl shadow-md p-4 border border-gray-200"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Available</p>
+                <h3 className="text-2xl font-bold text-green-600 mt-1">{availableCopies}</h3>
+              </div>
+              <div className="p-3 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600">
+                <CheckCircle className="w-6 h-6 text-white" />
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.3 }}
+            className="bg-white rounded-xl shadow-md p-4 border border-gray-200"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Borrowed</p>
+                <h3 className="text-2xl font-bold text-orange-600 mt-1">{borrowedCopies}</h3>
+              </div>
+              <div className="p-3 rounded-lg bg-gradient-to-br from-orange-500 to-amber-600">
+                <BookOpen className="w-6 h-6 text-white" />
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Category Tabs & Actions Bar */}
+        <div className="bg-white rounded-xl shadow-md mb-6 overflow-hidden border border-gray-200">
+          {/* Tabs */}
           <div className="flex flex-wrap border-b border-gray-200">
             <button 
-              className={`flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
+              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
                 activeAssetTab === 'books' 
                   ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' 
                   : 'text-gray-600 hover:bg-gray-50'
               }`} 
               onClick={() => changeAssetTab('books')}
             >
+              <BookOpen className="w-5 h-5" />
               <span>Books</span>
             </button>
             <button 
-              className={`flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
+              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
                 activeAssetTab === 'cds' 
                   ? 'bg-purple-50 text-purple-700 border-b-2 border-purple-500' 
                   : 'text-gray-600 hover:bg-gray-50'
               }`} 
               onClick={() => changeAssetTab('cds')}
             >
+              <Disc className="w-5 h-5" />
               <span>CDs</span>
             </button>
             <button 
-              className={`flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
+              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
                 activeAssetTab === 'audiobooks' 
                   ? 'bg-green-50 text-green-700 border-b-2 border-green-500' 
                   : 'text-gray-600 hover:bg-gray-50'
               }`} 
               onClick={() => changeAssetTab('audiobooks')}
             >
+              <Headphones className="w-5 h-5" />
               <span>Audiobooks</span>
             </button>
             <button 
-              className={`flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
+              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
                 activeAssetTab === 'movies' 
                   ? 'bg-red-50 text-red-700 border-b-2 border-red-500' 
                   : 'text-gray-600 hover:bg-gray-50'
               }`} 
               onClick={() => changeAssetTab('movies')}
             >
+              <Film className="w-5 h-5" />
               <span>Movies</span>
             </button>
             <button 
-              className={`flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
+              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
                 activeAssetTab === 'technology' 
                   ? 'bg-indigo-50 text-indigo-700 border-b-2 border-indigo-500' 
                   : 'text-gray-600 hover:bg-gray-50'
               }`} 
               onClick={() => changeAssetTab('technology')}
             >
+              <Laptop className="w-5 h-5" />
               <span>Technology</span>
             </button>
             <button 
-              className={`flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
+              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
                 activeAssetTab === 'study-rooms' 
                   ? 'bg-amber-50 text-amber-700 border-b-2 border-amber-500' 
                   : 'text-gray-600 hover:bg-gray-50'
               }`} 
               onClick={() => changeAssetTab('study-rooms')}
             >
+              <Building2 className="w-5 h-5" />
               <span>Study Rooms</span>
             </button>
           </div>
 
-          {/* Action Bar */}
-          <div className="p-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-gray-700">
-                Total {activeAssetTab}: <span className="text-blue-600 font-bold">{data.length}</span>
-              </span>
-              <span className="text-gray-400">•</span>
-              <span className="text-sm text-gray-600">
-                Available: <span className="text-green-600 font-semibold">
-                  {data.reduce((sum, item) => sum + (parseInt(item.Available_Copies) || 0), 0)}
-                </span>
-              </span>
+          {/* Search & Filter Toolbar */}
+          <div className="p-4 bg-gray-50 border-b border-gray-200">
+            <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
+              {/* Search Bar */}
+              <div className="flex-1 w-full lg:w-auto">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder={`Search ${activeAssetTab}...`}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Stats & Add Button */}
+              <div className="flex items-center gap-4 w-full lg:w-auto">
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">Showing:</span>
+                  <span className={`font-bold ${theme.text}`}>{filteredData.length} items</span>
+                </div>
+                <button 
+                  className={`px-4 py-2 bg-gradient-to-r ${theme.gradient} text-white rounded-lg hover:shadow-lg transition-all duration-200 font-medium text-sm flex items-center gap-2 whitespace-nowrap`}
+                  onClick={openAddAssetModal}
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add {activeAssetTab.charAt(0).toUpperCase() + activeAssetTab.slice(1, -1)}</span>
+                </button>
+              </div>
             </div>
-            <button 
-              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-md hover:shadow-lg font-medium text-sm flex items-center gap-2"
-              onClick={openAddAssetModal}
-            >
-              <span className="text-lg">+</span>
-              <span>Add {activeAssetTab.charAt(0).toUpperCase() + activeAssetTab.slice(1, -1)}</span>
-            </button>
           </div>
         </div>
 
-        {/* Assets Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {data.length === 0 ? (
-            <div className="col-span-full flex flex-col items-center justify-center py-16 bg-white rounded-xl border-2 border-dashed border-gray-300">
-              <p className="text-gray-500 text-lg font-medium">No {activeAssetTab} found</p>
-              <p className="text-gray-400 text-sm mt-1">Click "Add {activeAssetTab.slice(0, -1)}" to get started</p>
-            </div>
-          ) : (
-            data.map((item, index) => (
-              <div key={item.Asset_ID} className="bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group border border-gray-200">
-                {/* Card Header */}
-                <div className="p-3 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200 flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-600 bg-white px-3 py-1 rounded-full">#{index + 1}</span>
-                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                    <button 
-                      className="px-2 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-xs font-medium"
-                      onClick={() => openEditAssetModal(item)} 
-                      title="Edit"
-                    >
-                      Edit
-                    </button>
-                    <button 
-                      className="px-2 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-xs font-medium"
-                      onClick={() => openDeleteModal(item)} 
-                      title="Delete"
-                    >
-                      Delete
-                    </button>
-                  </div>
+        {/* Asset Grid */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeAssetTab}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.3 }}
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+          >
+            {filteredData.length === 0 ? (
+              <div className="col-span-full flex flex-col items-center justify-center py-20 bg-white rounded-xl border-2 border-dashed border-gray-300">
+                <div className={`p-6 rounded-full ${theme.bg} mb-4`}>
+                  <theme.Icon className={`w-12 h-12 ${theme.text}`} />
                 </div>
-                
-                {/* Card Image */}
-                <div className="relative w-full bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden" style={{ height: '450px' }}>
-                  <img 
-                    src={item.Image_URL ? `${item.Image_URL}?t=${imageRefreshKey}` : `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'png')}?t=${imageRefreshKey}`}
-                    alt={item.Title || item.Room_Number || 'Asset'}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                    onLoad={(e) => {
-                      e.target.style.display = 'block'
-                      const placeholder = e.target.nextElementSibling
-                      if (placeholder) placeholder.style.display = 'none'
-                    }}
-                    onError={(e) => {
-                      const currentSrc = e.target.src
-                      if (currentSrc.includes('.png')) {
-                        e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'jpg')}?t=${imageRefreshKey}`
-                      } else {
-                        e.target.style.display = 'none'
-                        const placeholder = e.target.nextElementSibling
-                        if (placeholder) placeholder.style.display = 'flex'
-                      }
-                    }}
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-200 to-gray-300" style={{ display: 'none' }}>
-                    <div className="text-center">
-                      <span className="text-gray-500 text-sm font-medium">No Image</span>
+                <p className="text-gray-900 text-xl font-semibold mb-2">
+                  {searchTerm ? `No ${activeAssetTab} match your search` : `No ${activeAssetTab} found`}
+                </p>
+                <p className="text-gray-500 text-sm mb-4">
+                  {searchTerm ? `Try a different search term` : `Get started by adding your first ${activeAssetTab.slice(0, -1)}`}
+                </p>
+                {!searchTerm && (
+                  <button
+                    onClick={openAddAssetModal}
+                    className={`px-6 py-3 bg-gradient-to-r ${theme.gradient} text-white rounded-lg hover:shadow-lg transition-all duration-200 font-medium text-sm flex items-center gap-2`}
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add {activeAssetTab.charAt(0).toUpperCase() + activeAssetTab.slice(0, -1)}</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              filteredData.map((item, index) => (
+                <motion.div
+                  key={item.Asset_ID}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.3, delay: Math.min(index * 0.03, 0.5) }}
+                  className="bg-white rounded-xl shadow-md hover:shadow-2xl transition-all duration-300 overflow-hidden group border border-gray-200 flex flex-col"
+                >
+                  {/* Card Header */}
+                  <div className={`p-3 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200 flex items-center justify-between`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-bold ${theme.text} ${theme.bg} px-3 py-1 rounded-full`}>
+                        #{index + 1}
+                      </span>
+                      <span className={`text-sm font-medium ${
+                        (item.Available_Copies > 0 || item.Availability === 'Available') 
+                          ? 'text-green-600 bg-green-50' 
+                          : 'text-red-600 bg-red-50'
+                      } px-2 py-1 rounded-full text-xs`}>
+                        {(item.Available_Copies > 0 || item.Availability === 'Available') ? '✓ Available' : '✗ Borrowed'}
+                      </span>
+                    </div>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                      <button 
+                        className="p-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                        onClick={() => openEditAssetModal(item)} 
+                        title="Edit"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                        className="p-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                        onClick={() => openDeleteModal(item)} 
+                        title="Delete"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
-                </div>
-                
-                {/* Card Body */}
-                <div className="p-4 space-y-2">
-                  {columns.slice(1).map(col => {
-                    const value = renderCellContent(item, col, index)
-                    if (col.key === 'Available_Copies' || col.key === 'Availability') {
-                      return (
-                        <div key={col.key} className="flex items-center justify-between py-2 border-t border-gray-100">
-                          <span className="text-xs font-medium text-gray-500 uppercase">{col.label}</span>
-                          {value}
-                        </div>
-                      )
-                    }
-                    return (
-                      <div key={col.key} className="flex items-start justify-between py-1">
-                        <span className="text-xs font-medium text-gray-500">{col.label}:</span>
-                        <span className="text-sm text-gray-800 font-medium text-right max-w-[60%] truncate" title={value}>
-                          {value}
-                        </span>
+                  
+                  {/* Image/Thumbnail */}
+                  <div className="relative w-full bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden" style={{ height: '420px' }}>
+                    <img 
+                      src={item.Image_URL ? `${item.Image_URL}?t=${imageRefreshKey}` : `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'png')}?t=${imageRefreshKey}`}
+                      alt={item.Title || item.Room_Number || 'Asset'}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      onLoad={(e) => {
+                        e.target.style.display = 'block'
+                        const placeholder = e.target.nextElementSibling
+                        if (placeholder) placeholder.style.display = 'none'
+                      }}
+                      onError={(e) => {
+                        const currentSrc = e.target.src
+                        if (currentSrc.includes('.png')) {
+                          e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'jpg')}?t=${imageRefreshKey}`
+                        } else {
+                          e.target.style.display = 'none'
+                          const placeholder = e.target.nextElementSibling
+                          if (placeholder) placeholder.style.display = 'flex'
+                        }
+                      }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-200 to-gray-300" style={{ display: 'none' }}>
+                      <div className="text-center">
+                        <span className="text-5xl mb-2 block">{theme.icon}</span>
+                        <span className="text-gray-500 text-sm font-medium">No Image</span>
                       </div>
-                    )
-                  })}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+                    </div>
+                    {/* Gradient Overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                  </div>
+                  
+                  {/* Card Content */}
+                  <div className="p-4 space-y-3 flex-1 flex flex-col">
+                    {/* Title */}
+                    <h3 className="text-base font-bold text-gray-900 line-clamp-2 min-h-[3rem]">
+                      {item.Title || item.Description || item.Room_Number || 'Untitled'}
+                    </h3>
+                    
+                    {/* Key Info */}
+                    <div className="space-y-2 flex-1">
+                      {activeAssetTab === 'books' && (
+                        <>
+                          <div className="flex items-center gap-2 text-sm">
+                            <User className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-700 font-medium">{item.Author}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Barcode className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-600">{item.ISBN}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <FileText className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-600">{item.Page_Count} pages</span>
+                          </div>
+                        </>
+                      )}
+                      
+                      {activeAssetTab === 'cds' && (
+                        <>
+                          <div className="flex items-center gap-2 text-sm">
+                            <User className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-700 font-medium">{item.Artist}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Music className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-600">{item.Total_Tracks} tracks</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Clock className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-600">{item.Total_Duration_In_Minutes} min</span>
+                          </div>
+                        </>
+                      )}
+                      
+                      {activeAssetTab === 'audiobooks' && (
+                        <>
+                          <div className="flex items-center gap-2 text-sm">
+                            <User className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-700 font-medium">{item.Author}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Barcode className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-600">{item.ISBN}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Clock className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-600">{item.length} min</span>
+                          </div>
+                        </>
+                      )}
+                      
+                      {activeAssetTab === 'movies' && (
+                        <>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-600">Released: {item.Release_Year}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Shield className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-600">Rating: {item.Age_Rating}</span>
+                          </div>
+                        </>
+                      )}
+                      
+                      {activeAssetTab === 'technology' && (
+                        <>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Hash className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-600">Model: {item.Model_Num}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Tag className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-600">Type: {item.Type}</span>
+                          </div>
+                        </>
+                      )}
+                      
+                      {activeAssetTab === 'study-rooms' && (
+                        <>
+                          <div className="flex items-center gap-2 text-sm">
+                            <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-700 font-medium">Room {item.Room_Number}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <Users className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-600">Capacity: {item.Capacity}</span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    
+                    {/* Copies Info */}
+                    {(item.Copies !== undefined || item.Available_Copies !== undefined) && (
+                      <div className="pt-3 border-t border-gray-100">
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-2">
+                            <Package className="w-3.5 h-3.5 text-gray-400" />
+                            <span className="text-gray-600">
+                              {activeAssetTab === 'technology' ? 'Quantity:' : 'Copies:'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-gray-900">{item.Copies || 0}</span>
+                            <span className="text-gray-400">•</span>
+                            <span className={`font-semibold ${(item.Available_Copies > 0) ? 'text-green-600' : 'text-red-600'}`}>
+                              {item.Available_Copies || 0} available
+                            </span>
+                          </div>
+                        </div>
+                        {/* Progress Bar */}
+                        <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full bg-gradient-to-r ${theme.gradient} transition-all duration-300`}
+                            style={{ width: `${item.Copies > 0 ? (item.Available_Copies / item.Copies) * 100 : 0}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              ))
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
     )
   }
@@ -3409,41 +3733,185 @@ function Librarian() {
 
       {/* Asset Modal (same as Admin) */}
       {showAssetModal && (
-        <div className="modal-overlay" onClick={() => setShowAssetModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>{isEditMode ? 'Edit' : 'Add'} {activeAssetTab.slice(0, -1).charAt(0).toUpperCase() + activeAssetTab.slice(1, -1)}</h3>
-            <form onSubmit={handleAddAsset}>
-              <div className="form-group">
-                <label>Image</label>
-                <div className="image-upload-section">
-                  <input type="file" id="image-upload" accept="image/*" onChange={handleImageChange} style={{ display: 'none' }} />
-                  {(imagePreview || assetForm.Image_URL) ? (
-                    <div className="image-preview-container">
-                      <img src={imagePreview || assetForm.Image_URL} alt="Preview" className="image-preview" onClick={() => document.getElementById('image-upload').click()} style={{ cursor: 'pointer' }} />
-                      <button type="button" className="remove-image-btn" onClick={removeImage}>✕</button>
+        <AnimatePresence>
+          {(() => {
+            // Get theme for the current asset type
+            const theme = getAssetTheme()
+            
+            return (
+              <motion.div 
+                className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowAssetModal(false)}
+              >
+                <motion.div 
+                  className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden"
+                  initial={{ scale: 0.9, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  exit={{ scale: 0.9, y: 20 }}
+                  transition={{ type: "spring", duration: 0.3 }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+              {/* Modal Header */}
+              <div className={`px-6 py-5 border-b border-gray-200 bg-gradient-to-r ${theme.gradient}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
+                      <theme.Icon className="w-6 h-6 text-white" />
                     </div>
-                  ) : (
-                    <label htmlFor="image-upload" className="no-image-placeholder" style={{ cursor: 'pointer' }}>
-                      <span>📷</span>
-                      <p>Click to upload image</p>
-                    </label>
-                  )}
+                    <h3 className="text-2xl font-bold text-white">
+                      {isEditMode ? 'Edit' : 'Add New'} {activeAssetTab.slice(0, -1).charAt(0).toUpperCase() + activeAssetTab.slice(1, -1)}
+                    </h3>
+                  </div>
+                  <button 
+                    onClick={() => setShowAssetModal(false)}
+                    className="p-2 hover:bg-white/20 rounded-lg transition-colors duration-200"
+                  >
+                    <X className="w-5 h-5 text-white" />
+                  </button>
                 </div>
               </div>
 
-              {getAssetFormFields().filter(field => !(activeAssetTab === 'movies' && field.name === 'Copies' && isEditMode)).map(field => (
-                <div className="form-group" key={field.name}>
-                  <label>{field.label} {field.required && '*'}</label>
-                  <input type={field.type} value={assetForm[field.name] || ''} onChange={(e) => setAssetForm({ ...assetForm, [field.name]: e.target.value })} required={field.required} />
-                </div>
-              ))}
-              <div className="modal-actions">
-                <button type="button" className="cancel-button" onClick={() => setShowAssetModal(false)}>Cancel</button>
-                <button type="submit" className="submit-button" disabled={loading}>{loading ? (isEditMode ? 'Updating...' : 'Adding...') : (isEditMode ? 'Update' : 'Add')}</button>
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
+                <form onSubmit={handleAddAsset} className="space-y-6">
+                  {/* Image Upload Section */}
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                      <Image className="w-4 h-4" />
+                      <span>Asset Image</span>
+                    </label>
+                    <div className="relative">
+                      <input 
+                        type="file" 
+                        id="image-upload" 
+                        accept="image/*" 
+                        onChange={handleImageChange} 
+                        className="hidden" 
+                      />
+                      {(imagePreview || assetForm.Image_URL) ? (
+                        <div className="relative group">
+                          <div className="relative w-full h-80 rounded-xl overflow-hidden border-2 border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100">
+                            <img 
+                              src={imagePreview || assetForm.Image_URL} 
+                              alt="Preview" 
+                              className="w-full h-full object-contain cursor-pointer hover:scale-105 transition-transform duration-300"
+                              onClick={() => document.getElementById('image-upload').click()}
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200"></div>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={removeImage}
+                            className="absolute top-3 right-3 p-2 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg transition-all duration-200 hover:scale-110"
+                          >
+                            <XCircle className="w-5 h-5" />
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => document.getElementById('image-upload').click()}
+                            className="absolute bottom-3 right-3 px-4 py-2 bg-white/90 hover:bg-white backdrop-blur-sm text-gray-700 rounded-lg shadow-lg transition-all duration-200 hover:scale-105 flex items-center gap-2 text-sm font-medium"
+                          >
+                            <Upload className="w-4 h-4" />
+                            <span>Change Image</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <label 
+                          htmlFor="image-upload"
+                          className={`flex flex-col items-center justify-center w-full h-80 border-2 border-dashed rounded-xl cursor-pointer bg-gradient-to-br ${theme.bg} hover:bg-opacity-80 transition-all duration-200 group`}
+                        >
+                          <div className={`p-4 rounded-full bg-white shadow-md group-hover:scale-110 transition-transform duration-200`}>
+                            <Upload className={`w-8 h-8 ${theme.text}`} />
+                          </div>
+                          <p className={`mt-4 text-sm font-semibold ${theme.text}`}>Click to upload image</p>
+                          <p className="mt-1 text-xs text-gray-500">PNG, JPG up to 10MB</p>
+                        </label>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Form Fields */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {getAssetFormFields().filter(field => !(activeAssetTab === 'movies' && field.name === 'Copies' && isEditMode)).map(field => (
+                      <div 
+                        key={field.name}
+                        className={field.name === 'Description' ? 'md:col-span-2' : ''}
+                      >
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          {field.label} {field.required && <span className="text-red-500">*</span>}
+                        </label>
+                        <input 
+                          type={field.type} 
+                          value={assetForm[field.name] || ''} 
+                          onChange={(e) => setAssetForm({ ...assetForm, [field.name]: e.target.value })} 
+                          required={field.required}
+                          className={`w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-lg 
+                            focus:border-transparent focus:outline-none transition-all duration-200
+                            hover:border-gray-300`}
+                          style={{
+                            boxShadow: 'none'
+                          }}
+                          onFocus={(e) => {
+                            const colors = {
+                              'blue': 'rgb(59, 130, 246)',
+                              'purple': 'rgb(168, 85, 247)',
+                              'green': 'rgb(34, 197, 94)',
+                              'red': 'rgb(239, 68, 68)',
+                              'indigo': 'rgb(99, 102, 241)',
+                              'amber': 'rgb(245, 158, 11)'
+                            }
+                            const color = colors[theme.color] || colors.blue
+                            e.target.style.boxShadow = `0 0 0 3px ${color}40`
+                            e.target.style.borderColor = color
+                          }}
+                          onBlur={(e) => {
+                            e.target.style.borderColor = '#e5e7eb'
+                            e.target.style.boxShadow = 'none'
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </form>
               </div>
-            </form>
-          </div>
-        </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setShowAssetModal(false)}
+                  className="px-6 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium text-sm flex items-center gap-2"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Cancel</span>
+                </button>
+                <button 
+                  type="submit"
+                  onClick={handleAddAsset}
+                  disabled={loading}
+                  className={`px-6 py-2.5 bg-gradient-to-r ${theme.gradient} text-white rounded-lg hover:shadow-lg transition-all duration-200 font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  {loading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>{isEditMode ? 'Updating...' : 'Adding...'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>{isEditMode ? 'Update Asset' : 'Add Asset'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+            )
+          })()}
+        </AnimatePresence>
       )}
 
       {/* Delete Modal */}
