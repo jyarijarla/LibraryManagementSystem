@@ -85,7 +85,8 @@ const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOp
     { label: 'Members', icon: Users, page: 'members' },
     { label: 'Fines & Payments', icon: DollarSign, page: 'fines' },
     { label: 'All Records', icon: FileText, page: 'records' },
-    { label: 'My Reports', icon: BarChart3, page: 'my-reports' }
+    { label: 'My Reports', icon: BarChart3, page: 'my-reports' },
+    { label: 'Events Calendar', icon: Calendar, page: 'calendar'}
   ]
 
   return (
@@ -295,6 +296,38 @@ function Librarian() {
   const [fines, setFines] = useState([])
   const [selectedMemberFines, setSelectedMemberFines] = useState(null)
   
+
+ // Calendar States
+ const [calendarDate, setCalendarDate] = useState(new Date())
+ const [selectedDate, setSelectedDate] = useState(new Date())
+ const [calendarOpenDayEvents, setCalendarOpenDayEvents] = useState([])
+ const [events, setEvents] = useState([]) // events from server (Calendar table)
+ 
+ // Fetch calendar events when calendar tab opens 
+ const fetchEvents = async () => {
+   try {
+     const res = await fetch(`${API_URL}/events`)
+     if (!res.ok) throw new Error('Failed to fetch events')
+     const data = await res.json()
+     setEvents(Array.isArray(data) ? data : [])
+   } catch (err) {
+     console.error('Error fetching events:', err)
+   }
+ }
+
+ useEffect(() => {
+   if (activeTab === 'calendar') {
+     // get server events + ensure borrow/overdue/recent are loaded
+     fetchEvents()
+     // optionally refresh borrow records so calendar has borrow/due/return items
+     fetchBorrowRecords().catch(() => {})
+     fetchOverdueItems().catch(() => {})
+     fetchRecentTransactions().catch(() => {})
+   }
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [activeTab])
+
+
   // Form States
   const [assetForm, setAssetForm] = useState({})
   const [imageFile, setImageFile] = useState(null)
@@ -1653,6 +1686,208 @@ function Librarian() {
       </div>
     )
   }
+
+  // Calendar Helpers
+  const getMonthMatrix = (date) => {
+
+    // making all these variables
+    const start = new Date(date.getFullYear(), date.getMonth(), 1)
+    const startDay = start.getDay()
+    const matrix = []
+    const firstCell = new Date(start)
+    firstCell.setDate(start.getDate() - startDay)
+    
+    // setting lengths for rows and columns
+    for (let week = 0; week < 6; week++) {
+
+      const row = []
+      for (let day = 0; day < 7; day++) {
+
+          const cell = new Date(firstCell)
+          cell.setDate(firstCell.getDate() + week * 7 + day)
+          row.push(cell)
+      }
+
+      matrix.push(row)
+    }
+    return matrix
+
+  }
+
+const isoDate = (d) => d.toISOString().slice(0,10)
+
+// Merge server events and internal records for a given date
+
+// Map numeric recurring codes to meanings (adjust to match your DB mapping)
+const RECUR_MAP = {
+  0: 'none',
+  1: 'weekly',
+  2: 'daily',
+  3: 'monthly',
+  4: 'yearly',
+  5: 'weekdays', // Mon-Fri
+  6: 'weekends'  // Sat-Sun
+}
+
+// determine if recurring event applies to the given date
+const isRecurringMatch = (ev, date) => {
+  if (!ev) return false
+  const recRaw = ev.recurring
+  const code = Number.isFinite(Number(recRaw)) ? parseInt(recRaw, 10) : null
+  const kind = code !== null && code in RECUR_MAP ? RECUR_MAP[code] : String(ev.recurring || '').toLowerCase().trim()
+
+  if (kind === 'none' || !kind) return false
+
+  const start = ev.Event_Date ? new Date(ev.Event_Date) : null
+  if (!start || isNaN(start.getTime())) return false
+
+  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const startMid = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+
+  if (target < startMid) return false // don't occur before start
+
+  const dow = target.getDay() // 0 Sun .. 6 Sat
+  switch (kind) {
+    case 'daily':
+      return true
+    case 'weekly':
+      return startMid.getDay() === dow
+    case 'monthly':
+      return startMid.getDate() === target.getDate()
+    case 'yearly':
+      return startMid.getDate() === target.getDate() && startMid.getMonth() === target.getMonth()
+    case 'weekdays':
+      return dow >= 1 && dow <= 5
+    case 'weekends':
+      return dow === 0 || dow === 6
+    default:
+      // fallback: support comma-separated day names like "mon,wed,fri"
+      if (typeof kind === 'string' && /[a-z]/.test(kind)) {
+        const dayNameMap = { sun:0, sunday:0, mon:1, monday:1, tue:2, tues:2, tuesday:2, wed:3, wednesday:3, thu:4, thur:4, thursday:4, fri:5, friday:5, sat:6, saturday:6 }
+        const tokens = kind.split(',').map(t => t.trim()).filter(Boolean)
+        return tokens.some(t => dayNameMap[t] === dow)
+      }
+      return false
+  }
+}
+
+
+const collectEventsForDay = (d) => {
+  const dayKey = isoDate(d)
+  const out = []
+  const seen = new Set() // avoid duplicates when an event matches multiple rules
+
+  // Only include server calendar rows (Calendar table). Expect Event_Date in ISO/YYYY-MM-DD format.
+  if (Array.isArray(events)) {
+    events.forEach((ev) => {
+      const evDate = ev.Event_Date ? String(ev.Event_Date).slice(0, 10) : null
+      const id = ev.Event_ID ?? ev.id ?? ev.EventId ?? null
+
+      // If exact date matches, add once and skip recurring logic for this event
+      if (evDate === dayKey) {
+        if (!id || !seen.has(id)) {
+          out.push({
+            type: 'event',
+            label: ev.Title || ev.Title?.toString?.() || 'Event',
+            raw: ev,
+            recurring: false
+          })
+          if (id) seen.add(id)
+        }
+        return
+      }
+
+      // Otherwise check recurring rules (only if not already added)
+      if (ev.recurring && isRecurringMatch(ev, d)) {
+        if (!id || !seen.has(id)) {
+          out.push({
+            type: 'event',
+            label: ev.Title || ev.Title?.toString?.() || 'Event',
+            raw: ev,
+            recurring: true
+          })
+          if (id) seen.add(id)
+        }
+      }
+    })
+  }
+
+  return out
+}
+
+
+const renderCalendar = () => {
+
+  const matrix = getMonthMatrix(calendarDate)
+  const monthLabel = calendarDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+
+  return (
+         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="p-6">
+       <div className="flex items-center justify-between mb-4">
+         <div>
+           <h2 className="text-2xl font-bold text-gray-900">Calendar</h2>
+           <p className="text-sm text-gray-600 mt-1">Upcoming events</p>
+         </div>
+         <div className="flex items-center gap-2">
+           <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))} className="px-3 py-2 bg-white border rounded-lg">◀</button>
+           <div className="px-4 py-2 bg-white border rounded-lg">{monthLabel}</div>
+           <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))} className="px-3 py-2 bg-white border rounded-lg">▶</button>
+         </div>
+       </div>
+
+       <div className="grid grid-cols-7 gap-2 text-xs text-center font-semibold text-gray-500">
+         {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d}>{d}</div>)}
+       </div>
+
+       <div className="grid grid-cols-7 gap-2 mt-2">
+         {matrix.flat().map((day) => {
+           const inMonth = day.getMonth() === calendarDate.getMonth()
+           const isToday = isoDate(day) === isoDate(new Date())
+           const isSelected = isoDate(day) === isoDate(selectedDate)
+           const evs = collectEventsForDay(day)
+           return (
+             <button
+               key={day.toString()}
+               onClick={() => {
+                 setSelectedDate(day)
+                 setCalendarOpenDayEvents(collectEventsForDay(day))
+               }}
+               className={`p-2 h-24 text-left rounded-lg border transition ${inMonth ? 'bg-white' : 'bg-gray-50 text-gray-400'} ${isSelected ? 'ring-2 ring-indigo-300' : ''}`}
+             >
+               <div className="flex items-center justify-between">
+                 <span className={`text-sm font-medium ${inMonth ? 'text-gray-900' : 'text-gray-400'}`}>{day.getDate()}</span>
+                 {evs.length > 0 && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{evs.length}</span>}
+               </div>
+               <div className="mt-1 text-xs text-gray-600 space-y-1">
+                 {evs.slice(0,2).map((e,i) => <div key={i} className={`${e.type === 'overdue' ? 'text-red-600' : 'text-gray-600'} truncate`}>{e.label}</div>)}
+               </div>
+             </button>
+           )
+         })}
+       </div>
+
+       <div className="mt-4 bg-white rounded-xl shadow-sm p-4">
+         <h3 className="text-sm font-semibold text-gray-800">Events on {selectedDate.toLocaleDateString()}</h3>
+         {calendarOpenDayEvents.length === 0 ? (
+           <p className="text-sm text-gray-500 mt-2">No events for this day.</p>
+         ) : (
+           <ul className="mt-2 space-y-2">
+             {calendarOpenDayEvents.map((ev, idx) => (
+               <li key={idx} className="p-3 bg-gray-50 border rounded-lg flex items-start justify-between">
+                 <div>
+                   <div className="text-sm font-medium text-gray-900">{ev.label}</div>
+                   <div className="text-xs text-gray-500 mt-1">{ev.type.toUpperCase()}</div>
+                 </div>
+               </li>
+             ))}
+           </ul>
+         )}
+       </div>
+     </motion.div>
+   )
+ }
+
+
 
   const renderMembers = () => (
     <motion.div
@@ -3398,6 +3633,7 @@ function Librarian() {
             {activeTab === 'issue-return' && renderIssueReturn()}
             {activeTab === 'members' && renderMembers()}
             {activeTab === 'fines' && renderFineManagement()}
+            {activeTab === 'calendar' && renderCalendar()}
             {activeTab === 'records' && renderBorrowRecords()}
             {activeTab === 'my-reports' && <LibrarianReport />}
           </div>
@@ -3467,6 +3703,8 @@ function Librarian() {
       )}
     </div>
   )
+
+ 
 }
 
 export default Librarian
