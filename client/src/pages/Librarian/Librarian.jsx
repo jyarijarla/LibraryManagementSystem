@@ -307,6 +307,20 @@ function Librarian() {
  const [calendarOpenDayEvents, setCalendarOpenDayEvents] = useState([])
  const [events, setEvents] = useState([]) // events from server (Calendar table)
  
+ // Event entry states
+ const [showEventModal, setShowEventModal] = useState(false)
+ const [flaggedForDeletion, setFlaggedForDeletion] = useState(new Set())
+ const [newEventForm, setNewEventForm] = useState({
+    Title: '',
+    Event_Date: new Date().toISOString().slice(0, 10),
+    Start_Time: '09:00', // default start time
+    End_Time: '10:00', // default end time
+    Details: '',
+    Image_URL: '',
+    recurring: 0
+ })
+
+
  // Fetch calendar events when calendar tab opens 
  const fetchEvents = async () => {
    try {
@@ -2139,77 +2153,478 @@ const collectEventsForDay = (d) => {
   return out
 }
 
+// Event Handler
+const handleAddEvent = async (e) => {
+
+  e.preventDefault()
+
+  // Validation
+  if (!newEventForm.Title || !newEventForm.Event_Date || !newEventForm.Start_Time || !newEventForm.End_Time) {
+    setError('Please fill in all required fields (Title, Date, Start Time, End Time)')
+    setTimeout(() => setError(''), 4000)
+    return
+  } 
+
+
+// Validate times
+if (newEventForm.Start_Time >= newEventForm.End_Time) {
+  setError('Start Time must be before End Time')
+  setTimeout(() => setError(''), 4000)
+  return
+}
+
+setLoading(true)
+  try {
+    const payload = {
+      Title: newEventForm.Title,
+      Event_Date: newEventForm.Event_Date,
+      Start_Time: newEventForm.Start_Time,
+      End_Time: newEventForm.End_Time,
+      Details: newEventForm.Details || null,
+      Image_URL: newEventForm.Image_URL || null,
+      recurring: parseInt(newEventForm.recurring, 10) || 0
+    }
+  
+    const res = await fetch(`${API_URL}/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ error: 'Failed to create event' }))
+      throw new Error(errData.error || 'Failed to create event')
+    }
+
+    // Success: refresh events and close modal
+    await fetchEvents()
+    setSuccessMessage('Event added successfully!')
+    setTimeout(() => setSuccessMessage(''), 3000)
+    
+    setShowEventModal(false)
+    setNewEventForm({
+      Title: '',
+      Event_Date: new Date().toISOString().slice(0, 10),
+      Start_Time: '09:00',
+      End_Time: '10:00',
+      Details: '',
+      Image_URL: '',
+      recurring: 0
+    })
+    setFlaggedForDeletion(new Set())
+  } catch (err) {
+    console.error('Add event error:', err)
+    setError(err.message || 'Failed to add event')
+    setTimeout(() => setError(''), 4000)
+  } finally {
+    setLoading(false)
+  }
+}
+
+
+// Toggle flag for deletion
+const toggleFlagEvent = (eventId) => {
+  const newFlagged = new Set(flaggedForDeletion)
+  if (newFlagged.has(eventId)) {
+    newFlagged.delete(eventId)
+  } else {
+    newFlagged.add(eventId)
+  }
+  setFlaggedForDeletion(newFlagged)
+}
+
+// Delete flagged events
+const deleteFlaggedEvents = async () => {
+  if (flaggedForDeletion.size === 0) {
+    setError('No events flagged for deletion')
+    setTimeout(() => setError(''), 3000)
+    return
+  }
+
+  const confirm = window.confirm(
+    `Are you sure you want to delete ${flaggedForDeletion.size} event(s)? This action cannot be undone.`
+  )
+  if (!confirm) return
+
+  setLoading(true)
+  const flaggedIds = Array.from(flaggedForDeletion)
+  
+  try {
+    const deletePromises = flaggedIds.map(id =>
+      fetch(`${API_URL}/events/${id}`, { method: 'DELETE' })
+    )
+    
+    const results = await Promise.all(deletePromises)
+    const failed = results.filter(r => !r.ok)
+
+    if (failed.length > 0) {
+      setError(`Failed to delete ${failed.length} event(s)`)
+      setTimeout(() => setError(''), 4000)
+    } else {
+      setSuccessMessage(`${flaggedIds.length} event(s) deleted successfully!`)
+      setTimeout(() => setSuccessMessage(''), 3000)
+    }
+
+    setFlaggedForDeletion(new Set())
+    await fetchEvents()
+  } catch (err) {
+    console.error('Error deleting events:', err)
+    setError('Failed to delete events')
+    setTimeout(() => setError(''), 4000)
+  } finally {
+    setLoading(false)
+  }
+}
 
 const renderCalendar = () => {
-
   const matrix = getMonthMatrix(calendarDate)
   const monthLabel = calendarDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
 
   return (
-         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="p-6">
-       <div className="flex items-center justify-between mb-4">
-         <div>
-           <h2 className="text-2xl font-bold text-gray-900">Calendar</h2>
-           <p className="text-sm text-gray-600 mt-1">Upcoming events</p>
-         </div>
-         <div className="flex items-center gap-2">
-           <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))} className="px-3 py-2 bg-white border rounded-lg">◀</button>
-           <div className="px-4 py-2 bg-white border rounded-lg">{monthLabel}</div>
-           <button onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))} className="px-3 py-2 bg-white border rounded-lg">▶</button>
-         </div>
-       </div>
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="p-6">
+      {/* Header Section */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Events Calendar</h2>
+          <p className="text-sm text-gray-600 mt-1">View, add, and manage library events</p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Previous Month Button */}
+          <button 
+            onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))} 
+            className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            title="Previous month"
+          >
+            ◀
+          </button>
+          
+          {/* Month/Year Display */}
+          <div className="px-4 py-2 bg-white border border-gray-300 rounded-lg font-medium text-gray-900 min-w-[180px] text-center">
+            {monthLabel}
+          </div>
+          
+          {/* Next Month Button */}
+          <button 
+            onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))} 
+            className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            title="Next month"
+          >
+            ▶
+          </button>
 
-       <div className="grid grid-cols-7 gap-2 text-xs text-center font-semibold text-gray-500">
-         {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => <div key={d}>{d}</div>)}
-       </div>
+          {/* Add Event Button */}
+          <button 
+            onClick={() => setShowEventModal(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center gap-2 shadow-md"
+            title="Add new event"
+          >
+            <Plus className="w-4 h-4" />
+            Add Event
+          </button>
 
-       <div className="grid grid-cols-7 gap-2 mt-2">
-         {matrix.flat().map((day) => {
-           const inMonth = day.getMonth() === calendarDate.getMonth()
-           const isToday = isoDate(day) === isoDate(new Date())
-           const isSelected = isoDate(day) === isoDate(selectedDate)
-           const evs = collectEventsForDay(day)
-           return (
-             <button
-               key={day.toString()}
-               onClick={() => {
-                 setSelectedDate(day)
-                 setCalendarOpenDayEvents(collectEventsForDay(day))
-               }}
-               className={`p-2 h-24 text-left rounded-lg border transition ${inMonth ? 'bg-white' : 'bg-gray-50 text-gray-400'} ${isSelected ? 'ring-2 ring-indigo-300' : ''}`}
-             >
-               <div className="flex items-center justify-between">
-                 <span className={`text-sm font-medium ${inMonth ? 'text-gray-900' : 'text-gray-400'}`}>{day.getDate()}</span>
-                 {evs.length > 0 && <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{evs.length}</span>}
-               </div>
-               <div className="mt-1 text-xs text-gray-600 space-y-1">
-                 {evs.slice(0,2).map((e,i) => <div key={i} className={`${e.type === 'overdue' ? 'text-red-600' : 'text-gray-600'} truncate`}>{e.label}</div>)}
-               </div>
-             </button>
-           )
-         })}
-       </div>
+          {/* Delete Flagged Button */}
+          <button
+            onClick={deleteFlaggedEvents}
+            disabled={flaggedForDeletion.size === 0}
+            className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-all ${
+              flaggedForDeletion.size === 0 
+                ? 'bg-gray-200 text-gray-500 cursor-not-allowed' 
+                : 'bg-red-600 text-white hover:bg-red-700 shadow-md'
+            }`}
+            title={flaggedForDeletion.size === 0 ? 'No events flagged' : `Delete ${flaggedForDeletion.size} event(s)`}
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete ({flaggedForDeletion.size})
+          </button>
+        </div>
+      </div>
 
-       <div className="mt-4 bg-white rounded-xl shadow-sm p-4">
-         <h3 className="text-sm font-semibold text-gray-800">Events on {selectedDate.toLocaleDateString()}</h3>
-         {calendarOpenDayEvents.length === 0 ? (
-           <p className="text-sm text-gray-500 mt-2">No events for this day.</p>
-         ) : (
-           <ul className="mt-2 space-y-2">
-             {calendarOpenDayEvents.map((ev, idx) => (
-               <li key={idx} className="p-3 bg-gray-50 border rounded-lg flex items-start justify-between">
-                 <div>
-                   <div className="text-sm font-medium text-gray-900">{ev.label}</div>
-                   <div className="text-xs text-gray-500 mt-1">{ev.type.toUpperCase()}</div>
-                 </div>
-               </li>
-             ))}
-           </ul>
-         )}
-       </div>
-     </motion.div>
-   )
- }
+      {/* Error/Success Messages */}
+      {error && (
+        <div className="mb-4 p-3 bg-red-100 border border-red-300 rounded-lg text-red-700 text-sm">
+          {error}
+        </div>
+      )}
+      {successMessage && (
+        <div className="mb-4 p-3 bg-green-100 border border-green-300 rounded-lg text-green-700 text-sm">
+          {successMessage}
+        </div>
+      )}
+
+      {/* Day Headers */}
+      <div className="grid grid-cols-7 gap-2 mb-2">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+          <div key={d} className="text-xs text-center font-semibold text-gray-500 py-2">
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* Calendar Grid */}
+      <div className="grid grid-cols-7 gap-2 mb-4">
+        {matrix.flat().map((day) => {
+          const inMonth = day.getMonth() === calendarDate.getMonth()
+          const isToday = isoDate(day) === isoDate(new Date())
+          const isSelected = isoDate(day) === isoDate(selectedDate)
+          const evs = collectEventsForDay(day)
+          
+          return (
+            <button
+              key={day.toString()}
+              onClick={() => {
+                setSelectedDate(day)
+                setCalendarOpenDayEvents(collectEventsForDay(day))
+              }}
+              className={`p-2 h-28 text-left rounded-lg border-2 transition-all ${
+                inMonth ? 'bg-white hover:border-indigo-400' : 'bg-gray-50 text-gray-400'
+              } ${isSelected ? 'ring-2 ring-indigo-300 border-indigo-500' : 'border-gray-200'}`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className={`text-sm font-bold ${inMonth ? 'text-gray-900' : 'text-gray-400'}`}>
+                  {day.getDate()}
+                </span>
+                {evs.length > 0 && (
+                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-semibold">
+                    {evs.length}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs space-y-1">
+                {evs.slice(0, 2).map((e, i) => (
+                  <div 
+                    key={i} 
+                    className={`truncate font-medium ${
+                      e.type === 'overdue' ? 'text-red-600' : 'text-indigo-600'
+                    }`}
+                    title={e.label}
+                  >
+                    {e.label}
+                  </div>
+                ))}
+                {evs.length > 2 && (
+                  <div className="text-xs text-gray-500 italic">
+                    +{evs.length - 2} more
+                  </div>
+                )}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Event Detail Panel */}
+      <div className="bg-white rounded-xl shadow-md p-4 border border-gray-200">
+        <h3 className="text-sm font-bold text-gray-900 mb-3">
+          Events on {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}
+        </h3>
+        {calendarOpenDayEvents.length === 0 ? (
+          <p className="text-sm text-gray-500 text-center py-4">No events for this day</p>
+        ) : (
+          <ul className="space-y-2 max-h-80 overflow-y-auto">
+            {calendarOpenDayEvents.map((ev, idx) => (
+              <li 
+                key={idx} 
+                className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg flex items-start justify-between hover:bg-indigo-100 transition-colors"
+              >
+                <div className="flex-1">
+                  <div className="text-sm font-bold text-gray-900">{ev.label}</div>
+                  {ev.raw?.Details && (
+                    <div className="text-xs text-gray-600 mt-1">{ev.raw.Details}</div>
+                  )}
+                  <div className="text-xs text-gray-500 mt-1">
+                    {ev.raw?.Start_Time && `${ev.raw.Start_Time.slice(0, 5)}`}
+                    {ev.raw?.Start_Time && ev.raw?.End_Time && ' - '}
+                    {ev.raw?.End_Time && `${ev.raw.End_Time.slice(0, 5)}`}
+                  </div>
+                </div>
+                {ev.raw?.Event_ID && (
+                   <label className="ml-2 flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={flaggedForDeletion.has(ev.raw.Event_ID)}
+                      onChange={() => toggleFlagEvent(ev.raw.Event_ID)}
+                      className="w-5 h-5 md:w-6 md:h-6 rounded border-gray-300 text-red-600 focus:ring-2 focus:ring-red-500 transform transition-transform duration-150"
+                      aria-label={flaggedForDeletion.has(ev.raw.Event_ID) ? 'Unflag for deletion' : 'Flag for deletion'}
+                    />
+                    <span className={`text-xs font-medium ${flaggedForDeletion.has(ev.raw.Event_ID) ? 'text-red-700' : 'text-gray-700'}`}>
+                      {flaggedForDeletion.has(ev.raw.Event_ID)}
+                    </span>
+                  </label>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Add Event Modal */}
+      {showEventModal && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 overflow-y-auto"
+          onClick={() => setShowEventModal(false)}
+        >
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.2 }}
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-4 rounded-t-2xl flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Calendar className="w-6 h-6 text-white" />
+                <h3 className="text-xl font-bold text-white">Add Event</h3>
+              </div>
+              <button 
+                onClick={() => setShowEventModal(false)}
+                className="text-white hover:bg-white/20 rounded-full p-1 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <form onSubmit={handleAddEvent} className="p-6 space-y-4">
+              {/* Title */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Event Title *
+                </label>
+                <input 
+                  type="text"
+                  required
+                  placeholder="e.g., Book Reading Session"
+                  value={newEventForm.Title}
+                  onChange={(e) => setNewEventForm({...newEventForm, Title: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Event Date *
+                </label>
+                <input 
+                  type="date"
+                  required
+                  value={newEventForm.Event_Date}
+                  onChange={(e) => setNewEventForm({...newEventForm, Event_Date: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Time Range */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Start Time *
+                  </label>
+                  <input 
+                    type="time"
+                    required
+                    value={newEventForm.Start_Time}
+                    onChange={(e) => setNewEventForm({...newEventForm, Start_Time: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    End Time *
+                  </label>
+                  <input 
+                    type="time"
+                    required
+                    value={newEventForm.End_Time}
+                    onChange={(e) => setNewEventForm({...newEventForm, End_Time: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              {/* Recurrence */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Recurrence
+                </label>
+                <select
+                  value={newEventForm.recurring}
+                  onChange={(e) => setNewEventForm({...newEventForm, recurring: parseInt(e.target.value, 10)})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value={0}>No Recurrence</option>
+                  <option value={1}>Weekly (Same day each week)</option>
+                  <option value={2}>Daily</option>
+                  <option value={3}>Monthly (Same date each month)</option>
+                  <option value={4}>Yearly</option>
+                  <option value={5}>Weekdays (Mon-Fri)</option>
+                  <option value={6}>Weekends (Sat-Sun)</option>
+                </select>
+              </div>
+
+              {/* Details */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Details (Optional)
+                </label>
+                <textarea
+                  placeholder="e.g., Location, description, or notes..."
+                  value={newEventForm.Details}
+                  onChange={(e) => setNewEventForm({...newEventForm, Details: e.target.value})}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+                />
+              </div>
+
+              {/* Image URL */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Image URL (Optional)
+                </label>
+                <input 
+                  type="url"
+                  placeholder="https://example.com/image.jpg"
+                  value={newEventForm.Image_URL}
+                  onChange={(e) => setNewEventForm({...newEventForm, Image_URL: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex gap-3 pt-4 border-t border-gray-200">
+                <button 
+                  type="button"
+                  onClick={() => setShowEventModal(false)}
+                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {loading ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Adding...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      <span>Add Event</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
+    </motion.div>
+  )
+}
 
 
 
