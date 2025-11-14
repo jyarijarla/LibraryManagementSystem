@@ -53,6 +53,9 @@ const routes = [
   { method: 'POST', path: '/api/signup', handler: authController },
   { method: 'POST', path: '/api/login', handler: authController },
   { method: 'POST', path: '/api/logout', handler: authController },
+
+  // Asset routes - General
+  { method: 'GET', path: '/api/assets/:id', handler: assetController}
   
   // Asset routes - Books
   { method: 'GET', path: '/api/assets/books', handler: assetController.getAllBooks },
