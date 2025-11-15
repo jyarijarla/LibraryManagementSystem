@@ -14,9 +14,10 @@ const renderCellContent = (item, col, rowIndex) => {
     }
     
     if (col.key === 'Availability') {
+        const availString = (item[col.key] === 1 ? 'available' : 'unavailable')
         return (
-            <span className={`status-badge ${item[col.key] === 'Available' ? 'available' : 'unavailable'}`}>
-            {item[col.key] || 'Available'}
+            <span className={`status-badge ${availString}`}>
+            {availString }
             </span>
         )
     }
@@ -151,7 +152,7 @@ export function Assets(){
             { key: 'Model_Num', label: 'Model #' },
             { key: 'Type', label: 'Type' },
             { key: 'Description', label: 'Description' },
-            { key: 'Copies', label: 'Quantity' }
+            { key: 'Available_Copies', label: 'Available' }
             ]
         case 'study-rooms':
             return [
