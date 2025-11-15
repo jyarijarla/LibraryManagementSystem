@@ -114,15 +114,8 @@ const getAllMovies = async (req, res) => {
 const getAllTechnology = async (req, res) => {
   try {
     const query = `
-      SELECT 
-        t.Asset_ID, 
-        t.Model_Num, 
-        t.Type, 
-        t.Description,
-        t.Image_URL,
-        (SELECT COUNT(*) FROM rentable r WHERE r.Asset_ID = t.Asset_ID) as Copies,
-        (SELECT COUNT(*) FROM rentable r WHERE r.Asset_ID = t.Asset_ID AND r.Status = 1) as Available_Copies
-      FROM technology t
+      SELECT t.Asset_ID, t.Model_Num, t.Type, t.Description, t.Image_URL, t.Copies, t.Available_Copies
+      FROM technology_inventory t
       ORDER BY t.Type, t.Model_Num
     `;
     
