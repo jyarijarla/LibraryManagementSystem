@@ -8,25 +8,24 @@ export function getUser() {
   return userStr ? JSON.parse(userStr) : null;
 }
 
-/**
- * Get user ID from localStorage
- */
+export function getToken() {
+  return localStorage.getItem('token');
+}
+
 export function getUserId() {
+  const user = getUser();
+  if (user?.id) {
+    return user.id.toString();
+  }
   return localStorage.getItem('userId');
 }
 
-/**
- * Get user role from localStorage
- */
 export function getUserRole() {
   return localStorage.getItem('role');
 }
 
-/**
- * Check if user is logged in
- */
 export function isAuthenticated() {
-  return !!getUserId();
+  return !!getToken();
 }
 
 /**
@@ -50,6 +49,7 @@ export function logout() {
   localStorage.removeItem('user');
   localStorage.removeItem('userId');
   localStorage.removeItem('role');
+  localStorage.removeItem('token');
 }
 
 /**
@@ -57,19 +57,16 @@ export function logout() {
  * Automatically includes user ID and role in headers
  */
 export async function authenticatedFetch(url, options = {}) {
-  const userId = getUserId();
-  const role = getUserRole();
-
-  if (!userId || !role) {
+  const token = getToken();
+  if (!token) {
     throw new Error('User not authenticated');
   }
 
-  const headers = {
-    'Content-Type': 'application/json',
-    'x-user-id': userId,
-    'x-user-role': role,
-    ...options.headers
-  };
+  const headers = new Headers(options.headers || {});
+  if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
+  headers.set('Authorization', `Bearer ${token}`);
 
   const response = await fetch(url, {
     ...options,

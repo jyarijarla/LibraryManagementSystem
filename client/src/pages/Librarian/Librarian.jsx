@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
@@ -18,13 +18,22 @@ import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/Feedb
 import LibrarianReport from '../LibrarianReport/LibrarianReport'
 
 // Use local server for development, production for deployed app
-const API_URL = window.location.hostname === 'localhost' 
+const API_URL = location.hostname === 'localhost' 
   ? 'http://localhost:3000/api'
   : 'https://librarymanagementsystem-z2yw.onrender.com/api'
 
 // Helper function to get image path for an asset
 const getAssetImagePath = (assetType, assetId, extension = 'png') => {
   return `/assets/${assetType}/${assetId}.${extension}`
+}
+
+const LOW_STOCK_THRESHOLDS = {
+  books: 2,
+  cds: 1,
+  audiobooks: 1,
+  movies: 1,
+  technology: 1,
+  'study-rooms': 0
 }
 
 // Modern Stat Card Component with Animation
@@ -85,7 +94,6 @@ const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOp
   const navItems = [
     { label: 'Dashboard', icon: Home, page: 'overview' },
     { label: 'Manage Assets', icon: BookOpen, page: 'books' },
-    { label: 'Issue / Return', icon: RefreshCw, page: 'issue-return' },
     { label: 'Members', icon: Users, page: 'members' },
     { label: 'Fines & Payments', icon: DollarSign, page: 'fines' },
     { label: 'All Records', icon: FileText, page: 'records' },
@@ -141,6 +149,9 @@ const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOp
           <button
             onClick={() => {
               localStorage.removeItem('token')
+              localStorage.removeItem('user')
+              localStorage.removeItem('userId')
+              localStorage.removeItem('role')
               window.location.href = '/login'
             }}
             className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-300 hover:bg-slate-700 hover:text-white rounded-lg transition-all duration-200"
@@ -241,8 +252,8 @@ function Librarian() {
   const [movies, setMovies] = useState([])
   const [technology, setTechnology] = useState([])
   const [studyRooms, setStudyRooms] = useState([])
+  const [roomStatusUpdating, setRoomStatusUpdating] = useState(null)
   
-  const [students, setStudents] = useState([])
   const [borrowRecords, setBorrowRecords] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -269,35 +280,30 @@ function Librarian() {
   
   // Search States
   const [searchTerm, setSearchTerm] = useState('')
-  const [searchFilter, setSearchFilter] = useState('all') // all, title, author, isbn, member
-  
-  // Issue/Return States
-  const [showIssueModal, setShowIssueModal] = useState(false)
-  const [showReturnModal, setShowReturnModal] = useState(false)
-  const [activeSubTab, setActiveSubTab] = useState('issue') // For Issue/Return sub-tabs
-  const [selectedAssetType, setSelectedAssetType] = useState('books') // Asset type for issue
-  const [studentSearch, setStudentSearch] = useState('') // Search term for students
+  const [assetAvailabilityFilter, setAssetAvailabilityFilter] = useState('all') // all, available, low, out
+
+  // Issue/Reserve helper state
+  const [selectedAssetType, setSelectedAssetType] = useState('books') // Asset type for issue/reserve
   const [assetSearch, setAssetSearch] = useState('') // Search term for any asset
-  const [showStudentDropdown, setShowStudentDropdown] = useState(false)
   const [showAssetDropdown, setShowAssetDropdown] = useState(false)
-  const [issueForm, setIssueForm] = useState({
+  const initialIssueForm = {
     memberId: '',
-    memberName: '',
     assetId: '',
     assetTitle: '',
     assetType: 'books',
     issueDate: '',
     dueDate: ''
-  })
-  const [returnForm, setReturnForm] = useState({
-    borrowId: '',
-    assetId: ''
-  })
+  }
+  const [issueForm, setIssueForm] = useState(initialIssueForm)
   
   // Fine Management States
   const [showFineModal, setShowFineModal] = useState(false)
+  const [fineModalMode, setFineModalMode] = useState('details')
+  const [fineDetailsLoading, setFineDetailsLoading] = useState(false)
   const [fines, setFines] = useState([])
   const [selectedMemberFines, setSelectedMemberFines] = useState(null)
+  const [fineSearch, setFineSearch] = useState('')
+  const [finePriorityFilter, setFinePriorityFilter] = useState('all')
   
   // Form States
   const [assetForm, setAssetForm] = useState({})
@@ -313,6 +319,7 @@ function Librarian() {
   const [memberModalMode, setMemberModalMode] = useState('add') // add or edit
   const [selectedMember, setSelectedMember] = useState(null)
   const [memberProfile, setMemberProfile] = useState(null)
+  const [memberProfileLoading, setMemberProfileLoading] = useState(false)
   const [generatedPassword, setGeneratedPassword] = useState('') // Store generated password
   const [memberForm, setMemberForm] = useState({
     username: '',
@@ -325,6 +332,7 @@ function Librarian() {
   })
   const [memberPage, setMemberPage] = useState(1)
   const [memberTotalPages, setMemberTotalPages] = useState(1)
+  const memberProfileCache = useRef(new Map())
 
   // Function to change tab and update URL
   const changeTab = (tab) => {
@@ -351,6 +359,24 @@ function Librarian() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, activeAssetTab])
 
+  useEffect(() => {
+    setAssetAvailabilityFilter('all')
+  }, [activeAssetTab])
+
+  useEffect(() => {
+    if (activeTab === 'members') {
+      ensureIssueAssets().catch(err => console.error('Preloading issue assets failed:', err))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab])
+
+  useEffect(() => {
+    if (!showMemberProfileModal) {
+      setAssetSearch('')
+      setIssueForm(initialIssueForm)
+    }
+  }, [showMemberProfileModal])
+
   // Refetch members when search, filter, or page changes
   useEffect(() => {
     if (activeTab === 'members') {
@@ -361,8 +387,100 @@ function Librarian() {
 
   const handleLogout = () => {
     localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    localStorage.removeItem('userId')
     localStorage.removeItem('role')
     navigate('/login')
+  }
+
+  const closeMemberProfileModal = () => {
+    setShowMemberProfileModal(false)
+    setMemberProfile(null)
+    setMemberProfileLoading(false)
+  }
+
+  const closeFineModal = () => {
+    setShowFineModal(false)
+    setSelectedMemberFines(null)
+    setFineModalMode('details')
+  }
+
+  const openFineModal = async (member, mode = 'details') => {
+    if (!member?.id) return
+    setFineModalMode(mode)
+    setFineDetailsLoading(true)
+    setShowFineModal(true)
+    setSelectedMemberFines(null)
+
+    try {
+      const response = await fetch(`${API_URL}/fines/${member.id}`)
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.message || 'Failed to fetch fine details')
+      }
+      const data = await response.json()
+      setSelectedMemberFines(data)
+    } catch (error) {
+      console.error('Error fetching fine details:', error)
+      setError(error.message || 'Failed to fetch fine details')
+      setTimeout(() => setError(''), 4000)
+      setShowFineModal(false)
+    } finally {
+      setFineDetailsLoading(false)
+    }
+  }
+
+  const settleFineItems = async (fineItems, memberName) => {
+    if (!fineItems?.length) {
+      alert('No overdue items to settle for this member.')
+      return false
+    }
+
+    const confirmation = window.confirm(`Settle ${fineItems.length} overdue item(s) for ${memberName}?`)
+    if (!confirmation) return false
+
+    try {
+      setLoading(true)
+      for (const fine of fineItems) {
+        await handleReturnBook(fine.borrowId, Number.parseFloat(fine.fineAmount) || 0, { silent: true })
+      }
+      await Promise.all([
+        fetchFines(),
+        fetchOverdueItems(),
+        fetchBorrowRecords(),
+        fetchMembers()
+      ])
+      return true
+    } catch (error) {
+      console.error('Error settling fines:', error)
+      setError(error.message || 'Failed to settle fines')
+      setTimeout(() => setError(''), 4000)
+      return false
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSettleFines = async () => {
+    if (!selectedMemberFines?.fines?.length) {
+      alert('No overdue items to settle for this member.')
+      return
+    }
+
+    const fineItems = selectedMemberFines.fines.map(fine => ({
+      borrowId: fine.borrowId,
+      fineAmount: Number.parseFloat(fine.fineAmount) || 0
+    }))
+
+    const settled = await settleFineItems(fineItems, selectedMemberFines.summary.name)
+    if (settled) {
+      setSuccessMessage('Fine settlement completed successfully!')
+      setTimeout(() => setSuccessMessage(''), 3000)
+      if (memberProfile?.member?.User_ID === selectedMemberFines.summary.id) {
+        await fetchMemberProfile(memberProfile.member.User_ID, memberProfile.member)
+      }
+      closeFineModal()
+    }
   }
 
   const fetchData = async () => {
@@ -378,17 +496,6 @@ function Librarian() {
         ])
       } else if (activeTab === 'books') {
         await fetchAssets(activeAssetTab)
-      } else if (activeTab === 'issue-return') {
-        await Promise.all([
-          fetchBorrowRecords(),
-          fetchStudents(),
-          fetchAssets('books'),
-          fetchAssets('cds'),
-          fetchAssets('audiobooks'),
-          fetchAssets('movies'),
-          fetchAssets('technology'),
-          fetchAssets('study-rooms')
-        ])
       } else if (activeTab === 'members') {
         await fetchMembers()
       } else if (activeTab === 'fines') {
@@ -482,14 +589,13 @@ function Librarian() {
 
   const fetchFines = async () => {
     try {
-      const response = await fetch(`${API_URL}/students`)
-      if (response.ok) {
-        const data = await response.json()
-        const finesData = data.filter(student => parseFloat(student.balance || 0) > 0)
-        setFines(finesData)
-      }
+      const response = await fetch(`${API_URL}/fines`)
+      if (!response.ok) throw new Error('Failed to fetch fines')
+      const data = await response.json()
+      setFines(data)
     } catch (error) {
       console.error('Error fetching fines:', error)
+      setFines([])
     }
   }
 
@@ -516,16 +622,55 @@ function Librarian() {
     }
   }
 
-  const fetchStudents = async () => {
-    try {
-      const response = await fetch(`${API_URL}/students`)
-      if (!response.ok) throw new Error('Failed to fetch students')
-      const data = await response.json()
-      const sortedData = data.sort((a, b) => a.User_ID - b.User_ID)
-      setStudents(sortedData)
-    } catch (error) {
-      console.error('Error fetching students:', error)
+  const ensureIssueAssets = async () => {
+    const tasks = []
+    if (!books.length) tasks.push(fetchAssets('books'))
+    if (!cds.length) tasks.push(fetchAssets('cds'))
+    if (!audiobooks.length) tasks.push(fetchAssets('audiobooks'))
+    if (!movies.length) tasks.push(fetchAssets('movies'))
+    if (!technology.length) tasks.push(fetchAssets('technology'))
+    if (!studyRooms.length) tasks.push(fetchAssets('study-rooms'))
+    if (tasks.length) {
+      await Promise.all(tasks)
     }
+  }
+
+  const handleStudyRoomStatusChange = async (roomId, nextStatus) => {
+    if (!roomId || !nextStatus) return
+    setRoomStatusUpdating(roomId)
+    try {
+      const response = await fetch(`${API_URL}/study-rooms/${roomId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus })
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to update room status')
+      }
+
+      await fetchAssets('study-rooms')
+      setSuccessMessage(nextStatus === 'maintenance'
+        ? 'Room marked as Maintenance.'
+        : 'Room marked as Available.')
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (err) {
+      console.error('Error updating study room status:', err)
+      setError(err.message || 'Failed to update study room status')
+      setTimeout(() => setError(''), 5000)
+    } finally {
+      setRoomStatusUpdating(null)
+    }
+  }
+
+  const handleMemberIssue = async () => {
+    if (!memberProfile) return
+    await handleIssueBook({
+      ...issueForm,
+      memberId: memberProfile.member.User_ID,
+      assetType: selectedAssetType
+    }, { resetForm: false, refreshMemberId: memberProfile.member.User_ID })
   }
 
   // Member Management Functions
@@ -550,17 +695,47 @@ function Librarian() {
     }
   }
 
-  const fetchMemberProfile = async (memberId) => {
+  const fetchMemberProfile = async (memberId, fallbackMember = null) => {
+    setShowMemberProfileModal(true)
+    setMemberProfileLoading(true)
+
+    if (memberProfileCache.current.has(memberId)) {
+      setMemberProfile(memberProfileCache.current.get(memberId))
+    } else if (fallbackMember) {
+      setMemberProfile({
+        member: fallbackMember,
+        currentBorrows: [],
+        borrowingHistory: [],
+        finesSummary: { totalFines: 0, unpaidFines: 0 }
+      })
+    }
+
     try {
-      const response = await fetch(`${API_URL}/members/${memberId}`)
-      if (!response.ok) throw new Error('Failed to fetch member profile')
-      const data = await response.json()
-      
+      const profilePromise = fetch(`${API_URL}/members/${memberId}`).then(async (response) => {
+        if (!response.ok) {
+          const errorPayload = await response.json().catch(() => ({}))
+          throw new Error(errorPayload.message || 'Failed to fetch member profile')
+        }
+        return response.json()
+      })
+
+      const [data] = await Promise.all([profilePromise, ensureIssueAssets()])
+
+      setSelectedAssetType('books')
+      setAssetSearch('')
+      setIssueForm({
+        ...initialIssueForm,
+        memberId: data.member.User_ID,
+        assetType: 'books'
+      })
+      memberProfileCache.current.set(memberId, data)
       setMemberProfile(data)
-      setShowMemberProfileModal(true)
     } catch (error) {
       console.error('Error fetching member profile:', error)
-      setError('Failed to fetch member profile')
+      setError(error.message || 'Failed to fetch member profile')
+      setTimeout(() => setError(''), 4000)
+    } finally {
+      setMemberProfileLoading(false)
     }
   }
 
@@ -806,7 +981,7 @@ function Librarian() {
       setImageFile(null)
       setImagePreview(null)
       
-      setSuccessMessage(`Asset ${isEditMode ? 'updated' : 'added'} successfully!`)
+      setSuccessMessage('Update completed successfully!')
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (error) {
       setError(error.message)
@@ -833,7 +1008,7 @@ function Librarian() {
       await fetchAssets(activeAssetTab)
       setShowDeleteModal(false)
       setItemToDelete(null)
-      setSuccessMessage('Asset deleted successfully!')
+      setSuccessMessage('Deletion completed successfully!')
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (error) {
       setError(error.message)
@@ -945,6 +1120,88 @@ function Librarian() {
       }
     }
     return themes[assetType] || themes.books
+  }
+
+  const parseNumberValue = (value, fallback = 0) => {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : fallback
+  }
+
+  const formatNumber = (value) => {
+    const num = Number(value || 0)
+    return Number.isFinite(num) ? num.toLocaleString() : '0'
+  }
+
+  const getAvailableCountForAsset = (asset, assetType) => {
+    if (assetType === 'study-rooms') {
+      const raw = asset?.Availability
+      if (typeof raw === 'number') {
+        return raw === 1 ? 1 : 0
+      }
+      const status = `${raw || ''}`.toLowerCase()
+      return status === 'available' ? 1 : 0
+    }
+    if (asset?.Available_Copies !== undefined && asset?.Available_Copies !== null) {
+      return Math.max(parseNumberValue(asset.Available_Copies), 0)
+    }
+    return 0
+  }
+
+  const getTotalCountForAsset = (asset, assetType) => {
+    if (assetType === 'study-rooms') {
+      return 1
+    }
+    if (asset?.Copies !== undefined && asset?.Copies !== null) {
+      return Math.max(parseNumberValue(asset.Copies), 0)
+    }
+    return 0
+  }
+
+  const getAssetDisplayTitle = (asset, assetType) => {
+    if (assetType === 'study-rooms') {
+      if (asset?.Room_Number) return `Study Room ${asset.Room_Number}`
+      return `Study Room ${asset?.Asset_ID || ''}`.trim()
+    }
+    if (asset?.Title) return asset.Title
+    if (asset?.Description) return asset.Description
+    if (asset?.Model_Num) return `Model ${asset.Model_Num}`
+    if (asset?.ISBN) return `ISBN ${asset.ISBN}`
+    return `Asset ${asset?.Asset_ID || ''}`.trim()
+  }
+
+  const getAvailabilityStatus = (asset, assetType) => {
+    if (assetType === 'study-rooms') {
+      const raw = asset?.Availability
+      if (typeof raw === 'number') {
+        if (raw === 1) return 'available'
+        if (raw === 2) return 'maintenance'
+        return 'reserved'
+      }
+      const state = `${raw || ''}`.toLowerCase()
+      if (state === 'maintenance' || state === 'maintainance' || state === 'maintained') return 'maintenance'
+      if (state === 'reserved') return 'reserved'
+      if (state === 'available') return 'available'
+      return 'reserved'
+    }
+    const total = getTotalCountForAsset(asset, assetType)
+    const available = getAvailableCountForAsset(asset, assetType)
+    if (total <= 0) {
+      return available > 0 ? 'available' : 'out'
+    }
+    if (available <= 0) return 'out'
+
+    const threshold = LOW_STOCK_THRESHOLDS[assetType] ?? 1
+    if (available <= threshold) return 'low'
+    return 'available'
+  }
+
+  const adjustMovieCopies = (delta) => {
+    if (activeAssetTab !== 'movies') return
+    setAssetForm(prev => {
+      const current = Number.isFinite(parseInt(prev?.Copies, 10)) ? parseInt(prev.Copies, 10) : 0
+      const next = Math.max(0, current + delta)
+      return { ...prev, Copies: next }
+    })
   }
 
   const getAssetFormFields = () => {
@@ -1107,23 +1364,24 @@ function Librarian() {
   }
 
   // API Functions for Issue/Return/Renew
-  const handleIssueBook = async () => {
-    if (!issueForm.memberId || !issueForm.assetId) {
+  const handleIssueBook = async (formOverride = null, options = {}) => {
+    const form = formOverride || issueForm
+    if (!form.memberId || !form.assetId) {
       alert('Please select both student and asset')
       return
     }
-    
+
     setLoading(true)
     try {
       const response = await fetch(`${API_URL}/borrow/issue`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          memberId: issueForm.memberId,
-          assetId: issueForm.assetId,
-          assetType: issueForm.assetType,
-          issueDate: issueForm.issueDate || new Date().toISOString().split('T')[0],
-          dueDate: issueForm.dueDate || (() => {
+          memberId: form.memberId,
+          assetId: form.assetId,
+          assetType: form.assetType,
+          issueDate: form.issueDate || new Date().toISOString().split('T')[0],
+          dueDate: form.dueDate || (() => {
             const date = new Date()
             date.setDate(date.getDate() + 14)
             return date.toISOString().split('T')[0]
@@ -1137,14 +1395,32 @@ function Librarian() {
         throw new Error(data.message || 'Failed to issue asset')
       }
       
-      setSuccessMessage('Asset issued successfully!')
+      setSuccessMessage('Issuance completed successfully!')
       setTimeout(() => setSuccessMessage(''), 3000)
-      
-      // Clear form and refresh data
-      setIssueForm({ memberId: '', memberName: '', assetId: '', assetTitle: '', assetType: 'books', issueDate: '', dueDate: '' })
-      setStudentSearch('')
+
+      await fetchAssets(form.assetType)
+
+      if (options.refreshMemberId) {
+        const fallbackMember = memberProfile?.member?.User_ID === options.refreshMemberId 
+          ? memberProfile.member 
+          : null
+        await fetchMemberProfile(options.refreshMemberId, fallbackMember)
+      } else {
+        await fetchData()
+      }
+
+      if (options.resetForm === false) {
+        setIssueForm(prev => ({
+          ...prev,
+          assetId: '',
+          assetTitle: '',
+          issueDate: '',
+          dueDate: ''
+        }))
+      } else {
+        setIssueForm(initialIssueForm)
+      }
       setAssetSearch('')
-      await fetchData()
     } catch (error) {
       setError(error.message)
       setTimeout(() => setError(''), 5000)
@@ -1153,14 +1429,19 @@ function Librarian() {
     }
   }
 
-  const handleReturnBook = async (borrowId, fineAmount) => {
-    const confirmReturn = fineAmount > 0 
-      ? window.confirm(`This book has a fine of $${fineAmount.toFixed(2)}.\n\nProceed with return?`)
-      : window.confirm('Confirm book return?')
+  const handleReturnBook = async (borrowId, fineAmount, options = {}) => {
+    const { silent = false } = options
+    const confirmReturn = silent
+      ? true
+      : (fineAmount > 0 
+          ? window.confirm(`This asset has a fine of $${fineAmount.toFixed(2)}.\n\nProceed with return?`)
+          : window.confirm('Confirm asset return?'))
     
-    if (!confirmReturn) return
+    if (!confirmReturn) return false
     
-    setLoading(true)
+    if (!silent) {
+      setLoading(true)
+    }
     try {
       const response = await fetch(`${API_URL}/borrow-records/${borrowId}/return`, {
         method: 'PUT',
@@ -1174,15 +1455,23 @@ function Librarian() {
         throw new Error(data.message || 'Failed to return book')
       }
       
-      setSuccessMessage(`Book returned successfully! ${fineAmount > 0 ? `Fine recorded: $${fineAmount.toFixed(2)}` : ''}`)
-      setTimeout(() => setSuccessMessage(''), 3000)
-      
-      await fetchData()
+      if (!silent) {
+        setSuccessMessage(`Return completed successfully! ${fineAmount > 0 ? `Fine recorded: $${fineAmount.toFixed(2)}` : ''}`)
+        setTimeout(() => setSuccessMessage(''), 3000)
+        await fetchData()
+      }
+
+      return true
     } catch (error) {
-      setError(error.message)
-      setTimeout(() => setError(''), 5000)
+      if (!silent) {
+        setError(error.message)
+        setTimeout(() => setError(''), 5000)
+      }
+      throw error
     } finally {
-      setLoading(false)
+      if (!silent) {
+        setLoading(false)
+      }
     }
   }
 
@@ -1205,7 +1494,7 @@ function Librarian() {
         throw new Error(data.message || 'Failed to renew book')
       }
       
-      setSuccessMessage('Book renewed successfully!')
+      setSuccessMessage('Renewal completed successfully!')
       setTimeout(() => setSuccessMessage(''), 3000)
       
       await fetchData()
@@ -1357,13 +1646,17 @@ function Librarian() {
           >
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Most Popular Books</h3>
             <div className="space-y-4">
-              {loading ? (
-                <div className="text-center text-gray-500 py-4">Loading...</div>
-              ) : popularBooks.length === 0 ? (
-                <div className="text-center text-gray-500 py-4">No data available</div>
-              ) : (
-                popularBooks.map((book, index) => (
-                  <div key={index} className="flex items-center justify-between">
+              {(() => {
+                if (loading) {
+                  return <div className="text-center text-gray-500 py-4">Loading...</div>
+                }
+                
+                if (popularBooks.length === 0) {
+                  return <div className="text-center text-gray-500 py-4">No data available</div>
+                }
+                
+                return popularBooks.map((book, index) => (
+                  <div key={`popular-book-${book.Asset_ID || index}`} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
                         <span className="text-sm font-bold text-indigo-600">#{index + 1}</span>
@@ -1376,7 +1669,7 @@ function Librarian() {
                     <span className="text-sm font-semibold text-indigo-600">{book.Total_Borrows} borrows</span>
                   </div>
                 ))
-              )}
+              })()}
             </div>
           </motion.div>
         </div>
@@ -1407,16 +1700,24 @@ function Librarian() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {loading ? (
-                    <tr>
-                      <td colSpan="7" className="px-6 py-4 text-center text-gray-500">Loading...</td>
-                    </tr>
-                  ) : recentTransactions.length === 0 ? (
-                    <tr>
-                      <td colSpan="7" className="px-6 py-4 text-center text-gray-500">No recent transactions</td>
-                    </tr>
-                  ) : (
-                    recentTransactions.slice(0, 10).map((transaction, index) => (
+                  {(() => {
+                    if (loading) {
+                      return (
+                        <tr>
+                          <td colSpan="7" className="px-6 py-4 text-center text-gray-500">Loading...</td>
+                        </tr>
+                      )
+                    }
+                    
+                    if (recentTransactions.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan="7" className="px-6 py-4 text-center text-gray-500">No recent transactions</td>
+                        </tr>
+                      )
+                    }
+                    
+                    return recentTransactions.slice(0, 10).map((transaction, index) => (
                       <tr key={transaction.Borrow_ID || index} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100 transition-colors`}>
                         <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           #{transaction.Borrow_ID}
@@ -1461,7 +1762,7 @@ function Librarian() {
                         </td>
                       </tr>
                     ))
-                  )}
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -1528,11 +1829,109 @@ function Librarian() {
     // Get theme from centralized helper function
     const theme = getAssetTheme()
 
-    // Calculate statistics
+    const isStudyRoomTab = activeAssetTab === 'study-rooms'
+
     const totalAssets = data.length
-    const totalCopies = data.reduce((sum, item) => sum + (parseInt(item.Copies) || 0), 0)
-    const availableCopies = data.reduce((sum, item) => sum + (parseInt(item.Available_Copies) || 0), 0)
-    const borrowedCopies = totalCopies - availableCopies
+    const totalCopies = data.reduce((sum, item) => sum + getTotalCountForAsset(item, activeAssetTab), 0)
+    const availableCopies = data.reduce((sum, item) => sum + getAvailableCountForAsset(item, activeAssetTab), 0)
+    const borrowedCopies = Math.max(totalCopies - availableCopies, 0)
+
+    const availabilityBuckets = data.reduce((acc, item) => {
+      const status = getAvailabilityStatus(item, activeAssetTab)
+      acc[status] = (acc[status] || 0) + 1
+      return acc
+    }, {})
+
+    let summaryCards
+    if (isStudyRoomTab) {
+      summaryCards = [
+        {
+          id: 'total-rooms',
+          label: 'Total Rooms',
+          value: formatNumber(totalAssets),
+          icon: theme.Icon,
+          iconWrapper: `bg-gradient-to-br ${theme.gradient} text-white`,
+          valueClass: 'text-slate-900'
+        },
+        {
+          id: 'available-rooms',
+          label: 'Available Rooms',
+          value: formatNumber(availabilityBuckets.available || 0),
+          icon: CheckCircle,
+          iconWrapper: 'bg-emerald-100 text-emerald-600',
+          valueClass: 'text-emerald-600'
+        },
+        {
+          id: 'reserved-rooms',
+          label: 'Reserved Rooms',
+          value: formatNumber(availabilityBuckets.reserved || 0),
+          icon: RefreshCw,
+          iconWrapper: 'bg-orange-100 text-orange-600',
+          valueClass: 'text-orange-600'
+        },
+        {
+          id: 'maintenance-rooms',
+          label: 'Maintenance',
+          value: formatNumber(availabilityBuckets.maintenance || 0),
+          icon: AlertCircle,
+          iconWrapper: 'bg-red-100 text-red-600',
+          valueClass: 'text-red-600'
+        }
+      ]
+    } else {
+      const lowStockCount = availabilityBuckets.low || 0
+      const outOfStockCount = availabilityBuckets.out || 0
+      summaryCards = [
+        {
+          id: 'total-assets',
+          label: `Total ${activeAssetTab.charAt(0).toUpperCase() + activeAssetTab.slice(1)}`,
+          value: formatNumber(totalAssets),
+          icon: theme.Icon,
+          iconWrapper: `bg-gradient-to-br ${theme.gradient} text-white`,
+          valueClass: 'text-slate-900'
+        },
+        {
+          id: 'total-copies',
+          label: 'Total Copies',
+          value: formatNumber(totalCopies),
+          icon: Package,
+          iconWrapper: 'bg-slate-100 text-slate-700',
+          valueClass: 'text-slate-900'
+        },
+        {
+          id: 'available-copies',
+          label: 'Available',
+          value: formatNumber(availableCopies),
+          icon: CheckCircle,
+          iconWrapper: 'bg-emerald-100 text-emerald-600',
+          valueClass: 'text-emerald-600'
+        },
+        {
+          id: 'borrowed-copies',
+          label: 'Borrowed',
+          value: formatNumber(borrowedCopies),
+          icon: BookOpenCheck,
+          iconWrapper: 'bg-orange-100 text-orange-600',
+          valueClass: 'text-orange-600'
+        },
+        {
+          id: 'low-stock',
+          label: 'Low Stock',
+          value: formatNumber(lowStockCount),
+          icon: AlertCircle,
+          iconWrapper: 'bg-amber-100 text-amber-600',
+          valueClass: 'text-amber-600'
+        },
+        {
+          id: 'out-stock',
+          label: 'Out of Stock',
+          value: formatNumber(outOfStockCount),
+          icon: AlertCircle,
+          iconWrapper: 'bg-red-100 text-red-600',
+          valueClass: 'text-red-600'
+        }
+      ]
+    }
 
     // Filter data based on search
     const filteredData = data.filter(item => {
@@ -1546,6 +1945,9 @@ function Librarian() {
         item.Model_Num?.toString().includes(searchLower) ||
         item.Room_Number?.toLowerCase().includes(searchLower)
       )
+    }).filter(item => {
+      if (assetAvailabilityFilter === 'all') return true
+      return getAvailabilityStatus(item, activeAssetTab) === assetAvailabilityFilter
     })
 
     return (
@@ -1560,76 +1962,29 @@ function Librarian() {
         <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
 
         {/* Summary Analytics Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className="bg-white rounded-xl shadow-md p-4 border border-gray-200"
-          >
-            <div className="flex items-center justify-between">
+        <div className={`grid gap-4 mb-6 ${
+          isStudyRoomTab
+            ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4'
+            : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6'
+        }`}>
+          {summaryCards.map((card, index) => (
+            <motion.div
+              key={card.id}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, delay: index * 0.05 }}
+              className="bg-white rounded-2xl shadow-sm border border-gray-100 px-5 py-4 flex items-center justify-between"
+            >
               <div>
-                <p className="text-sm font-medium text-gray-600">Total {activeAssetTab.charAt(0).toUpperCase() + activeAssetTab.slice(1)}</p>
-                <h3 className="text-2xl font-bold text-gray-900 mt-1">{totalAssets}</h3>
+                <p className="text-sm font-medium text-gray-500">{card.label}</p>
+                <p className={`text-2xl font-bold mt-1 ${card.valueClass}`}>{card.value}</p>
               </div>
-              <div className={`p-3 rounded-lg bg-gradient-to-br ${theme.gradient}`}>
-                <theme.Icon className="w-6 h-6 text-white" />
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${card.iconWrapper}`}>
+                <card.icon className="w-6 h-6" />
               </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.1 }}
-            className="bg-white rounded-xl shadow-md p-4 border border-gray-200"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Copies</p>
-                <h3 className="text-2xl font-bold text-gray-900 mt-1">{totalCopies}</h3>
-              </div>
-              <div className="p-3 rounded-lg bg-gradient-to-br from-gray-500 to-gray-600">
-                <Package className="w-6 h-6 text-white" />
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.2 }}
-            className="bg-white rounded-xl shadow-md p-4 border border-gray-200"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Available</p>
-                <h3 className="text-2xl font-bold text-green-600 mt-1">{availableCopies}</h3>
-              </div>
-              <div className="p-3 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600">
-                <CheckCircle className="w-6 h-6 text-white" />
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: 0.3 }}
-            className="bg-white rounded-xl shadow-md p-4 border border-gray-200"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Borrowed</p>
-                <h3 className="text-2xl font-bold text-orange-600 mt-1">{borrowedCopies}</h3>
-              </div>
-              <div className="p-3 rounded-lg bg-gradient-to-br from-orange-500 to-amber-600">
-                <BookOpen className="w-6 h-6 text-white" />
-              </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          ))}
         </div>
-
         {/* Category Tabs & Actions Bar */}
         <div className="bg-white rounded-xl shadow-md mb-6 overflow-hidden border border-gray-200">
           {/* Tabs */}
@@ -1720,12 +2075,32 @@ function Librarian() {
               </div>
 
               {/* Stats & Add Button */}
-              <div className="flex items-center gap-4 w-full lg:w-auto">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+                <select
+                  value={assetAvailabilityFilter}
+                  onChange={(e) => setAssetAvailabilityFilter(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                >
+                  <option value="all">All {isStudyRoomTab ? 'rooms' : 'availability'}</option>
+                  {isStudyRoomTab ? (
+                    <>
+                      <option value="available">Available Rooms</option>
+                      <option value="reserved">Reserved Rooms</option>
+                      <option value="maintenance">Maintenance</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="available">Available</option>
+                      <option value="low">Low Stock</option>
+                      <option value="out">Out of Stock</option>
+                    </>
+                  )}
+                </select>
                 <div className="flex items-center gap-2 text-sm">
                   <span className="text-gray-600">Showing:</span>
                   <span className={`font-bold ${theme.text}`}>{filteredData.length} items</span>
                 </div>
-                <button 
+                <button
                   className={`px-4 py-2 bg-gradient-to-r ${theme.gradient} text-white rounded-lg hover:shadow-lg transition-all duration-200 font-medium text-sm flex items-center gap-2 whitespace-nowrap`}
                   onClick={openAddAssetModal}
                 >
@@ -1769,12 +2144,30 @@ function Librarian() {
                 )}
               </div>
             ) : (
-              filteredData.map((item, index) => (
-                <motion.div
-                  key={item.Asset_ID}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.3, delay: Math.min(index * 0.03, 0.5) }}
+              filteredData.map((item, index) => {
+                const status = getAvailabilityStatus(item, activeAssetTab)
+                const availabilityLabel = status === 'available'
+                  ? '✓ Available'
+                  : status === 'low'
+                    ? '⚠ Low Stock'
+                    : (activeAssetTab === 'study-rooms' ? '✗ Reserved' : '✗ Out of Stock')
+                const availabilityBadgeClass = status === 'available'
+                  ? 'text-green-600 bg-green-50'
+                  : status === 'low'
+                    ? 'text-amber-600 bg-amber-50'
+                    : 'text-red-600 bg-red-50'
+                const showCopiesInfo = activeAssetTab !== 'study-rooms'
+                const copiesTotal = getTotalCountForAsset(item, activeAssetTab)
+                const availableCount = getAvailableCountForAsset(item, activeAssetTab)
+                const progressPercent = copiesTotal > 0
+                  ? Math.min(Math.max((availableCount / copiesTotal) * 100, 0), 100)
+                  : 0
+                return (
+                  <motion.div
+                    key={item.Asset_ID}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.3, delay: Math.min(index * 0.03, 0.5) }}
                   className="bg-white rounded-xl shadow-md hover:shadow-2xl transition-all duration-300 overflow-hidden group border border-gray-200 flex flex-col"
                 >
                   {/* Card Header */}
@@ -1783,12 +2176,8 @@ function Librarian() {
                       <span className={`text-xs font-bold ${theme.text} ${theme.bg} px-3 py-1 rounded-full`}>
                         #{index + 1}
                       </span>
-                      <span className={`text-sm font-medium ${
-                        (item.Available_Copies > 0 || item.Availability === 'Available') 
-                          ? 'text-green-600 bg-green-50' 
-                          : 'text-red-600 bg-red-50'
-                      } px-2 py-1 rounded-full text-xs`}>
-                        {(item.Available_Copies > 0 || item.Availability === 'Available') ? '✓ Available' : '✗ Borrowed'}
+                      <span className={`text-sm font-medium ${availabilityBadgeClass} px-2 py-1 rounded-full text-xs`}>
+                        {availabilityLabel}
                       </span>
                     </div>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -1942,7 +2331,7 @@ function Librarian() {
                     </div>
                     
                     {/* Copies Info */}
-                    {(item.Copies !== undefined || item.Available_Copies !== undefined) && (
+                    {showCopiesInfo && (
                       <div className="pt-3 border-t border-gray-100">
                         <div className="flex items-center justify-between text-sm">
                           <div className="flex items-center gap-2">
@@ -1952,25 +2341,53 @@ function Librarian() {
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-gray-900">{item.Copies || 0}</span>
+                            <span className="font-bold text-gray-900">{Number.isNaN(copiesTotal) ? 0 : copiesTotal}</span>
                             <span className="text-gray-400">•</span>
-                            <span className={`font-semibold ${(item.Available_Copies > 0) ? 'text-green-600' : 'text-red-600'}`}>
-                              {item.Available_Copies || 0} available
+                            <span className={`font-semibold ${
+                              status === 'available' ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {Number.isNaN(availableCount) ? 0 : Math.max(availableCount, 0)} available
                             </span>
                           </div>
                         </div>
                         {/* Progress Bar */}
                         <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div 
+                          <div
                             className={`h-full bg-gradient-to-r ${theme.gradient} transition-all duration-300`}
-                            style={{ width: `${item.Copies > 0 ? (item.Available_Copies / item.Copies) * 100 : 0}%` }}
+                            style={{ width: `${progressPercent}%` }}
                           ></div>
                         </div>
                       </div>
                     )}
+                    {activeAssetTab === 'study-rooms' && (
+                      <div className="pt-3 border-t border-gray-100 mt-3">
+                        <div className="flex items-center justify-between text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                          <span>Room Status</span>
+                          {roomStatusUpdating === item.Asset_ID && (
+                            <span className="text-indigo-500">Updating…</span>
+                          )}
+                        </div>
+                        {status === 'reserved' ? (
+                          <p className="text-sm text-gray-500 mt-2">
+                            Status is controlled by active reservations.
+                          </p>
+                        ) : (
+                          <select
+                            value={status === 'maintenance' ? 'maintenance' : 'available'}
+                            onChange={(e) => handleStudyRoomStatusChange(item.Asset_ID, e.target.value)}
+                            disabled={roomStatusUpdating === item.Asset_ID}
+                            className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          >
+                            <option value="available">Available</option>
+                            <option value="maintenance">Maintenance</option>
+                          </select>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </motion.div>
-              ))
+                )
+              })
             )}
           </motion.div>
         </AnimatePresence>
@@ -2120,7 +2537,7 @@ function Librarian() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex gap-2">
                         <button
-                          onClick={() => fetchMemberProfile(member.User_ID)}
+                          onClick={() => fetchMemberProfile(member.User_ID, member)}
                           className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-500 text-white text-xs font-medium rounded-lg hover:bg-blue-600 transition-colors"
                           title="View Profile"
                         >
@@ -2420,10 +2837,10 @@ function Librarian() {
       )}
 
       {/* Modern Member Detail Modal */}
-      {showMemberProfileModal && memberProfile && (
+      {showMemberProfileModal && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 overflow-y-auto"
-          onClick={() => setShowMemberProfileModal(false)}
+          onClick={closeMemberProfileModal}
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -2432,6 +2849,13 @@ function Librarian() {
             className="bg-white rounded-2xl shadow-2xl max-w-6xl w-full my-8"
             onClick={(e) => e.stopPropagation()}
           >
+            {!memberProfile ? (
+              <div className="p-16 flex flex-col items-center justify-center gap-4">
+                <div className="w-16 h-16 border-4 border-emerald-200 border-t-emerald-500 rounded-full animate-spin"></div>
+                <p className="text-gray-600 font-medium">Loading member details...</p>
+              </div>
+            ) : (
+              <>
             {/* Header */}
             <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-8 py-6 rounded-t-2xl">
               <div className="flex items-center justify-between">
@@ -2447,13 +2871,20 @@ function Librarian() {
                   </div>
                 </div>
                 <button 
-                  onClick={() => setShowMemberProfileModal(false)}
+                  onClick={closeMemberProfileModal}
                   className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition-all"
                 >
                   <X className="w-6 h-6" />
                 </button>
               </div>
             </div>
+
+            {memberProfileLoading && (
+              <div className="bg-amber-50 text-amber-700 px-8 py-3 flex items-center gap-2 text-sm font-medium">
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Refreshing latest account data...
+              </div>
+            )}
 
             <div className="p-8 max-h-[calc(100vh-200px)] overflow-y-auto">
               {/* Member Info Card */}
@@ -2495,17 +2926,7 @@ function Librarian() {
               {/* Actions Panel */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-6">
                 <div className="flex flex-wrap gap-3">
-                  <button 
-                    onClick={() => {
-                      setShowMemberProfileModal(false)
-                      changeTab('issue-return')
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all shadow-sm"
-                  >
-                    <BookOpen className="w-4 h-4" />
-                    Issue New Book
-                  </button>
-                  <button 
+                  <button
                     onClick={async () => {
                       if (memberProfile.currentBorrows.length === 0) {
                         alert('No books to renew')
@@ -2522,8 +2943,8 @@ function Librarian() {
                           const formattedDate = newDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                           await handleRenewBook(borrow.Borrow_ID, formattedDate)
                         }
-                        await fetchMemberProfile(memberProfile.member.User_ID)
-                        setSuccessMessage('All books renewed successfully!')
+                        await fetchMemberProfile(memberProfile.member.User_ID, memberProfile.member)
+                        setSuccessMessage('Renewal completed successfully!')
                         setTimeout(() => setSuccessMessage(''), 3000)
                       } catch (error) {
                         setError('Failed to renew all books')
@@ -2537,9 +2958,9 @@ function Librarian() {
                     <RefreshCw className="w-4 h-4" />
                     Renew All
                   </button>
-                  <button 
+                  <button
                     onClick={() => {
-                      setShowMemberProfileModal(false)
+                      closeMemberProfileModal()
                       changeTab('fines')
                     }}
                     className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all shadow-sm"
@@ -2547,7 +2968,7 @@ function Librarian() {
                     <DollarSign className="w-4 h-4" />
                     View Fines
                   </button>
-                  <button 
+                  <button
                     onClick={() => {
                       const action = memberProfile.member.Account_Status === 'active' ? 'suspend' : 'activate'
                       const confirm = window.confirm(`Are you sure you want to ${action} this member?`)
@@ -2564,6 +2985,189 @@ function Librarian() {
                   >
                     <AlertCircle className="w-4 h-4" />
                     {memberProfile.member.Account_Status === 'active' ? 'Suspend' : 'Activate'} Member
+                  </button>
+                </div>
+              </div>
+
+              {/* Issue or Reserve Assets */}
+              <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="w-5 h-5 text-gray-600" />
+                    <h4 className="text-lg font-semibold text-gray-900">
+                      Issue {selectedAssetType === 'study-rooms' ? 'or Reserve Room' : 'Asset'}
+                    </h4>
+                  </div>
+                  <span className="text-sm text-gray-500">
+                    Member ID: M{String(memberProfile.member.User_ID).padStart(3, '0')}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Asset Type</label>
+                    <select
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={selectedAssetType}
+                      onChange={(e) => {
+                        setSelectedAssetType(e.target.value)
+                        setIssueForm(prev => ({
+                          ...prev,
+                          assetType: e.target.value,
+                          assetId: '',
+                          assetTitle: ''
+                        }))
+                        setAssetSearch('')
+                      }}
+                    >
+                      <option value="books">Books</option>
+                      <option value="cds">CDs</option>
+                      <option value="audiobooks">Audiobooks</option>
+                      <option value="movies">Movies</option>
+                      <option value="technology">Technology</option>
+                      <option value="study-rooms">Study Rooms</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Issue Date</label>
+                    <input
+                      type="date"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={issueForm.issueDate || new Date().toISOString().split('T')[0]}
+                      onChange={(e) => setIssueForm(prev => ({ ...prev, issueDate: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {selectedAssetType === 'study-rooms' ? 'Reservation Ends' : 'Due Date'}
+                    </label>
+                    <input
+                      type="date"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={issueForm.dueDate || (() => {
+                        const date = new Date()
+                        date.setDate(date.getDate() + (selectedAssetType === 'study-rooms' ? 1 : 14))
+                        return date.toISOString().split('T')[0]
+                      })()}
+                      onChange={(e) => setIssueForm(prev => ({ ...prev, dueDate: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Search {selectedAssetType === 'study-rooms' ? 'Rooms' : 'Assets'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder={`Type to search ${selectedAssetType}...`}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      value={assetSearch}
+                      onChange={(e) => {
+                        setAssetSearch(e.target.value)
+                        setShowAssetDropdown(true)
+                      }}
+                      onFocus={() => setShowAssetDropdown(true)}
+                      onBlur={() => setTimeout(() => setShowAssetDropdown(false), 200)}
+                    />
+                    {showAssetDropdown && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {getIssueAssetData()
+                          .filter(item => item.Available_Copies > 0 || selectedAssetType === 'study-rooms')
+                          .filter(item => {
+                            if (!assetSearch) return true
+                            const searchLower = assetSearch.toLowerCase()
+                            const title = item.Title || item.Room_Number || item.Model_Num || ''
+                            const author = item.Author || item.Artist || ''
+                            return (
+                              title.toString().toLowerCase().includes(searchLower) ||
+                              author.toString().toLowerCase().includes(searchLower)
+                            )
+                          })
+                          .map(item => (
+                            <div
+                              key={item.Asset_ID}
+                              className="px-4 py-3 hover:bg-green-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                              onMouseDown={() => {
+                                setIssueForm(prev => ({
+                                  ...prev,
+                                  assetId: item.Asset_ID,
+                                  assetTitle: item.Title || item.Room_Number || `Tech-${item.Model_Num}`,
+                                  assetType: selectedAssetType
+                                }))
+                                setAssetSearch(item.Title || item.Room_Number || `Tech-${item.Model_Num}`)
+                                setShowAssetDropdown(false)
+                              }}
+                            >
+                              <div className="font-medium text-gray-900">
+                                {item.Title || item.Room_Number || `Tech-${item.Model_Num}`}
+                              </div>
+                              {item.Author && <div className="text-sm text-gray-600">by {item.Author}</div>}
+                              {item.Artist && <div className="text-sm text-gray-600">by {item.Artist}</div>}
+                              <div className="text-xs text-gray-500">
+                                Available:{' '}
+                                <span className="text-green-600 font-semibold">
+                                  {item.Available_Copies ?? (item.Availability === 'Available' ? '1' : '0')}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        {getIssueAssetData()
+                          .filter(item => item.Available_Copies > 0 || selectedAssetType === 'study-rooms')
+                          .filter(item => {
+                            if (!assetSearch) return true
+                            const searchLower = assetSearch.toLowerCase()
+                            const title = item.Title || item.Room_Number || item.Model_Num || ''
+                            const author = item.Author || item.Artist || ''
+                            return (
+                              title.toString().toLowerCase().includes(searchLower) ||
+                              author.toString().toLowerCase().includes(searchLower)
+                            )
+                          }).length === 0 && (
+                          <div className="px-4 py-3 text-gray-500 text-center">
+                            No available items found
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {issueForm.assetId && (
+                    <div className="mt-3 p-3 bg-gray-50 rounded border border-gray-200 text-sm">
+                      <div className="font-semibold text-gray-800">
+                        Selected: {issueForm.assetTitle}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {selectedAssetType === 'study-rooms'
+                          ? 'The reservation will mark this room as reserved until the selected end date.'
+                          : 'Asset will be issued immediately to this member.'}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIssueForm(prev => ({ ...prev, assetId: '', assetTitle: '', issueDate: '', dueDate: '' }))
+                      setAssetSearch('')
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-all"
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleMemberIssue}
+                    disabled={!issueForm.assetId || roomStatusUpdating !== null || loading}
+                    className={`px-6 py-2 text-sm font-semibold text-white rounded-lg transition-all ${
+                      selectedAssetType === 'study-rooms'
+                        ? 'bg-amber-500 hover:bg-amber-600'
+                        : 'bg-green-500 hover:bg-green-600'
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                  >
+                    {selectedAssetType === 'study-rooms' ? 'Reserve Room' : 'Issue Asset'}
                   </button>
                 </div>
               </div>
@@ -2658,7 +3262,7 @@ function Librarian() {
                                       const formattedDate = newDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                                       await handleRenewBook(borrow.Borrow_ID, formattedDate)
                                       // Refresh member profile after renewal
-                                      await fetchMemberProfile(memberProfile.member.User_ID)
+                                      await fetchMemberProfile(memberProfile.member.User_ID, memberProfile.member)
                                     }}
                                     className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded hover:bg-blue-200 transition-colors"
                                   >
@@ -2669,7 +3273,7 @@ function Librarian() {
                                     onClick={async () => {
                                       await handleReturnBook(borrow.Borrow_ID, fineAmount)
                                       // Refresh member profile after return
-                                      await fetchMemberProfile(memberProfile.member.User_ID)
+                                      await fetchMemberProfile(memberProfile.member.User_ID, memberProfile.member)
                                     }}
                                     className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded hover:bg-green-200 transition-colors"
                                   >
@@ -2748,27 +3352,20 @@ function Librarian() {
                   {memberProfile.finesSummary.unpaidFines > 0 && (
                     <button 
                       onClick={async () => {
-                        const fineAmount = parseFloat(memberProfile.finesSummary.unpaidFines || 0)
-                        const confirm = window.confirm(`Mark fine of $${fineAmount.toFixed(2)} as paid?`)
-                        if (!confirm) return
-                        
-                        setLoading(true)
-                        try {
-                          // Pay all outstanding fines
-                          for (const borrow of memberProfile.currentBorrows) {
-                            const borrowFine = parseFloat(borrow.Fine_Amount) || 0
-                            if (borrowFine > 0) {
-                              await handleReturnBook(borrow.Borrow_ID, borrowFine)
-                            }
-                          }
-                          await fetchMemberProfile(memberProfile.member.User_ID)
-                          setSuccessMessage('Fine marked as paid successfully!')
+                        const fineItems = memberProfile.currentBorrows
+                          .filter(borrow => Number.parseFloat(borrow.Fine_Amount) > 0)
+                          .map(borrow => ({
+                            borrowId: borrow.Borrow_ID,
+                            fineAmount: Number.parseFloat(borrow.Fine_Amount) || 0
+                          }))
+                        const settled = await settleFineItems(
+                          fineItems,
+                          `${memberProfile.member.First_Name} ${memberProfile.member.Last_Name}`.trim()
+                        )
+                        if (settled) {
+                          await fetchMemberProfile(memberProfile.member.User_ID, memberProfile.member)
+                          setSuccessMessage('Fine settlement completed successfully!')
                           setTimeout(() => setSuccessMessage(''), 3000)
-                        } catch (error) {
-                          setError('Failed to mark fine as paid')
-                          setTimeout(() => setError(''), 5000)
-                        } finally {
-                          setLoading(false)
                         }
                       }}
                       className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all shadow-sm"
@@ -2798,11 +3395,147 @@ function Librarian() {
             {/* Footer */}
             <div className="bg-gray-50 px-8 py-4 rounded-b-2xl flex justify-end gap-3">
               <button 
-                onClick={() => setShowMemberProfileModal(false)}
+                onClick={closeMemberProfileModal}
                 className="px-6 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all font-medium"
               >
                 Close
               </button>
+            </div>
+              </>
+            )}
+          </motion.div>
+        </div>
+      )}
+
+      {showFineModal && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4"
+          onClick={closeFineModal}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.25 }}
+            className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-orange-500 to-red-500 text-white">
+              <div>
+                <p className="text-sm uppercase tracking-wide opacity-80">Outstanding Balance</p>
+                <h3 className="text-2xl font-bold">
+                  {selectedMemberFines
+                    ? `$${Number.parseFloat(selectedMemberFines.summary.balance || 0).toFixed(2)}`
+                    : '$0.00'}
+                </h3>
+                {selectedMemberFines && (
+                  <p className="text-sm opacity-80">
+                    {selectedMemberFines.summary.name} • {selectedMemberFines.summary.studentId}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={closeFineModal}
+                className="text-white/70 hover:text-white rounded-full p-2 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {fineDetailsLoading ? (
+              <div className="p-16 flex flex-col items-center justify-center gap-4">
+                <div className="w-12 h-12 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin"></div>
+                <p className="text-gray-600 font-medium">Loading fine details...</p>
+              </div>
+            ) : selectedMemberFines ? (
+              <>
+                <div className="p-8 border-b border-gray-100">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-xs uppercase text-gray-500">Email</p>
+                      <p className="text-sm font-medium text-gray-900">{selectedMemberFines.summary.email}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase text-gray-500">Phone</p>
+                      <p className="text-sm font-medium text-gray-900">{selectedMemberFines.summary.phone || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase text-gray-500">Overdue Items</p>
+                      <p className="text-sm font-medium text-gray-900">{selectedMemberFines.summary.overdueItems}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-8 max-h-[60vh] overflow-y-auto">
+                  {selectedMemberFines.fines.length === 0 ? (
+                    <div className="py-12 text-center text-gray-500">
+                      <DollarSign className="w-12 h-12 text-green-400 mx-auto mb-3" />
+                      All overdue items are settled.
+                    </div>
+                  ) : (
+                    <table className="w-full">
+                      <thead>
+                        <tr className="text-xs uppercase text-gray-500 tracking-wide border-b">
+                          <th className="py-3 text-left">Asset</th>
+                          <th className="py-3 text-left">Type</th>
+                          <th className="py-3 text-left">Due Date</th>
+                          <th className="py-3 text-left">Days Overdue</th>
+                          <th className="py-3 text-left">Fine</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {selectedMemberFines.fines.map((fine) => (
+                          <tr key={fine.borrowId} className="text-sm">
+                            <td className="py-3">
+                              <p className="font-semibold text-gray-900">{fine.title}</p>
+                              <p className="text-gray-500 text-xs">Borrow #{String(fine.borrowId).padStart(4, '0')}</p>
+                            </td>
+                            <td className="py-3 text-gray-600">{fine.assetType}</td>
+                            <td className="py-3 text-gray-600">
+                              {new Date(fine.dueDate).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
+                              })}
+                            </td>
+                            <td className="py-3">
+                              <span className="inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-700">
+                                {fine.daysOverdue} days
+                              </span>
+                            </td>
+                            <td className="py-3 font-bold text-red-600">
+                              ${Number.parseFloat(fine.fineAmount || 0).toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </>
+            ) : null}
+
+            <div className="bg-gray-50 px-8 py-4 flex items-center justify-between">
+              <p className="text-sm text-gray-500">
+                {fineModalMode === 'pay'
+                  ? 'Confirm settlement once the items have been returned and payment collected.'
+                  : 'Review outstanding items for this member.'}
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={closeFineModal}
+                  className="px-5 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors font-medium"
+                >
+                  Close
+                </button>
+                {selectedMemberFines?.fines?.length > 0 && fineModalMode === 'pay' && (
+                  <button
+                    onClick={handleSettleFines}
+                    className="px-5 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold"
+                  >
+                    Settle Outstanding Fines
+                  </button>
+                )}
+              </div>
             </div>
           </motion.div>
         </div>
@@ -2931,571 +3664,22 @@ function Librarian() {
       </motion.div>
     </div>
   )
-
-  // Issue & Return Management
-  const renderIssueReturn = () => {
-    return (
-      <div className="p-6">
-        <h2 className="text-3xl font-bold text-gray-800 mb-6">Issue & Return Management</h2>
-        
-        <ErrorPopup errorMessage={error} onClose={() => setError('')} />
-        <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
-        
-        {/* Sub-tabs for Issue/Return/Renew */}
-        <div className="bg-white rounded-lg shadow-md mb-6">
-          <div className="flex border-b border-gray-200">
-            <button
-              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
-                activeSubTab === 'issue'
-                  ? 'border-b-2 border-blue-500 text-blue-600 bg-blue-50'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-              }`}
-              onClick={() => setActiveSubTab('issue')}
-            >
-              <span className="text-xl mr-2">📤</span>
-              Issue Asset
-            </button>
-            <button
-              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
-                activeSubTab === 'return'
-                  ? 'border-b-2 border-green-500 text-green-600 bg-green-50'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-              }`}
-              onClick={() => setActiveSubTab('return')}
-            >
-              <span className="text-xl mr-2">📥</span>
-              Return Asset
-            </button>
-            <button
-              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
-                activeSubTab === 'renew'
-                  ? 'border-b-2 border-purple-500 text-purple-600 bg-purple-50'
-                  : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-              }`}
-              onClick={() => setActiveSubTab('renew')}
-            >
-              <span className="text-xl mr-2">🔄</span>
-              Renew Asset
-            </button>
-          </div>
-
-          <div className="p-6">
-            {/* ISSUE BOOK TAB */}
-            {activeSubTab === 'issue' && (
-              <div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Issue New Asset</h3>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                  {/* Student Search with Dropdown */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      1. Select Student
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="Click or type to search students..."
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        value={studentSearch}
-                        onChange={(e) => {
-                          setStudentSearch(e.target.value)
-                          setShowStudentDropdown(true)
-                        }}
-                        onFocus={() => setShowStudentDropdown(true)}
-                        onBlur={() => setTimeout(() => setShowStudentDropdown(false), 200)}
-                      />
-                      
-                      {/* Dropdown Results - Shows ALL when empty, filters when typing */}
-                      {showStudentDropdown && (
-                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                          {students
-                            .filter(student => {
-                              if (!studentSearch) return true // Show all when no search text
-                              const searchLower = studentSearch.toLowerCase()
-                              return (
-                                student.name?.toLowerCase().includes(searchLower) ||
-                                student.email?.toLowerCase().includes(searchLower) ||
-                                student.studentId?.toString().includes(searchLower) ||
-                                student.id?.toString().includes(searchLower)
-                              )
-                            })
-                            .map((student) => (
-                              <div
-                                key={student.id}
-                                className="px-4 py-3 hover:bg-blue-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                                onMouseDown={() => {
-                                  setIssueForm({ 
-                                    ...issueForm, 
-                                    memberId: student.id,
-                                    memberName: student.name
-                                  })
-                                  setStudentSearch(`${student.name} (ID: ${student.studentId})`)
-                                  setShowStudentDropdown(false)
-                                }}
-                              >
-                                <div className="font-medium text-gray-900">
-                                  {student.name}
-                                </div>
-                                <div className="text-sm text-gray-600">
-                                  {student.email}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  ID: {student.studentId} | Active Loans: <span className="text-blue-600 font-semibold">{student.borrowedBooks || 0}</span>
-                                </div>
-                              </div>
-                            ))}
-                          {students.filter(student => {
-                            if (!studentSearch) return true
-                            const searchLower = studentSearch.toLowerCase()
-                            return (
-                              student.name?.toLowerCase().includes(searchLower) ||
-                              student.email?.toLowerCase().includes(searchLower) ||
-                              student.studentId?.toString().includes(searchLower) ||
-                              student.id?.toString().includes(searchLower)
-                            )
-                          }).length === 0 && (
-                            <div className="px-4 py-3 text-gray-500 text-center">
-                              No students found
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    
-                    {issueForm.memberId && (
-                      <div className="mt-3 text-sm text-gray-600">
-                        {(() => {
-                          const member = students.find(s => s.id === parseInt(issueForm.memberId))
-                          return member ? (
-                            <div className="bg-white p-3 rounded border border-gray-200">
-                              <div className="font-semibold text-gray-800 mb-2">
-                                Selected: {member.name}
-                              </div>
-                              <div><strong>Email:</strong> {member.email}</div>
-                              <div><strong>Phone:</strong> {member.phone || 'N/A'}</div>
-                              <div><strong>Active Loans:</strong> <span className="text-blue-600 font-semibold">
-                                {member.borrowedBooks || 0}
-                              </span></div>
-                            </div>
-                          ) : null
-                        })()}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Asset Type and Search */}
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      2. Select Asset Type & Item
-                    </label>
-                    
-                    {/* Asset Type Selector */}
-                    <select
-                      className="w-full px-4 py-2 mb-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      value={selectedAssetType}
-                      onChange={(e) => {
-                        setSelectedAssetType(e.target.value)
-                        setIssueForm({ ...issueForm, assetType: e.target.value, assetId: '', assetTitle: '' })
-                        setAssetSearch('')
-                      }}
-                    >
-                      <option value="books">Books</option>
-                      <option value="cds">CDs</option>
-                      <option value="audiobooks">Audiobooks</option>
-                      <option value="movies">Movies</option>
-                      <option value="technology">Technology</option>
-                      <option value="study-rooms">Study Rooms</option>
-                    </select>
-
-                    {/* Asset Search */}
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder={`Click or type to search ${selectedAssetType}...`}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        value={assetSearch}
-                        onChange={(e) => {
-                          setAssetSearch(e.target.value)
-                          setShowAssetDropdown(true)
-                        }}
-                        onFocus={() => setShowAssetDropdown(true)}
-                        onBlur={() => setTimeout(() => setShowAssetDropdown(false), 200)}
-                      />
-                      
-                      {/* Dropdown Results */}
-                      {showAssetDropdown && (
-                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                          {getIssueAssetData()
-                            .filter(item => item.Available_Copies > 0 || selectedAssetType === 'study-rooms')
-                            .filter(item => {
-                              if (!assetSearch) return true
-                              const searchLower = assetSearch.toLowerCase()
-                              const title = item.Title || item.Room_Number || item.Model_Num || ''
-                              const author = item.Author || item.Artist || ''
-                              return (
-                                title.toString().toLowerCase().includes(searchLower) ||
-                                author.toString().toLowerCase().includes(searchLower)
-                              )
-                            })
-                            .map((item) => (
-                              <div
-                                key={item.Asset_ID}
-                                className="px-4 py-3 hover:bg-green-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                                onMouseDown={() => {
-                                  setIssueForm({ 
-                                    ...issueForm, 
-                                    assetId: item.Asset_ID,
-                                    assetTitle: item.Title || item.Room_Number || `Tech-${item.Model_Num}`,
-                                    assetType: selectedAssetType
-                                  })
-                                  setAssetSearch(item.Title || item.Room_Number || `Tech-${item.Model_Num}`)
-                                  setShowAssetDropdown(false)
-                                }}
-                              >
-                                <div className="font-medium text-gray-900">
-                                  {item.Title || item.Room_Number || `Tech-${item.Model_Num}`}
-                                </div>
-                                {item.Author && <div className="text-sm text-gray-600">by {item.Author}</div>}
-                                {item.Artist && <div className="text-sm text-gray-600">by {item.Artist}</div>}
-                                <div className="text-xs text-gray-500">
-                                  Available: <span className="text-green-600 font-semibold">{item.Available_Copies || (item.Availability === 'Available' ? '1' : '0')}</span>
-                                </div>
-                              </div>
-                            ))}
-                          {getIssueAssetData()
-                            .filter(item => item.Available_Copies > 0 || selectedAssetType === 'study-rooms')
-                            .filter(item => {
-                              if (!assetSearch) return true
-                              const searchLower = assetSearch.toLowerCase()
-                              const title = item.Title || item.Room_Number || item.Model_Num || ''
-                              const author = item.Author || item.Artist || ''
-                              return (
-                                title.toString().toLowerCase().includes(searchLower) ||
-                                author.toString().toLowerCase().includes(searchLower)
-                              )
-                            }).length === 0 && (
-                            <div className="px-4 py-3 text-gray-500 text-center">
-                              No available items found
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    
-                    {issueForm.assetId && (
-                      <div className="mt-3 p-3 bg-white rounded border border-gray-200 text-sm">
-                        <div className="font-semibold text-gray-800">
-                          Selected: {issueForm.assetTitle}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Date Selection */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      3. Issue Date
-                    </label>
-                    <input
-                      type="date"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      value={issueForm.issueDate || new Date().toISOString().split('T')[0]}
-                      onChange={(e) => setIssueForm({ ...issueForm, issueDate: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      4. Due Date (14 days default)
-                    </label>
-                    <input
-                      type="date"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      value={issueForm.dueDate || (() => {
-                        const date = new Date()
-                        date.setDate(date.getDate() + 14)
-                        return date.toISOString().split('T')[0]
-                      })()}
-                      onChange={(e) => setIssueForm({ ...issueForm, dueDate: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex justify-end gap-3">
-                  <button
-                    className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-                    onClick={() => {
-                      setIssueForm({ memberId: '', memberName: '', assetId: '', assetTitle: '', assetType: 'books', issueDate: '', dueDate: '' })
-                      setStudentSearch('')
-                      setAssetSearch('')
-                    }}
-                  >
-                    Clear Form
-                  </button>
-                  <button
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={!issueForm.memberId || !issueForm.assetId || loading}
-                    onClick={handleIssueBook}
-                  >
-                    {loading ? 'Processing...' : 'Confirm Issue'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* RETURN ASSET TAB */}
-            {activeSubTab === 'return' && (
-              <div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Return Asset</h3>
-                
-                {/* Search Bar */}
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Search by Member Name or Book Title
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Type to search active borrows..."
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-
-                {/* Active Borrows Table */}
-                <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Borrow ID</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Member</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asset</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issue Date</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Due Date</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fine</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {borrowRecords
-                          .filter(r => !r.Return_Date)
-                          .filter(r => {
-                            if (!searchTerm) return true;
-                            const search = searchTerm.toLowerCase();
-                            const memberName = `${r.First_Name} ${r.Last_Name}`.toLowerCase();
-                            const title = (r.Title || '').toLowerCase();
-                            return memberName.includes(search) || title.includes(search);
-                          })
-                          .length === 0 ? (
-                          <tr>
-                            <td colSpan="9" className="px-6 py-8 text-center text-gray-500">
-                              {searchTerm ? 'No matching active borrows found' : 'No active borrows at the moment'}
-                            </td>
-                          </tr>
-                        ) : (
-                          borrowRecords
-                            .filter(r => !r.Return_Date)
-                            .filter(r => {
-                              if (!searchTerm) return true;
-                              const search = searchTerm.toLowerCase();
-                              const memberName = `${r.First_Name} ${r.Last_Name}`.toLowerCase();
-                              const title = (r.Title || '').toLowerCase();
-                              return memberName.includes(search) || title.includes(search);
-                            })
-                            .map((record, index) => {
-                            const dueDate = new Date(record.Due_Date)
-                            const today = new Date()
-                            const daysLeft = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
-                            const isOverdue = daysLeft < 0
-                            const fineAmount = isOverdue ? Math.abs(daysLeft) * 1.0 : 0
-
-                            return (
-                              <tr key={record.Borrow_ID} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100 transition-colors`}>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                  #{record.Borrow_ID}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                  {record.First_Name} {record.Last_Name}
-                                </td>
-                                <td className="px-6 py-4 text-sm text-gray-900">{record.Title}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-xs">
-                                  <span className="px-2 py-1 inline-flex leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                                    {record.Asset_Type || 'Book'}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                  {new Date(record.Borrow_Date).toLocaleDateString()}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                  {dueDate.toLocaleDateString()}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                  {isOverdue ? (
-                                    <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                                      {Math.abs(daysLeft)} days overdue
-                                    </span>
-                                  ) : daysLeft <= 3 ? (
-                                    <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                                      Due in {daysLeft} days
-                                    </span>
-                                  ) : (
-                                    <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                                      Active
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                  {isOverdue ? (
-                                    <span className="text-red-600 font-bold">${fineAmount.toFixed(2)}</span>
-                                  ) : (
-                                    <span className="text-gray-400">$0.00</span>
-                                  )}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                  <button
-                                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs font-medium disabled:opacity-50"
-                                    disabled={loading}
-                                    onClick={() => handleReturnBook(record.Borrow_ID, fineAmount)}
-                                  >
-                                    Mark Returned
-                                  </button>
-                                </td>
-                              </tr>
-                            )
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* RENEW ASSET TAB */}
-            {activeSubTab === 'renew' && (
-              <div>
-                <h3 className="text-lg font-semibold text-gray-800 mb-4">Renew Asset (Extend Due Date)</h3>
-                
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                  <p className="text-sm text-blue-800">
-                    <strong>Renewal Policy:</strong> Assets can be renewed once if no other member has reserved them. 
-                    The new due date will be 14 days from today.
-                  </p>
-                </div>
-
-                {/* Renewable Assets Table */}
-                <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Borrow ID</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Member</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asset</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Due Date</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">New Due Date</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {borrowRecords.filter(r => !r.Return_Date && new Date(r.Due_Date) >= new Date()).length === 0 ? (
-                          <tr>
-                            <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
-                              No assets available for renewal
-                            </td>
-                          </tr>
-                        ) : (
-                          borrowRecords.filter(r => !r.Return_Date && new Date(r.Due_Date) >= new Date()).map((record, index) => {
-                            const newDueDate = new Date()
-                            newDueDate.setDate(newDueDate.getDate() + 14)
-
-                            return (
-                              <tr key={record.Borrow_ID} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100 transition-colors`}>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                  #{record.Borrow_ID}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                  {record.First_Name} {record.Last_Name}
-                                </td>
-                                <td className="px-6 py-4 text-sm text-gray-900">{record.Title}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-xs">
-                                  <span className="px-2 py-1 inline-flex leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                                    {record.Asset_Type || 'Book'}
-                                  </span>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                  {new Date(record.Due_Date).toLocaleDateString()}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-semibold">
-                                  {newDueDate.toLocaleDateString()}
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                  <button
-                                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs font-medium disabled:opacity-50"
-                                    disabled={loading}
-                                    onClick={() => handleRenewBook(record.Borrow_ID, newDueDate.toISOString().split('T')[0])}
-                                  >
-                                    🔄 Renew
-                                  </button>
-                                </td>
-                              </tr>
-                            )
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-blue-600 font-medium">Total Active Borrows</p>
-                <p className="text-3xl font-bold text-blue-800 mt-1">
-                  {borrowRecords.filter(r => !r.Return_Date).length}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-red-600 font-medium">Overdue Books</p>
-                <p className="text-3xl font-bold text-red-800 mt-1">
-                  {overdueItems.length}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-green-600 font-medium">Returned Today</p>
-                <p className="text-3xl font-bold text-green-800 mt-1">
-                  {borrowRecords.filter(r => r.Return_Date && new Date(r.Return_Date).toDateString() === new Date().toDateString()).length}
-                </p>
-              </div>
-              <span className="text-4xl">📦</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
   }
-  const renderFineManagement = () => (
+
+  const renderFineManagement = () => {
+    const filteredFines = fines.filter((member) => {
+      const balance = Number.parseFloat(member.balance || 0)
+      const priority = getFinePriority(balance).label.toLowerCase()
+      const matchesPriority = finePriorityFilter === 'all' || priority === finePriorityFilter
+      const search = fineSearch.trim().toLowerCase()
+      const matchesSearch = !search ||
+        member.name.toLowerCase().includes(search) ||
+        (member.email || '').toLowerCase().includes(search) ||
+        (member.studentId || '').toLowerCase().includes(search)
+      return matchesPriority && matchesSearch
+    })
+
+    return (
     <div className="p-6">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -3520,7 +3704,7 @@ function Librarian() {
         <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
 
         {/* Summary Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6 mb-8">
           <StatCard
             title="Total Unpaid Fines"
             value={`$${fines.reduce((sum, f) => sum + parseFloat(f.balance || 0), 0).toFixed(2)}`}
@@ -3548,6 +3732,48 @@ function Librarian() {
             gradient="bg-gradient-to-br from-purple-500 to-indigo-600"
             delay={0.2}
           />
+          <div className="bg-white rounded-xl shadow-md p-6 border border-gray-100">
+            <p className="text-sm font-medium text-gray-500 mb-2">Resolved This Week</p>
+            <h3 className="text-3xl font-bold text-gray-900 mb-3">
+              {recentTransactions.filter(t => t.Return_Date !== null).length}
+            </h3>
+            <p className="text-xs uppercase tracking-wide text-green-600 font-semibold">Returns processed</p>
+          </div>
+        </div>
+
+        {/* Controls */}
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm px-4 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-6">
+          <div className="flex items-center gap-3 flex-1">
+            <div className="flex items-center gap-2 w-full lg:w-72">
+              <Search className="w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={fineSearch}
+                onChange={(e) => setFineSearch(e.target.value)}
+                placeholder="Search by name, email, or ID..."
+                className="w-full border-0 focus:ring-0 text-sm text-gray-700 placeholder:text-gray-400"
+              />
+            </div>
+            <div className="hidden lg:block w-px h-8 bg-gray-200" />
+            <div className="flex items-center flex-wrap gap-2">
+              {['all', 'high', 'moderate', 'low'].map((filter) => {
+                const label = filter === 'all' ? 'All' : filter.charAt(0).toUpperCase() + filter.slice(1)
+                return (
+                  <button
+                    key={filter}
+                    onClick={() => setFinePriorityFilter(filter)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                      finePriorityFilter === filter
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow'
+                        : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Fines Table */}
@@ -3571,33 +3797,34 @@ function Librarian() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {loading ? (
-                  <tr>
-                    <td colSpan="9" className="px-6 py-12 text-center">
-                      <div className="flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                        <span className="ml-3 text-gray-600">Loading fines...</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : fines.length === 0 ? (
-                  <tr>
-                    <td colSpan="9" className="px-6 py-12 text-center">
-                      <DollarSign className="mx-auto h-12 w-12 text-green-400 mb-3" />
-                      <p className="text-green-600 font-medium text-lg">No outstanding fines - All members are current!</p>
-                    </td>
-                  </tr>
-                ) : (
-                  fines.map((member, index) => {
-                    const balance = parseFloat(member.balance || 0);
-                    return (
-                      <motion.tr
-                        key={member.id}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: index * 0.05 }}
-                        className="hover:bg-gray-50 transition-colors"
-                      >
+        {loading ? (
+          <tr>
+            <td colSpan="9" className="px-6 py-12 text-center">
+              <div className="flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                <span className="ml-3 text-gray-600">Loading fines...</span>
+              </div>
+            </td>
+          </tr>
+        ) : filteredFines.length === 0 ? (
+          <tr>
+            <td colSpan="9" className="px-6 py-12 text-center">
+              <DollarSign className="mx-auto h-12 w-12 text-green-400 mb-3" />
+              <p className="text-green-600 font-medium text-lg">No outstanding fines - All members are current!</p>
+            </td>
+          </tr>
+        ) : (
+          filteredFines.map((member, index) => {
+            const balance = parseFloat(member.balance || 0);
+            const priority = getFinePriority(balance)
+            return (
+              <motion.tr
+                key={member.id}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: index * 0.05 }}
+                className="hover:bg-gray-50 transition-colors"
+              >
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">#{index + 1}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
                           {member.studentId}
@@ -3623,27 +3850,23 @@ function Librarian() {
                             {member.borrowedBooks} items
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            balance > 50 ? 'bg-red-100 text-red-800' : 
-                            balance > 20 ? 'bg-orange-100 text-orange-800' : 
-                            'bg-yellow-100 text-yellow-800'
-                          }`}>
-                            {balance > 50 ? 'High' : balance > 20 ? 'Moderate' : 'Low'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                          <button
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${priority.badge}`}>
+                    {priority.label}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                  <button
                             className="inline-flex items-center px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs font-medium"
-                            onClick={() => alert(`Record payment for ${member.name}`)}
+                            onClick={() => openFineModal(member, 'pay')}
                             title="Record Payment"
                           >
                             <DollarSign className="w-4 h-4 mr-1" />
-                            Pay
+                            Settle
                           </button>
                           <button
                             className="inline-flex items-center px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-xs font-medium"
-                            onClick={() => alert(`View fine details for ${member.name}`)}
+                            onClick={() => openFineModal(member, 'details')}
                             title="View Details"
                           >
                             Details
@@ -3667,15 +3890,15 @@ function Librarian() {
           <ul className="space-y-2 text-gray-700">
             <li className="flex items-start gap-2">
               <span className="text-blue-600 font-bold">•</span>
-              <span>Standard fine rate: <strong>$0.50 per day</strong> per overdue item</span>
+              <span>Standard fine rate follows the server configuration (default <strong>$1.00 per day</strong> per overdue item).</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 font-bold">•</span>
-              <span>Grace period: <strong>No fines</strong> for first 2 days after due date</span>
+              <span>Grace period: <strong>No fines</strong> until the due date has passed.</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 font-bold">•</span>
-              <span>Maximum fine per item: <strong>$50.00</strong></span>
+              <span>For long overdue items, fines continue to accrue until the asset is returned or the maximum limit defined by policy.</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="text-blue-600 font-bold">•</span>
@@ -3719,7 +3942,6 @@ function Librarian() {
           <div className="dashboard-content">
             {activeTab === 'overview' && renderDashboardOverview()}
             {activeTab === 'books' && renderAssets()}
-            {activeTab === 'issue-return' && renderIssueReturn()}
             {activeTab === 'members' && renderMembers()}
             {activeTab === 'fines' && renderFineManagement()}
             {activeTab === 'records' && renderBorrowRecords()}
@@ -3938,3 +4160,8 @@ function Librarian() {
 }
 
 export default Librarian
+  const getFinePriority = (balance) => {
+    if (balance > 50) return { label: 'High', badge: 'bg-red-100 text-red-800', pill: 'border-red-200 text-red-700' }
+    if (balance > 20) return { label: 'Moderate', badge: 'bg-orange-100 text-orange-800', pill: 'border-orange-200 text-orange-700' }
+    return { label: 'Low', badge: 'bg-yellow-100 text-yellow-800', pill: 'border-yellow-200 text-yellow-700' }
+  }
