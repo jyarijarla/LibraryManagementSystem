@@ -7,7 +7,58 @@ import { useEffect, useState } from 'react';
 const API_URL = window.location.hostname === 'localhost' 
 ? 'http://localhost:3000/api'
 : 'https://librarymanagementsystem-z2yw.onrender.com/api'
-
+const assetTypeMap = {
+        'books': {
+            table: 'book_inventory',
+            attributes: [
+                { key: 'ISBN', label: 'ISBN' },
+                { key: 'Title', label: 'Title' },
+                { key: 'Author', label: 'Author' },
+                { key: 'Page_Count', label: 'Pages' },
+                { key: 'Copies', label: 'Total Copies' },
+                { key: 'Available_Copies', label: 'Available' }
+            ]
+        },
+        'cds': {
+            table: 'cd_inventory',
+            attributes: [
+                { key: 'Title', label: 'Title' },
+                { key: 'Artist', label: 'Artist' },
+                { key: 'Total_Tracks', label: 'Tracks' },
+                { key: 'Total_Duration_In_Minutes', label: 'Duration (min)' },
+                { key: 'Copies', label: 'Total Copies' },
+                { key: 'Available_Copies', label: 'Available' }
+            ]
+        }, 
+        'audiobooks': {
+            table: 'audiobook_inventory',
+            attributes: [
+                { key: 'ISBN', label: 'ISBN' },
+                { key: 'Title', label: 'Title' },
+                { key: 'Author', label: 'Author' },
+                { key: 'length', label: 'Length (min)' },
+                { key: 'Copies', label: 'Total Copies' },
+                { key: 'Available_Copies', label: 'Available' }
+            ]
+        },
+        'movies': {
+            table: 'movie_inventory',
+            attributes: [
+                { key: 'Title', label: 'Title' },
+                { key: 'Release_Year', label: 'Year' },
+                { key: 'Age_Rating', label: 'Rating' },
+                { key: 'Available_Copies', label: 'Available' }
+            ]
+        },
+        'technology': {
+            table: 'technology_inventory',
+            attributes: []
+        },
+        'study-rooms': {
+            table: 'study_room',
+            attributes: []
+        }
+      };
 const fetchAsset = async(assetID) => {
     console.log(`Fetching asset ${assetID}`)
     try {
