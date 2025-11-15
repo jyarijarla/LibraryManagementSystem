@@ -3,38 +3,19 @@ const db = require('../db');
 exports.borrowAsset = async (req, res) => {
   const connection = await db.promise().getConnection();
     try {
-      const { userID, assetID, assetType} = req.body
-      console.log("Recieved data:", {userID, assetID, assetType})
-      if(!userID || !assetID || !assetType) {
+      const { userID, assetID} = req.body
+      console.log("Recieved data:", {userID, assetID})
+      if(!userID || !assetID) {
         console.log("Missing required Fields")
         throw Object.assign(new Error('Missing required fields'), {status: 400})
       }
-      const assetTypeMap = {
-        'books': 'book_inventory',
-        'cds': 'cd_inventory', 
-        'audiobooks': 'audiobook_inventory',
-        'movies': 'movie_inventory',
-        'technology': 'technology_inventory',
-        'study-rooms': 'study_room'
-      };
-      const selView = assetTypeMap[assetType];
-      if(!selView) {
-        console.log("Invalid asset type:", assetType);
-        throw Object.assign(new Error("Invalid asset type"), {status: 400})
-      }
       await connection.beginTransaction();
-      if(selView != "study_room") {//skips for study room since study room has no copies
-        const [getAvail] = await connection.query(
-          `SELECT Available_Copies FROM ${selView} WHERE Asset_ID = ?`, [assetID]
-        );
-        if(!getAvail[0]) {
-          console.log("Asset with ID:", assetID, "not found")
-          throw Object.assign(new Error("Asset not found"), {status: 404})
-        }
-        if(getAvail[0].Available_Copies < 1){
-          console.log("Not enough copies")
-          throw Object.assign(new Error("Not enough copies"), {status: 409})
-        }
+      //check for existing asset
+      const [assetCheck] = await connection.query(
+        `SELECT Asset_ID FROM asset WHERE Asset_ID = ?`, [assetID]
+      )
+      if(!assetCheck[0]) {
+        throw Object.assign(new Error("Asset not found"), {status: 404});
       }
       //select rentable to borrow
       let selRentable;
