@@ -122,7 +122,7 @@ const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOp
         </div>
 
         {/* Navigation */}
-        <nav className="mt-6 space-y-1">
+        <nav className="space-y-1">
           {navItems.map((item) => (
             <NavItem
               key={item.page}
@@ -1831,11 +1831,11 @@ function Librarian() {
                         #{index + 1}
                       </span>
                       <span className={`text-sm font-medium ${
-                        (item.Available_Copies > 0 || item.Availability === 'Available') 
+                        (item.Available_Copies > 0 || item.Availability === 1) 
                           ? 'text-green-600 bg-green-50' 
                           : 'text-red-600 bg-red-50'
                       } px-2 py-1 rounded-full text-xs`}>
-                        {(item.Available_Copies > 0 || item.Availability === 'Available') ? '✓ Available' : '✗ Borrowed'}
+                        {(item.Available_Copies > 0 || item.Availability === 1) ? '✓ Available' : '✗ Borrowed'}
                       </span>
                     </div>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -3808,7 +3808,7 @@ const renderCalendar = () => {
                                 {item.Author && <div className="text-sm text-gray-600">by {item.Author}</div>}
                                 {item.Artist && <div className="text-sm text-gray-600">by {item.Artist}</div>}
                                 <div className="text-xs text-gray-500">
-                                  Available: <span className="text-green-600 font-semibold">{item.Available_Copies || (item.Availability === 'Available' ? '1' : '0')}</span>
+                                  Available: <span className="text-green-600 font-semibold">{item.Available_Copies || item.Availability}</span>
                                 </div>
                               </div>
                             ))}
