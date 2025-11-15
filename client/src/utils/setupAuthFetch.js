@@ -1,43 +1,42 @@
 export function setupAuthFetchInterceptor() {
-  if (window.__AUTH_FETCH_PATCHED__) {
-    return;
-  }
+  if (window.__AUTH_FETCH_PATCHED__) return;
 
   const nativeFetch = window.fetch.bind(window);
 
   window.fetch = async (input, init = {}) => {
     const token = localStorage.getItem('token');
-    let requestUrl = '';
+    const url = typeof input === 'string' ? input : input?.url;
 
-    if (typeof input === 'string') {
-      requestUrl = input;
-    } else if (input && typeof input.url === 'string') {
-      requestUrl = input.url;
-    }
-
+    // Only attach token to protected routes
     const shouldAttachToken =
-      Boolean(token) &&
-      requestUrl &&
-      !requestUrl.includes('/api/login') &&
-      !requestUrl.includes('/api/signup');
+      token &&
+      url &&
+      !url.includes('/api/login') &&
+      !url.includes('/api/signup');
 
-    let nextInit = init;
+    // Clone init safely to avoid losing method/body
+    const finalInit = {
+      ...init,
+      headers: new Headers(init.headers || {})
+    };
+
     if (shouldAttachToken) {
-      const headers = new Headers(init.headers || {});
-      headers.set('Authorization', `Bearer ${token}`);
-      nextInit = { ...init, headers };
+      finalInit.headers.set('Authorization', `Bearer ${token}`);
     }
 
-    const response = await nativeFetch(input, nextInit);
+    let response;
+    try {
+      response = await nativeFetch(input, finalInit);
+    } catch (err) {
+      console.error('Network or fetch interceptor error:', err);
+      throw err;
+    }
 
-    if (response.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      localStorage.removeItem('userId');
-      localStorage.removeItem('role');
-      if (!requestUrl.includes('/api/login')) {
-        window.location.href = '/login';
-      }
+    // Handle expired token, but prevent infinite redirects
+    if (response.status === 401 && !url.includes('/api/login')) {
+      console.warn('401 Unauthorized → redirecting to login');
+      localStorage.clear();
+      window.location.assign('/login');
     }
 
     return response;

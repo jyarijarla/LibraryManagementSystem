@@ -1,4 +1,4 @@
-require("dotenv").config();//imports dotenv that loads environmental variables from /server.env
+  require("dotenv").config();//imports dotenv that loads environmental variables from /server.env
 const http = require("node:http");
 
 // Import controllers
@@ -7,7 +7,6 @@ const assetController = require('./controllers/assetController');
 const studentController = require('./controllers/studentController');
 const borrowController = require('./controllers/borrowController');
 const reportController = require('./controllers/reportController');
-const fineController = require('./controllers/fineController');
 const uploadController = require('./controllers/uploadController');
 const notificationController = require('./controllers/notificationController');
 const memberController = require('./controllers/memberController');
@@ -128,10 +127,6 @@ const routes = [
   { method: 'PUT', path: '/api/borrow-records/:id/renew', handler: borrowController.renewBook, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/dashboard/stats', handler: borrowController.getDashboardStats, auth: true, roles: ROLE_GROUPS.STAFF },
 
-  // Fine routes
-  { method: 'GET', path: '/api/fines', handler: fineController.getOutstandingFines, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'GET', path: '/api/fines/:id', handler: fineController.getMemberFineDetails, auth: true, roles: ROLE_GROUPS.STAFF },
-  
   // Report routes
   { method: 'GET', path: '/api/reports/most-borrowed', handler: reportController.getMostBorrowedAssets, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/most-borrowed-assets', handler: reportController.getMostBorrowedAssets, auth: true, roles: ROLE_GROUPS.STAFF },

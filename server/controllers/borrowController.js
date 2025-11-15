@@ -22,10 +22,21 @@ exports.issueBook = (req, res) => {
   };
   
   const viewName = assetTypeMap[assetType] || 'book_inventory';
+
+  const availabilityQuery = assetType === 'study-rooms'
+    ? `
+        SELECT 
+          CASE WHEN sr.Availability = 1 THEN 1 ELSE 0 END AS Available_Copies,
+          sr.Asset_ID,
+          1 AS Copies
+        FROM study_room sr
+        WHERE sr.Asset_ID = ?
+      `
+    : `SELECT Available_Copies, Asset_ID, Copies FROM ${viewName} WHERE Asset_ID = ?`;
   
-  // Check if asset is available using the appropriate view
+  // Check if asset is available using the appropriate data source
   db.query(
-    `SELECT Available_Copies, Asset_ID, Copies FROM ${viewName} WHERE Asset_ID = ?`,
+    availabilityQuery,
     [assetId],
     (err, assetResults) => {
       if (err) {
@@ -71,15 +82,28 @@ exports.issueBook = (req, res) => {
                   && res.end(JSON.stringify({ message: 'Failed to issue asset', error: err.message }));
               }
               
-              // Note: Available_Copies is a calculated field in the inventory views
-              // It's automatically updated based on borrow records (Return_Date IS NULL)
-              // No manual update needed
-              
-              res.writeHead(201, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ 
-                message: 'Asset issued successfully',
-                borrowId: insertResult.insertId
-              }));
+              const sendResponse = () => {
+                res.writeHead(201, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ 
+                  message: 'Asset issued successfully',
+                  borrowId: insertResult.insertId
+                }));
+              };
+
+              if (assetType === 'study-rooms') {
+                db.query(
+                  'UPDATE study_room SET Availability = 0 WHERE Asset_ID = ?',
+                  [assetResults[0].Asset_ID],
+                  (updateErr) => {
+                    if (updateErr) {
+                      console.error('Error updating study room availability:', updateErr);
+                    }
+                    sendResponse();
+                  }
+                );
+              } else {
+                sendResponse();
+              }
             }
           );
         }
@@ -166,14 +190,43 @@ exports.returnBook = (req, res) => {
         && res.end(JSON.stringify({ message: 'Borrow record not found or already returned' }));
     }
     
-    // Note: Available_Copies in book_inventory view is automatically updated
-    // when Return_Date is set, so no manual update needed
-    
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
-      message: 'Book returned successfully',
-      fine: fineAmount || 0
-    }));
+    const sendResponse = () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ 
+        message: 'Book returned successfully',
+        fine: fineAmount || 0
+      }));
+    };
+
+    const studyRoomQuery = `
+      SELECT sr.Asset_ID
+      FROM borrow b
+      JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
+      JOIN study_room sr ON r.Asset_ID = sr.Asset_ID
+      WHERE b.Borrow_ID = ?
+    `;
+
+    db.query(studyRoomQuery, [id], (roomErr, roomResults) => {
+      if (roomErr) {
+        console.error('Error checking study room status:', roomErr);
+        return sendResponse();
+      }
+
+      if (roomResults.length === 0) {
+        return sendResponse();
+      }
+
+      db.query(
+        'UPDATE study_room SET Availability = 1 WHERE Asset_ID = ?',
+        [roomResults[0].Asset_ID],
+        (updateErr) => {
+          if (updateErr) {
+            console.error('Error resetting study room availability:', updateErr);
+          }
+          sendResponse();
+        }
+      );
+    });
   });
 };
 

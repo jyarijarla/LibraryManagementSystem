@@ -58,7 +58,6 @@ function LibrarianReport() {
     from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Last 7 days
     to: new Date().toISOString().split('T')[0],
     actions: [], // Changed to array for multiple selections
-    fineStatuses: [], // Changed to array for multiple selections
     memberNames: [], // Changed to array for multiple selections
     assetTitles: [], // Changed to array for multiple selections
     assetTypes: [] // Changed to array for multiple selections
@@ -111,7 +110,6 @@ function LibrarianReport() {
         from: appliedFilters.from,
         to: appliedFilters.to,
         actions: appliedFilters.actions.join(','),
-        fineStatuses: appliedFilters.fineStatuses.join(','),
         memberNames: appliedFilters.memberNames.join(','),
         assetTitles: appliedFilters.assetTitles.join(','),
         assetTypes: appliedFilters.assetTypes.join(',')
@@ -182,7 +180,6 @@ function LibrarianReport() {
       from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       to: new Date().toISOString().split('T')[0],
       actions: [],
-      fineStatuses: [],
       memberNames: [],
       assetTitles: [],
       assetTypes: []
@@ -192,13 +189,12 @@ function LibrarianReport() {
   }
 
   const exportToCSV = () => {
-    const headers = ['Date', 'Member', 'Book', 'Action', 'Fine', 'Status']
+    const headers = ['Date', 'Member', 'Book', 'Action', 'Status']
     const rows = transactions.map(t => [
       t.Borrow_Date?.split('T')[0] || '',
       t.member_name,
       t.book_title,
       t.action,
-      `$${parseFloat(t.fine || 0).toFixed(2)}`,
       t.status
     ])
     
@@ -217,7 +213,7 @@ function LibrarianReport() {
 
   const getSummaryText = () => {
     const days = Math.ceil((new Date(appliedFilters.to) - new Date(appliedFilters.from)) / (1000 * 60 * 60 * 24))
-    return `Between ${new Date(appliedFilters.from).toLocaleDateString()} and ${new Date(appliedFilters.to).toLocaleDateString()} (${days} days), you issued ${summary.books_issued || 0} books, processed ${summary.renewals || 0} renewals, and collected $${parseFloat(summary.fines_collected || 0).toFixed(2)} in fines.`
+    return `Between ${new Date(appliedFilters.from).toLocaleDateString()} and ${new Date(appliedFilters.to).toLocaleDateString()} (${days} days), you issued ${summary.books_issued || 0} books and processed ${summary.renewals || 0} renewals.`
   }
 
   const summaryCards = [
@@ -244,14 +240,6 @@ function LibrarianReport() {
       color: 'from-purple-500 to-purple-600',
       bgColor: 'bg-purple-50',
       textColor: 'text-purple-600'
-    },
-    {
-      title: 'Fines Collected',
-      value: `$${parseFloat(summary.fines_collected || 0).toFixed(2)}`,
-      icon: DollarSign,
-      color: 'from-yellow-500 to-amber-600',
-      bgColor: 'bg-yellow-50',
-      textColor: 'text-yellow-600'
     },
     {
       title: 'Overdue Items',
@@ -364,7 +352,7 @@ function LibrarianReport() {
             {showFilters ? 'Hide Filters' : 'Show Filters'}
           </button>
           
-          {(appliedFilters.actions.length > 0 || appliedFilters.fineStatuses.length > 0 || appliedFilters.memberNames.length > 0 || appliedFilters.assetTitles.length > 0 || appliedFilters.assetTypes.length > 0) && (
+          {(appliedFilters.actions.length > 0 || appliedFilters.memberNames.length > 0 || appliedFilters.assetTitles.length > 0 || appliedFilters.assetTypes.length > 0) && (
             <button
               onClick={handleClearFilters}
               className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
@@ -438,37 +426,6 @@ function LibrarianReport() {
                         className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500"
                       />
                       <span className="text-sm">{action.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Fine Status - Multi-select */}
-            <div className="relative">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <DollarSign className="w-4 h-4 inline mr-1" />
-                Fine Status ({filters.fineStatuses.length} selected)
-              </label>
-              <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white min-h-[42px]">
-                <div className="space-y-2">
-                  {[
-                    { value: 'paid', label: 'Paid' },
-                    { value: 'unpaid', label: 'Unpaid' }
-                  ].map(status => (
-                    <label key={status.value} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
-                      <input
-                        type="checkbox"
-                        checked={filters.fineStatuses.includes(status.value)}
-                        onChange={(e) => {
-                          const newStatuses = e.target.checked
-                            ? [...filters.fineStatuses, status.value]
-                            : filters.fineStatuses.filter(s => s !== status.value)
-                          setFilters({ ...filters, fineStatuses: newStatuses })
-                        }}
-                        className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500"
-                      />
-                      <span className="text-sm">{status.label}</span>
                     </label>
                   ))}
                 </div>
@@ -778,14 +735,13 @@ function LibrarianReport() {
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Member</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Asset</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Fine</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {transactions.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
                     <Search className="w-12 h-12 mx-auto mb-3 text-gray-400" />
                     <p>No transactions found for the selected period</p>
                   </td>
@@ -828,11 +784,6 @@ function LibrarianReport() {
                         'bg-purple-100 text-purple-700'
                       }`}>
                         {transaction.action}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`font-medium ${parseFloat(transaction.fine) > 0 ? 'text-red-600' : 'text-gray-600'}`}>
-                        ${parseFloat(transaction.fine || 0).toFixed(2)}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">

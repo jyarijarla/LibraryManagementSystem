@@ -25,10 +25,9 @@ const Home = () => {
         
         </div>
 
-        <f1 className ="credits-footer">
-        Designed by Team 3
-
-        </f1>
+        <footer className ="credits-footer">
+          Designed by Team 3
+        </footer>
 
             
       </div>
