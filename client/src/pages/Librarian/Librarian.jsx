@@ -304,6 +304,14 @@ function Librarian() {
   const [selectedMemberFines, setSelectedMemberFines] = useState(null)
   const [fineSearch, setFineSearch] = useState('')
   const [finePriorityFilter, setFinePriorityFilter] = useState('all')
+  const [fineStats, setFineStats] = useState(null)
+  const [fineFilter, setFineFilter] = useState('all')
+  const [fineSeverityFilter, setFineSeverityFilter] = useState('all')
+  const [selectedFine, setSelectedFine] = useState(null)
+  const [paymentModal, setPaymentModal] = useState(false)
+  const [paymentAmount, setPaymentAmount] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('Cash')
+  const [fineLoading, setFineLoading] = useState(false)
   
   // Form States
   const [assetForm, setAssetForm] = useState({})
@@ -358,6 +366,15 @@ function Librarian() {
     fetchData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, activeAssetTab])
+
+  // Fetch fines when on fines tab or when filters change
+  useEffect(() => {
+    if (activeTab === 'fines') {
+      fetchFinesData()
+      fetchFineStatsData()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, fineFilter, fineSeverityFilter])
 
   useEffect(() => {
     setAssetAvailabilityFilter('all')
@@ -480,6 +497,47 @@ function Librarian() {
         await fetchMemberProfile(memberProfile.member.User_ID, memberProfile.member)
       }
       closeFineModal()
+    }
+  }
+
+  // Fetch fines data for fines management tab
+  const fetchFinesData = async () => {
+    setFineLoading(true)
+    try {
+      let url = `${API_URL}/fines?`
+      if (fineFilter !== 'all') url += `status=${fineFilter}&`
+      if (fineSeverityFilter !== 'all') url += `severity=${fineSeverityFilter}&`
+      
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setFines(data)
+      }
+    } catch (error) {
+      console.error('Error fetching fines:', error)
+      setError('Failed to load fines')
+    } finally {
+      setFineLoading(false)
+    }
+  }
+
+  const fetchFineStatsData = async () => {
+    try {
+      const response = await fetch(`${API_URL}/fines/stats`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setFineStats(data)
+      }
+    } catch (error) {
+      console.error('Error fetching fine stats:', error)
     }
   }
 
@@ -3542,6 +3600,441 @@ function Librarian() {
       )}
     </>
   )
+
+  // ===== FINE MANAGEMENT SECTION =====
+  const renderFineManagement = () => {
+    const handlePayFine = async () => {
+      if (!paymentAmount || parseFloat(paymentAmount) <= 0) {
+        setError('Please enter a valid payment amount')
+        return
+      }
+
+      try {
+        const response = await fetch(`${API_URL}/fines/${selectedFine.Borrow_ID}/pay`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            amount: parseFloat(paymentAmount),
+            paymentMethod: paymentMethod,
+            processedBy: user.userId
+          })
+        })
+
+        if (response.ok) {
+          setSuccessMessage('Payment processed successfully')
+          setPaymentModal(false)
+          setPaymentAmount('')
+          setSelectedFine(null)
+          fetchFinesData()
+          fetchFineStatsData()
+        } else {
+          const errorData = await response.json()
+          setError(errorData.message || 'Failed to process payment')
+        }
+      } catch (error) {
+        console.error('Error processing payment:', error)
+        setError('Failed to process payment')
+      }
+    }
+
+    const handleWaiveFine = async (borrowId) => {
+      if (!window.confirm('Are you sure you want to waive this fine?')) return
+
+      try {
+        const response = await fetch(`${API_URL}/fines/${borrowId}/waive`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            reason: 'Waived by librarian',
+            processedBy: user.userId
+          })
+        })
+
+        if (response.ok) {
+          setSuccessMessage('Fine waived successfully')
+          fetchFinesData()
+          fetchFineStatsData()
+        } else {
+          setError('Failed to waive fine')
+        }
+      } catch (error) {
+        console.error('Error waiving fine:', error)
+        setError('Failed to waive fine')
+      }
+    }
+
+    const filteredFines = fines.filter(fine => {
+      const searchLower = fineSearch.toLowerCase()
+      return (
+        fine.Borrower_Name?.toLowerCase().includes(searchLower) ||
+        fine.Item_Title?.toLowerCase().includes(searchLower) ||
+        fine.User_Email?.toLowerCase().includes(searchLower)
+      )
+    })
+
+    const getSeverityColor = (severity) => {
+      switch (severity) {
+        case 'Critical': return 'bg-red-100 text-red-800 border-red-300'
+        case 'Urgent': return 'bg-orange-100 text-orange-800 border-orange-300'
+        case 'Warning': return 'bg-yellow-100 text-yellow-800 border-yellow-300'
+        case 'Low': return 'bg-blue-100 text-blue-800 border-blue-300'
+        default: return 'bg-gray-100 text-gray-800 border-gray-300'
+      }
+    }
+
+    return (
+      <div className="p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          {/* Header */}
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-3">
+              <DollarSign className="w-8 h-8 text-green-600" />
+              Fines & Payments
+            </h2>
+            <p className="text-gray-600">Manage overdue fines and process payments</p>
+          </div>
+
+          {/* Statistics Cards */}
+          {fineStats && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.1 }}
+                className="bg-gradient-to-br from-red-500 to-red-600 rounded-xl shadow-lg p-6 text-white"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-red-100">Unpaid Fines</p>
+                    <h3 className="text-3xl font-bold mt-2">${fineStats.totalUnpaidFines}</h3>
+                    <p className="text-xs text-red-100 mt-1">{fineStats.totalOverdueItems} overdue items</p>
+                  </div>
+                  <AlertCircle className="w-12 h-12 text-red-200 opacity-80" />
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.2 }}
+                className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-green-100">Collected Fines</p>
+                    <h3 className="text-3xl font-bold mt-2">${fineStats.totalCollectedFines}</h3>
+                    <p className="text-xs text-green-100 mt-1">All time total</p>
+                  </div>
+                  <CheckCircle className="w-12 h-12 text-green-200 opacity-80" />
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.3 }}
+                className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-lg p-6 text-white"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-orange-100">Critical Cases</p>
+                    <h3 className="text-3xl font-bold mt-2">{fineStats.criticalOverdues}</h3>
+                    <p className="text-xs text-orange-100 mt-1">30+ days overdue</p>
+                  </div>
+                  <AlertCircle className="w-12 h-12 text-orange-200 opacity-80" />
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.4 }}
+                className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-blue-100">Avg Days Overdue</p>
+                    <h3 className="text-3xl font-bold mt-2">{fineStats.avgDaysOverdue}</h3>
+                    <p className="text-xs text-blue-100 mt-1">${fineStats.fineRatePerDay}/day rate</p>
+                  </div>
+                  <Clock className="w-12 h-12 text-blue-200 opacity-80" />
+                </div>
+              </motion.div>
+            </div>
+          )}
+
+          {/* Filters and Search */}
+          <div className="bg-white rounded-xl shadow-md p-6 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Status Filter</label>
+                <select
+                  value={fineFilter}
+                  onChange={(e) => setFineFilter(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="all">All Fines</option>
+                  <option value="unpaid">Unpaid Only</option>
+                  <option value="paid">Paid Only</option>
+                  <option value="overdue">Currently Overdue</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Severity Filter</label>
+                <select
+                  value={fineSeverityFilter}
+                  onChange={(e) => setFineSeverityFilter(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="all">All Severities</option>
+                  <option value="critical">Critical (30+ days)</option>
+                  <option value="urgent">Urgent (14-30 days)</option>
+                  <option value="warning">Warning (7-14 days)</option>
+                  <option value="low">Low (1-7 days)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">Search</label>
+                <input
+                  type="text"
+                  placeholder="Search by name, email, or title..."
+                  value={fineSearch}
+                  onChange={(e) => setFineSearch(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Fines Table */}
+          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gradient-to-r from-gray-800 to-gray-700">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Borrower</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Item</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Due Date</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Days Overdue</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Fine Amount</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Severity</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {fineLoading ? (
+                    <tr>
+                      <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
+                        <div className="flex items-center justify-center gap-3">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
+                          <span>Loading fines...</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : filteredFines.length === 0 ? (
+                    <tr>
+                      <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
+                        <div className="flex flex-col items-center gap-3">
+                          <CheckCircle className="w-16 h-16 text-green-500 opacity-50" />
+                          <p className="text-lg font-semibold">No fines found</p>
+                          <p className="text-sm">All borrowers are up to date with their returns!</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredFines.map((fine, index) => (
+                      <motion.tr
+                        key={fine.Borrow_ID}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.05 }}
+                        className="hover:bg-gray-50 transition-colors"
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900">{fine.Borrower_Name}</div>
+                            <div className="text-xs text-gray-500">{fine.User_Email}</div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{fine.Item_Title}</div>
+                            <div className="text-xs text-gray-500">{fine.Asset_Type}</div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {new Date(fine.Due_Date).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm font-bold text-red-600">
+                            {fine.Days_Overdue} days
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="text-sm font-bold text-green-600">
+                            ${parseFloat(fine.Fine_Amount).toFixed(2)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-3 py-1 text-xs font-semibold rounded-full border ${getSeverityColor(fine.Severity)}`}>
+                            {fine.Severity}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                            fine.Fine_Status === 'Paid' ? 'bg-green-100 text-green-800' :
+                            fine.Fine_Status === 'Unpaid' ? 'bg-red-100 text-red-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {fine.Fine_Status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <div className="flex gap-2">
+                            {fine.Fine_Status === 'Unpaid' && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setSelectedFine(fine)
+                                    setPaymentAmount(fine.Fine_Amount)
+                                    setPaymentModal(true)
+                                  }}
+                                  className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                                >
+                                  Pay
+                                </button>
+                                <button
+                                  onClick={() => handleWaiveFine(fine.Borrow_ID)}
+                                  className="px-3 py-1 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors font-medium"
+                                >
+                                  Waive
+                                </button>
+                              </>
+                            )}
+                            {fine.Fine_Status === 'Paid' && (
+                              <span className="text-green-600 font-semibold">✓ Settled</span>
+                            )}
+                          </div>
+                        </td>
+                      </motion.tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Payment Modal */}
+        {paymentModal && selectedFine && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                  <DollarSign className="w-6 h-6 text-green-600" />
+                  Process Payment
+                </h3>
+                <button
+                  onClick={() => {
+                    setPaymentModal(false)
+                    setSelectedFine(null)
+                    setPaymentAmount('')
+                  }}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <XCircle className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="space-y-4 mb-6">
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Borrower</p>
+                  <p className="font-semibold text-gray-900">{selectedFine.Borrower_Name}</p>
+                </div>
+
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Item</p>
+                  <p className="font-semibold text-gray-900">{selectedFine.Item_Title}</p>
+                </div>
+
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Days Overdue</p>
+                  <p className="font-semibold text-red-600">{selectedFine.Days_Overdue} days</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Payment Amount</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="Enter amount"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Total fine: ${parseFloat(selectedFine.Fine_Amount).toFixed(2)}</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Payment Method</label>
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value="Cash">Cash</option>
+                    <option value="Card">Card</option>
+                    <option value="Bank Transfer">Bank Transfer</option>
+                    <option value="Online">Online Payment</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setPaymentModal(false)
+                    setSelectedFine(null)
+                    setPaymentAmount('')
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePayFine}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-semibold"
+                >
+                  Process Payment
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   const renderBorrowRecords = () => (
     <div className="p-6">

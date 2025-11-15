@@ -205,7 +205,8 @@ const getLibrarianTransactions = (req, res) => {
     fineStatuses, 
     memberNames, 
     assetTitles, 
-    assetTypes
+    assetTypes,
+    hasFine
   } = req.query;
 
   // Parse comma-separated arrays
@@ -288,6 +289,8 @@ const getLibrarianTransactions = (req, res) => {
         actionConditions.push('(br.Return_Date IS NOT NULL)');
       } else if (action === 'renewed') {
         actionConditions.push('(br.Renew_Date IS NOT NULL)');
+      } else if (action === 'overdue') {
+        actionConditions.push('(br.Due_Date < CURDATE() AND br.Return_Date IS NULL)');
       }
     });
     if (actionConditions.length > 0) {
@@ -307,6 +310,15 @@ const getLibrarianTransactions = (req, res) => {
     });
     if (fineConditions.length > 0) {
       query += ` AND (${fineConditions.join(' OR ')})`;
+    }
+  }
+
+  // Has fine filter - simple yes/no filter
+  if (hasFine) {
+    if (hasFine === 'with-fine') {
+      query += ` AND br.Fee_Incurred > 0`;
+    } else if (hasFine === 'no-fine') {
+      query += ` AND (br.Fee_Incurred IS NULL OR br.Fee_Incurred = 0)`;
     }
   }
 
@@ -399,6 +411,9 @@ const getLibrarianDailyActivity = (req, res) => {
     if (actionArray.includes('renewed')) {
       selectColumns.push(`COUNT(CASE WHEN br.Renew_Date >= ? AND br.Renew_Date <= ? THEN 1 END) AS renewed`);
     }
+    if (actionArray.includes('overdue')) {
+      selectColumns.push(`COUNT(CASE WHEN br.Due_Date < CURDATE() AND br.Return_Date IS NULL THEN 1 END) AS overdue`);
+    }
   } else {
     // Show all action types if none selected
     selectColumns = [
@@ -406,6 +421,11 @@ const getLibrarianDailyActivity = (req, res) => {
       `COUNT(CASE WHEN br.Return_Date >= ? AND br.Return_Date <= ? THEN 1 END) AS returned`,
       `COUNT(CASE WHEN br.Renew_Date >= ? AND br.Renew_Date <= ? THEN 1 END) AS renewed`
     ];
+  }
+  
+  // Ensure we always have at least one column (fallback)
+  if (selectColumns.length === 0) {
+    selectColumns.push(`COUNT(*) AS total`);
   }
 
   // Filter by librarian who processed the transaction (or show all if no data yet)

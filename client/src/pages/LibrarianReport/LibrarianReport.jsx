@@ -60,7 +60,8 @@ function LibrarianReport() {
     actions: [], // Changed to array for multiple selections
     memberNames: [], // Changed to array for multiple selections
     assetTitles: [], // Changed to array for multiple selections
-    assetTypes: [] // Changed to array for multiple selections
+    assetTypes: [], // Changed to array for multiple selections
+    hasFine: '' // 'all', 'with-fine', 'no-fine'
   })
 
   const [appliedFilters, setAppliedFilters] = useState(filters)
@@ -112,7 +113,8 @@ function LibrarianReport() {
         actions: appliedFilters.actions.join(','),
         memberNames: appliedFilters.memberNames.join(','),
         assetTitles: appliedFilters.assetTitles.join(','),
-        assetTypes: appliedFilters.assetTypes.join(',')
+        assetTypes: appliedFilters.assetTypes.join(','),
+        hasFine: appliedFilters.hasFine
       }).toString()
 
       const [summaryRes, transactionsRes, activityRes] = await Promise.all([
@@ -234,12 +236,20 @@ function LibrarianReport() {
       textColor: 'text-blue-600'
     },
     {
-      title: 'Renewals & Extensions',
+      title: 'Renewals',
       value: summary.renewals || 0,
       icon: RefreshCw,
       color: 'from-purple-500 to-purple-600',
       bgColor: 'bg-purple-50',
       textColor: 'text-purple-600'
+    },
+    {
+      title: 'Fines Collected',
+      value: `$${(parseFloat(summary.fines_collected) || 0).toFixed(2)}`,
+      icon: DollarSign,
+      color: 'from-green-500 to-green-600',
+      bgColor: 'bg-green-50',
+      textColor: 'text-green-600'
     },
     {
       title: 'Overdue Items',
@@ -352,7 +362,7 @@ function LibrarianReport() {
             {showFilters ? 'Hide Filters' : 'Show Filters'}
           </button>
           
-          {(appliedFilters.actions.length > 0 || appliedFilters.memberNames.length > 0 || appliedFilters.assetTitles.length > 0 || appliedFilters.assetTypes.length > 0) && (
+          {(appliedFilters.actions.length > 0 || appliedFilters.memberNames.length > 0 || appliedFilters.assetTitles.length > 0 || appliedFilters.assetTypes.length > 0 || appliedFilters.hasFine) && (
             <button
               onClick={handleClearFilters}
               className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
@@ -411,7 +421,8 @@ function LibrarianReport() {
                   {[
                     { value: 'issued', label: 'Issued/Reserved' },
                     { value: 'returned', label: 'Returned/Checked Out' },
-                    { value: 'renewed', label: 'Renewed/Extended' }
+                    { value: 'renewed', label: 'Renewed/Extended' },
+                    { value: 'overdue', label: 'Overdue Items' }
                   ].map(action => (
                     <label key={action.value} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
                       <input
@@ -627,6 +638,23 @@ function LibrarianReport() {
               </div>
             </div>
 
+            {/* Fine Status Filter */}
+            <div className="relative">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                <DollarSign className="w-4 h-4 inline mr-1" />
+                Fine Status
+              </label>
+              <select
+                value={filters.hasFine}
+                onChange={(e) => setFilters({ ...filters, hasFine: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              >
+                <option value="">All Transactions</option>
+                <option value="with-fine">With Fines Only</option>
+                <option value="no-fine">No Fines</option>
+              </select>
+            </div>
+
             {/* Apply Filters Button */}
             <div className="col-span-full flex gap-3 justify-end pt-4 border-t border-gray-200">
               <button
@@ -736,12 +764,13 @@ function LibrarianReport() {
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Asset</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Fine</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
               {transactions.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
+                  <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
                     <Search className="w-12 h-12 mx-auto mb-3 text-gray-400" />
                     <p>No transactions found for the selected period</p>
                   </td>
@@ -794,6 +823,16 @@ function LibrarianReport() {
                       }`}>
                         {transaction.status}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {transaction.Fee_Incurred && parseFloat(transaction.Fee_Incurred) > 0 ? (
+                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700">
+                          <DollarSign className="w-3 h-3" />
+                          ${parseFloat(transaction.Fee_Incurred).toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
                     </td>
                   </motion.tr>
                 ))

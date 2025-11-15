@@ -11,6 +11,7 @@ const uploadController = require('./controllers/uploadController');
 const notificationController = require('./controllers/notificationController');
 const memberController = require('./controllers/memberController');
 const eventController = require('./controllers/eventController');
+const fineController = require('./controllers/fineController');
 const { authenticateRequest, enforceRoles } = require('./middleware/authMiddleware');
 
 const ROLES = {
@@ -146,6 +147,14 @@ const routes = [
   { method: 'GET', path: '/api/notifications/counts', handler: notificationController.getNotificationCounts, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
   { method: 'GET', path: '/api/notifications/critical', handler: notificationController.getCriticalNotifications, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
   { method: 'POST', path: '/api/notifications/low-stock-alerts', handler: notificationController.createLowStockAlert, auth: true, roles: ROLE_GROUPS.STAFF },
+  
+  // Fine Management routes
+  { method: 'GET', path: '/api/fines/stats', handler: fineController.getFineStats, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/fines/user/:id', handler: fineController.getUserFines, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+  { method: 'GET', path: '/api/fines/:id', handler: fineController.getFineById, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/fines', handler: fineController.getAllFines, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'POST', path: '/api/fines/:id/pay', handler: fineController.processFinePayment, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'POST', path: '/api/fines/:id/waive', handler: fineController.waiveFine, auth: true, roles: ROLE_GROUPS.STAFF },
   
   // Upload route
   { method: 'POST', path: '/api/upload', handler: uploadController.handleUpload, auth: true, roles: ROLE_GROUPS.STAFF },
