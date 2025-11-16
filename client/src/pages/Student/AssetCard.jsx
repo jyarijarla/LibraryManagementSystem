@@ -143,7 +143,7 @@ export function AssetCard({ assetType, assetSelected, onAssetChange }) {
                             <span className='asset-card-button-container'>
 
                                 <button className='asset-card-button' onClick={handleBorrow}>
-                                    {`Borrow: ${assetSelected.Available_Copies}/${assetSelected.Copies}`}
+                                    {`Borrow: ${assetSelected.Available_Copies || assetSelected.Availability}/${assetSelected.Copies || assetSelected.Availability}`}
                                 </button>
                                 <button className='asset-card-button'>Test</button>
                                 <button className='asset-card-button'>Test</button>
