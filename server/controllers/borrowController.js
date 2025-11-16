@@ -1,5 +1,86 @@
 const db = require('../db');
 
+exports.borrowAsset = async (req, res) => {
+  const connection = await db.promise().getConnection();
+    try {
+      const { userID, assetID } = req.body
+      console.log("Recieved data:", {userID, assetID})
+      if(!userID || !assetID) {
+        console.log("Missing required Fields")
+        throw Object.assign(new Error('Missing required fields'), {status: 400})
+      }
+      await connection.beginTransaction();
+      //check for existing asset
+      const [assetCheck] = await connection.query(
+        `SELECT Asset_ID FROM asset WHERE Asset_ID = ?`, [assetID]
+      )
+      if(!assetCheck[0]) {
+        throw Object.assign(new Error("Asset not found"), {status: 404});
+      }
+      //select rentable to borrow
+      let selRentable;
+      try{
+        const [getRentables] = await connection.query(
+          `SELECT Rentable_ID FROM rentable WHERE Asset_ID = ? AND Availability = 1`,
+          [assetID]
+        );
+        if(!getRentables[0]){
+          console.log("No rentable available for asset:", assetID);
+          throw Object.assign(new Error("No rentable available"), {status: 404});
+        }
+        selRentable = getRentables[0].Rentable_ID;
+      }
+      catch (error) {
+        console.log("Error fetching rentables:", error);
+        throw Object.assign(new Error("Rentable query failed"), {status: 500});
+      }
+      //get user role
+      const [userRoleQuery] = await connection.query(
+        `SELECT Role FROM user WHERE User_ID = ?`, [userID]
+      );
+      const userRole = userRoleQuery[0].Role;
+      //get basic borrow day limit
+      const [borrowDaysQuery] = await connection.query(
+        `SELECT borrow_days FROM role_type WHERE role_id = ?`, [userRole]
+      )
+      const borrowDays = borrowDaysQuery[0].borrow_days;
+      //calculate due date based on role
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + borrowDays);
+      const dueDateString = dueDate.toISOString().split('T')[0]; //YYYY-MM-DD
+      //borrow rentable
+      let newBorrowID;
+      try{
+        const [borrowInsertQuery] = await connection.query(
+          `INSERT INTO borrow (Borrower_ID, Rentable_ID, Due_Date) VALUES (?, ?, ?)`, 
+          [userID, selRentable, dueDateString]
+        );
+        newBorrowID = borrowInsertQuery.insertId;
+        console.log("Borrow ID assigned:", newBorrowID);
+      }
+      catch(error){
+        console.log("Insert failed:", error);
+        throw Object.assign(new Error("Insertion into borrow failed") , {status: 409})
+      }
+      //end transaction successfully
+      await connection.commit();
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ 
+        message: 'Borrow added successfully',
+        borrowID: newBorrowID,
+      }));
+    }
+    catch (error) {
+      //borrow failed
+      await connection.rollback();
+      console.log("Error in borrowAsset:", error);
+      res.writeHead(error.status || 500, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({message: error.message, status: error.status || 500}))
+    }
+    finally {
+      connection.release();
+    }
+}
 
 // Issue any asset (book, CD, audiobook, movie, technology, study-room)
 exports.issueBook = (req, res) => {
