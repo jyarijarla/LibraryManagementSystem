@@ -166,8 +166,10 @@ export function Assets(){
     }
     const columns = getAssetTableColumns()
     const data = getCurrentAssetData()
-    
-
+    const refreshAssets = async() => {
+        await fetchAssets(activeAssetTab);
+        console.log("Refetching assets")
+    }
     useEffect(() => {
         const loadAsset = async () =>{
             setLoading({ isLoading: true })
@@ -239,7 +241,7 @@ export function Assets(){
                 data.map((item, index) => (
                 <div key={item.Asset_ID} className="asset-card" onClick={() => {
                     document.getElementById("root").classList.add('overlay-open');
-                    setOverlayContent(<AssetCard assetSelected={item.Asset_ID}/>)
+                    setOverlayContent(<AssetCard assetType={activeAssetTab} assetSelected={item} onAssetChange={refreshAssets}/>)
                 }}>
                     <div className="card-header">
                     <span className="card-number">#{index + 1}</span>

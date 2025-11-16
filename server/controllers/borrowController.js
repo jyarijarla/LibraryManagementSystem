@@ -3,7 +3,7 @@ const db = require('../db');
 exports.borrowAsset = async (req, res) => {
   const connection = await db.promise().getConnection();
     try {
-      const { userID, assetID} = req.body
+      const { userID, assetID } = req.body
       console.log("Recieved data:", {userID, assetID})
       if(!userID || !assetID) {
         console.log("Missing required Fields")

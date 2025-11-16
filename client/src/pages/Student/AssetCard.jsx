@@ -52,51 +52,44 @@ const assetTypeMap = {
         },
         'technology': {
             table: 'technology_inventory',
-            attributes: []
+            attributes: [
+                { key: 'Model_Num', label: 'Model #' },
+                { key: 'Type', label: 'Type' },
+                { key: 'Description', label: 'Description' },
+                { key: 'Copies', label: 'Quantity' }
+            ]
         },
         'study-rooms': {
             table: 'study_room',
-            attributes: []
+            attributes: [
+                { key: 'Room_Number', label: 'Room Number' },
+                { key: 'Capacity', label: 'Capacity' },
+                { key: 'Availability', label: 'Status' }
+            ]
         }
-      };
-const fetchAsset = async(assetID) => {
-    console.log(`Fetching asset ${assetID}`)
-    try {
-        const response = await axios.get(`${API_URL}/assets/${assetID}`);
-        const assetData = response.data;
-        return assetData
-    } catch (error) {
-        if (error.response){
-            console.error(`Failed to fetch asset ${assetID}:`, 
-                error.response.status, error.response.data);
-        } else if(error.request) {
-            console.error(`No response for asset ${assetID}`, error.request);
-        } else {
-            console.error(`Error fetching asset ${assetID}:`, error.message);
-        }
-        throw error;
-    }
+    };
+
+async function borrowAsset(assetID) {
+    const response = await axios.post(`${API_URL}/borrow`,
+        { userID: localStorage.getItem("userId"), assetID: assetID })
+    return response.data;
 }
 
-export function AssetCard({ assetSelected }) {
+export function AssetCard({ assetType, assetSelected, onAssetChange }) {
     const { closeOverlay } = useOverlay();
     const { setLoading } = useLoading();
-    const [asset, setAsset] = useState(null);
-    useEffect(() => {
-        const loadData = async() =>{
-            setLoading({ isLoading: true });
-            try{
-                const asset = await fetchAsset(assetSelected);
-                setAsset(asset);
-            } catch (error) {
-                console.error("Error loading asset:" ,error)
-                closeOverlay();
-            } finally {
-                setLoading({ isLoading: true });
-            }
+    
+    const handleBorrow = async() => {
+        setLoading({ isLoading: true })
+        try {
+            await borrowAsset(assetSelected.Asset_ID);
+            await onAssetChange();
+        } catch (error) {
+            console.error("Borrow failed", error);
+        } finally {
+            setLoading({ isLoading: false })
         }
-        loadData();
-    }, [assetSelected])
+    } 
     return (
         <div className='asset-card-content '>
             <div className='asset-card-header'>
@@ -148,7 +141,10 @@ export function AssetCard({ assetSelected }) {
                         </div>
                         <div className='asset-card-asset-details asset-card-section-col'>
                             <span className='asset-card-button-container'>
-                                <button className='asset-card-button'>{`${assetSelected.Available_Copies}/${assetSelected.Copies}`}</button>
+
+                                <button className='asset-card-button' onClick={handleBorrow}>
+                                    {`Borrow: ${assetSelected.Available_Copies}/${assetSelected.Copies}`}
+                                </button>
                                 <button className='asset-card-button'>Test</button>
                                 <button className='asset-card-button'>Test</button>
                             </span>

@@ -1,11 +1,5 @@
 const db = require('../db');
 
-// Get asset by ID
-const getAsset = async(req, res) => {
-  try {
-    const query = ``
-  }
-}
 // Get all books with their details
 const getAllBooks = async (req, res) => {
   try {

@@ -53,9 +53,6 @@ const routes = [
   { method: 'POST', path: '/api/signup', handler: authController },
   { method: 'POST', path: '/api/login', handler: authController },
   { method: 'POST', path: '/api/logout', handler: authController },
-
-  // Asset routes - General
-  { method: 'GET', path: '/api/assets/:id', handler: assetController}
   
   // Asset routes - Books
   { method: 'GET', path: '/api/assets/books', handler: assetController.getAllBooks },
@@ -112,6 +109,7 @@ const routes = [
   // Borrow routes
   { method: 'GET', path: '/api/borrow-records', handler: borrowController.getAllRecords },
   { method: 'POST', path: '/api/borrow/issue', handler: borrowController.issueBook },
+  { method: 'POST', path: '/api/borrow', handler: borrowController.borrowAsset },
   { method: 'PUT', path: '/api/borrow-records/:id/return', handler: borrowController.returnBook },
   { method: 'PUT', path: '/api/borrow-records/:id/renew', handler: borrowController.renewBook },
   { method: 'GET', path: '/api/dashboard/stats', handler: borrowController.getDashboardStats },
