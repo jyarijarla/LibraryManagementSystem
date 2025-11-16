@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const db = require('../db');
+const { generateToken } = require('../utils/token');
 
 // Login Handler
 async function login(req, res) {
@@ -55,11 +56,18 @@ async function login(req, res) {
       else if (user.Role === 3) userRole = 'librarian';
       else userRole = 'student';
 
+      const token = generateToken({
+        userId: user.User_ID,
+        role: userRole
+      });
+
       // Return user data (without password) - client will store in localStorage
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({
         message: 'Login successful',
+        token,
+        expiresIn: Number.parseInt(process.env.AUTH_TOKEN_TTL || '', 10) || 60 * 60 * 4,
         user: {
           id: user.User_ID,
           username: user.Username,

@@ -250,3 +250,75 @@ exports.getCriticalNotifications = (req, res) => {
     res.end(JSON.stringify(results));
   });
 };
+
+// Create a manual low stock alert from librarian dashboard
+exports.createLowStockAlert = (req, res) => {
+  const { 
+    assetId,
+    assetType,
+    assetTitle,
+    availableCopies = 0,
+    threshold = 0,
+    triggeredBy = null,
+    triggeredByName = null
+  } = req.body || {};
+
+  if (!assetId || !assetType) {
+    return res.writeHead(400, { 'Content-Type': 'application/json' })
+      && res.end(JSON.stringify({ message: 'assetId and assetType are required' }));
+  }
+
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS low_stock_alerts (
+      Alert_ID INT AUTO_INCREMENT PRIMARY KEY,
+      Asset_ID INT NOT NULL,
+      Asset_Type VARCHAR(50) NOT NULL,
+      Asset_Title VARCHAR(255),
+      Available_Copies INT DEFAULT 0,
+      Threshold_Value INT DEFAULT 0,
+      Triggered_By_UserID INT NULL,
+      Triggered_By_Name VARCHAR(120),
+      Created_At TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `;
+
+  db.query(createTableQuery, (tableErr) => {
+    if (tableErr) {
+      console.error('Error ensuring low_stock_alerts table:', tableErr);
+      return res.writeHead(500, { 'Content-Type': 'application/json' })
+        && res.end(JSON.stringify({ message: 'Failed to prepare alert storage', error: tableErr.message }));
+    }
+
+    const insertQuery = `
+      INSERT INTO low_stock_alerts 
+        (Asset_ID, Asset_Type, Asset_Title, Available_Copies, Threshold_Value, Triggered_By_UserID, Triggered_By_Name)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    db.query(
+      insertQuery,
+      [
+        assetId,
+        assetType,
+        assetTitle || null,
+        Number.isFinite(Number(availableCopies)) ? Number(availableCopies) : 0,
+        Number.isFinite(Number(threshold)) ? Number(threshold) : 0,
+        triggeredBy || null,
+        triggeredByName || null
+      ],
+      (insertErr, result) => {
+        if (insertErr) {
+          console.error('Error inserting low stock alert:', insertErr);
+          return res.writeHead(500, { 'Content-Type': 'application/json' })
+            && res.end(JSON.stringify({ message: 'Failed to log low stock alert', error: insertErr.message }));
+        }
+
+        res.writeHead(201, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          message: 'Low stock alert sent to admin',
+          alertId: result.insertId
+        }));
+      }
+    );
+  });
+};

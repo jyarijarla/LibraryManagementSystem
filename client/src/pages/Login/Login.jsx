@@ -63,11 +63,17 @@ function Login() {
 
       if (response.ok) {
         console.log('Login successful:', data)
+        if (!data.token) {
+          setError('Missing session token from server')
+          setIsLoading(false)
+          return
+        }
         
         // Store user data in localStorage
         localStorage.setItem('user', JSON.stringify(data.user))
         localStorage.setItem('userId', data.user.id)
         localStorage.setItem('role', data.user.role)
+        localStorage.setItem('token', data.token)
         
         // Redirect based on role
         if (data.user.role === 'admin') {

@@ -16,14 +16,17 @@ import Events from './pages/Events/Events'
 function AppContent() {
   const location = useLocation()
   const pathname = location.pathname.toLowerCase()
-  const showNavbar = !pathname.startsWith('/login') && 
-                     !pathname.startsWith('/admin') &&
-                     !pathname.startsWith('/librarian') &&
-                     !pathname.startsWith('/student')
+
+  const hideNavbar = 
+      pathname.startsWith('/login') || 
+      pathname.startsWith('/admin') ||
+      pathname.startsWith('/librarian') ||
+      pathname.startsWith('/student')
 
   return (
     <>
-      {showNavbar && <NavBar />}
+      {!hideNavbar && <NavBar />}
+
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
@@ -42,6 +45,7 @@ function AppContent() {
     </>
   )
 }
+
 
 function App() {
   return (

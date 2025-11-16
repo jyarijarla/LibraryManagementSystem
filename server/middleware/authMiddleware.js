@@ -1,48 +1,51 @@
-// Middleware to verify user authentication (checking if userId is provided)
-function authenticateUser(req, res, next) {
-  const userId = req.headers['x-user-id'];
-  const userRole = req.headers['x-user-role'];
+const { verifyToken } = require('../utils/token');
 
-  if (!userId || !userRole) {
-    res.statusCode = 401;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ message: 'User authentication required' }));
-    return;
-  }
-
-  // Attach user info to request
-  req.user = {
-    id: Number.parseInt(userId, 10),
-    role: userRole
-  };
-  
-  next();
+function sendJson(res, statusCode, payload) {
+  res.statusCode = statusCode;
+  res.setHeader('Content-Type', 'application/json');
+  res.end(JSON.stringify(payload));
 }
 
-// Middleware to check if user is admin
-function requireAdmin(req, res, next) {
-  if (req.user.role !== 'admin') {
-    res.statusCode = 403;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ message: 'Admin access required' }));
-    return;
+function authenticateRequest(req, res) {
+  const authHeader = req.headers.authorization || '';
+  if (!authHeader.startsWith('Bearer ')) {
+    sendJson(res, 401, { message: 'Authorization header missing' });
+    return null;
   }
-  next();
+
+  const token = authHeader.replace('Bearer ', '').trim();
+  try {
+    const payload = verifyToken(token);
+    req.user = {
+      id: payload.userId,
+      role: payload.role
+    };
+    return req.user;
+  } catch (error) {
+    sendJson(res, 401, { message: 'Invalid or expired token', error: error.message });
+    return null;
+  }
 }
 
-// Middleware to check if user is student
-function requireStudent(req, res, next) {
-  if (req.user.role !== 'student') {
-    res.statusCode = 403;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ message: 'Student access required' }));
-    return;
+function enforceRoles(req, res, allowedRoles = []) {
+  if (!allowedRoles.length) {
+    return true;
   }
-  next();
+
+  if (!req.user) {
+    sendJson(res, 500, { message: 'User context missing. Ensure authenticateRequest is called first.' });
+    return false;
+  }
+
+  if (!allowedRoles.includes(req.user.role)) {
+    sendJson(res, 403, { message: 'Access denied for this role' });
+    return false;
+  }
+
+  return true;
 }
 
 module.exports = {
-  authenticateUser,
-  requireAdmin,
-  requireStudent
+  authenticateRequest,
+  enforceRoles
 };

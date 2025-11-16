@@ -1,5 +1,11 @@
 const db = require('../db');
 
+const STUDY_ROOM_STATUS = {
+  reserved: 0,
+  available: 1,
+  maintenance: 2
+};
+
 // Get all books with their details
 const getAllBooks = async (req, res) => {
   try {
@@ -152,7 +158,16 @@ const getAllTechnology = async (req, res) => {
 const getAllStudyRooms = async (req, res) => {
   try {
     const query = `
-      SELECT sr.Asset_ID, sr.Room_Number, sr.Capacity, sr.Availability, sr.Image_URL
+      SELECT
+        sr.Asset_ID,
+        sr.Room_Number,
+        sr.Capacity,
+        CASE
+          WHEN sr.Availability = 1 THEN 'Available'
+          WHEN sr.Availability = 2 THEN 'Maintenance'
+          ELSE 'Reserved'
+        END AS Availability,
+        sr.Image_URL
       FROM study_room sr
       ORDER BY sr.Room_Number
     `;
@@ -173,6 +188,56 @@ const getAllStudyRooms = async (req, res) => {
   }
 };
 
+const updateStudyRoomStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body || {};
+
+    if (!id) {
+      return res.writeHead(400, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ message: 'Room ID is required' }));
+    }
+
+    const normalizedStatus = typeof status === 'string' ? status.toLowerCase() : '';
+    if (!['available', 'maintenance'].includes(normalizedStatus)) {
+      return res.writeHead(400, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ message: 'Status must be available or maintenance' }));
+    }
+
+    const [rooms] = await db.promise().query(
+      'SELECT Availability FROM study_room WHERE Asset_ID = ?',
+      [id]
+    );
+
+    if (rooms.length === 0) {
+      return res.writeHead(404, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ message: 'Study room not found' }));
+    }
+
+    const currentAvailability = rooms[0].Availability;
+    if (currentAvailability === STUDY_ROOM_STATUS.reserved) {
+      return res.writeHead(400, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ message: 'Room is currently reserved. Release the reservation before changing status.' }));
+    }
+
+    const newAvailability = STUDY_ROOM_STATUS[normalizedStatus];
+    await db.promise().query(
+      'UPDATE study_room SET Availability = ? WHERE Asset_ID = ?',
+      [newAvailability, id]
+    );
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      message: `Study room status updated to ${normalizedStatus}`,
+      status: normalizedStatus
+    }));
+  } catch (error) {
+    console.error('Error updating study room status:', error);
+    res.writeHead(500, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ message: 'Failed to update study room status', error: error.message }));
+  }
+};
+
 //Create asset and rentables
 const assetRentableCreate = async (connection, Asset_Type, Copies) => {
   //inserting into asset
@@ -187,12 +252,10 @@ const assetRentableCreate = async (connection, Asset_Type, Copies) => {
     throw new Error('Asset creation failed')
   }
   //inserting rentables based on copies
-  console.log("Did this run")
-  console.log(newAssetId, "Test")
   try {
     const rentableQuery = 'INSERT INTO rentable (Asset_ID, Availability, Fee) VALUES (?, ?, ?)';
     for(let r = 0; r < Copies; r++){
-      await connection.query(rentableQuery, [newAssetId, 1, 0.00])
+      await connection.query(rentableQuery, [newAssetId, 1, 0])
     }
     console.log(Copies, " insert(s) into rentable successful");
   } catch (error) {
@@ -616,13 +679,52 @@ const deleteAsset = async (req, res) => {
   }
 };
 
+const assetUpdateConfigs = [
+  {
+    predicate: (updates) => updates.ISBN && updates.Title && updates.Author && updates.Page_Count !== undefined,
+    table: 'book',
+    fields: ['ISBN', 'Title', 'Author', 'Page_Count'],
+    handleCopies: true
+  },
+  {
+    predicate: (updates) => updates.Total_Tracks !== undefined && updates.Artist,
+    table: 'cd',
+    fields: ['Total_Tracks', 'Total_Duration_In_Minutes', 'Title', 'Artist'],
+    handleCopies: true
+  },
+  {
+    predicate: (updates) => updates.ISBN && updates.length !== undefined,
+    table: 'audiobook',
+    fields: ['ISBN', 'Title', 'Author', 'length'],
+    handleCopies: true
+  },
+  {
+    predicate: (updates) => updates.Release_Year !== undefined && updates.Age_Rating,
+    table: 'movie',
+    fields: ['Title', 'Release_Year', 'Age_Rating'],
+    handleCopies: true
+  },
+  {
+    predicate: (updates) => updates.Model_Num && updates.Type && updates.Description,
+    table: 'technology',
+    fields: ['Model_Num', 'Type', 'Description'],
+    handleCopies: true
+  },
+  {
+    predicate: (updates) => updates.Room_Number && updates.Capacity !== undefined,
+    table: 'study_room',
+    fields: ['Room_Number', 'Capacity'],
+    handleCopies: false
+  }
+];
+
 // Update/Edit asset
 const updateAsset = async (req, res) => {
   const connection = await db.promise().getConnection();
   try {
     const assetId = req.params.id;
     const updates = req.body;
-    
+
     if (!assetId) {
       connection.release();
       return res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -631,66 +733,24 @@ const updateAsset = async (req, res) => {
 
     await connection.beginTransaction();
 
-    // Determine which table to update based on the fields present
-    let table = '';
-    let fields = [];
-    let handleCopies = false;
-
-    if (updates.ISBN && updates.Title && updates.Author && updates.Page_Count !== undefined) {
-      // Book
-      table = 'book';
-      fields = ['ISBN', 'Title', 'Author', 'Page_Count'];
-      if (updates.Image_URL !== undefined) fields.push('Image_URL');
-      handleCopies = true;
-    } else if (updates.Total_Tracks !== undefined && updates.Artist) {
-      // CD
-      table = 'cd';
-      fields = ['Total_Tracks', 'Total_Duration_In_Minutes', 'Title', 'Artist'];
-      if (updates.Image_URL !== undefined) fields.push('Image_URL');
-      handleCopies = true;
-    } else if (updates.ISBN && updates.length !== undefined) {
-      // Audiobook
-      table = 'audiobook';
-      fields = ['ISBN', 'Title', 'Author', 'length'];
-      if (updates.Image_URL !== undefined) fields.push('Image_URL');
-      handleCopies = true;
-    } else if (updates.Release_Year !== undefined && updates.Age_Rating) {
-      // Movie - table only has Title, Release_Year, Age_Rating, Image_URL
-      // Copies are managed through rentables table
-      table = 'movie';
-      fields = ['Title', 'Release_Year', 'Age_Rating'];
-      if (updates.Image_URL !== undefined) {
-        fields.push('Image_URL');
-      }
-      handleCopies = true;
-    } else if (updates.Model_Num && updates.Type && updates.Description) {
-      // Technology
-      table = 'technology';
-      fields = ['Model_Num', 'Type', 'Description'];
-      if (updates.Image_URL !== undefined) fields.push('Image_URL');
-      handleCopies = true;
-    } else if (updates.Room_Number && updates.Capacity !== undefined) {
-      // Study Room
-      table = 'study_room';
-      fields = ['Room_Number', 'Capacity'];
-      if (updates.Image_URL !== undefined) fields.push('Image_URL');
-      handleCopies = false; // Study rooms always have 1 copy
-    } else {
+    const config = assetUpdateConfigs.find(cfg => cfg.predicate(updates));
+    if (!config) {
       connection.release();
       return res.writeHead(400, { 'Content-Type': 'application/json' })
         .end(JSON.stringify({ error: 'Invalid update data' }));
     }
 
-    // Build update query
-    const updateFields = fields.filter(f => updates[f] !== undefined);
-    const updateValues = updateFields.map(f => updates[f]);
-    
-    if (updateFields.length > 0) {
-      const setClause = updateFields.map(f => `${f} = ?`).join(', ');
-      const query = `UPDATE ${table} SET ${setClause} WHERE Asset_ID = ?`;
-      
-      const [result] = await connection.query(query, [...updateValues, assetId]);
-      
+    const fieldsWithData = config.fields.filter(field => updates[field] !== undefined);
+    if (updates.Image_URL !== undefined) {
+      fieldsWithData.push('Image_URL');
+    }
+
+    if (fieldsWithData.length > 0) {
+      const setClause = fieldsWithData.map(field => `${field} = ?`).join(', ');
+      const values = fieldsWithData.map(field => updates[field]);
+      const updateQuery = `UPDATE ${config.table} SET ${setClause} WHERE Asset_ID = ?`;
+      const [result] = await connection.query(updateQuery, [...values, assetId]);
+
       if (result.affectedRows === 0) {
         await connection.rollback();
         connection.release();
@@ -699,65 +759,41 @@ const updateAsset = async (req, res) => {
       }
     }
 
-    // Handle copies update if Copies field is present
-    if (handleCopies && updates.Copies !== undefined) {
-      const targetCopies = parseInt(updates.Copies) || 0;
-      
-      // Get current number of rentables
-      const [countResult] = await connection.query(
+    if (config.handleCopies && updates.Copies !== undefined) {
+      const targetCopies = Number.parseInt(updates.Copies, 10) || 0;
+      const [countRows] = await connection.query(
         'SELECT COUNT(*) as currentCount FROM rentable WHERE Asset_ID = ?',
         [assetId]
       );
-      const currentCount = countResult[0].currentCount;
-      
-      console.log(`📦 Asset ${assetId}: Current copies = ${currentCount}, Target copies = ${targetCopies}`);
-      
+      const currentCount = countRows[0]?.currentCount || 0;
+
       if (targetCopies > currentCount) {
-        // Add more copies
         const copiesToAdd = targetCopies - currentCount;
-        console.log(`➕ Adding ${copiesToAdd} copies`);
-        
-        for (let i = 0; i < copiesToAdd; i++) {
+        for (let i = 0; i < copiesToAdd; i += 1) {
           await connection.query(
             'INSERT INTO rentable (Asset_ID, Availability, Fee) VALUES (?, 1, 0.00)',
             [assetId]
           );
         }
       } else if (targetCopies < currentCount) {
-        // Remove excess copies (only available ones)
         const copiesToRemove = currentCount - targetCopies;
-        console.log(`➖ Removing ${copiesToRemove} copies`);
-        
-        const [deleteResult] = await connection.query(
+        await connection.query(
           'DELETE FROM rentable WHERE Asset_ID = ? AND Availability = 1 LIMIT ?',
           [assetId, copiesToRemove]
         );
-        
-        if (deleteResult.affectedRows < copiesToRemove) {
-          await connection.rollback();
-          connection.release();
-          return res.writeHead(400, { 'Content-Type': 'application/json' })
-            .end(JSON.stringify({ 
-              error: `Can only remove ${deleteResult.affectedRows} copies. ${copiesToRemove - deleteResult.affectedRows} copies are currently borrowed.` 
-            }));
-        }
       }
     }
 
     await connection.commit();
     connection.release();
-    
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
-      message: 'Asset updated successfully',
-      assetId: assetId
-    }));
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ message: 'Asset updated successfully' }));
   } catch (error) {
     await connection.rollback();
     connection.release();
     console.error('Error in updateAsset:', error);
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error', details: error.message }));
+      .end(JSON.stringify({ error: 'Server error' }));
   }
 };
 
@@ -775,5 +811,6 @@ module.exports = {
   addTechnology,
   addStudyRoom,
   deleteAsset,
-  updateAsset
+  updateAsset,
+  updateStudyRoomStatus
 };
