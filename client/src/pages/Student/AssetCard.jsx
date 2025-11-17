@@ -71,18 +71,24 @@ const assetTypeMap = {
 
 async function borrowAsset(assetID) {
     const response = await axios.post(`${API_URL}/borrow`,
-        { userID: localStorage.getItem("userId"), assetID: assetID })
+        { userID: localStorage.getItem("userId"), assetID: assetID },{
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+        })
     return response.data;
 }
 
-export function AssetCard({ assetType, assetSelected, onAssetChange }) {
+export function AssetCard({ assetType, getAsset, onAssetChange }) {
+    console.log("Re-rendered")
     const { closeOverlay } = useOverlay();
     const { setLoading } = useLoading();
-    
+    const assetSelected = getAsset();
     const handleBorrow = async() => {
         setLoading({ isLoading: true })
         try {
             await borrowAsset(assetSelected.Asset_ID);
+            console.log("Borrowed book")
             await onAssetChange();
         } catch (error) {
             console.error("Borrow failed", error);
@@ -91,10 +97,9 @@ export function AssetCard({ assetType, assetSelected, onAssetChange }) {
         }
     } 
     return (
-        <div className='asset-card-content '>
+        <div key={assetSelected} className='asset-card-content '>
             <div className='asset-card-header'>
                 <svg width="24" height="24" viewBox="0 0 24 24" className='asset-close-button' aria-label='close' onClick={ () => {
-                        document.getElementById("root").classList.remove('overlay-open');
                         closeOverlay()}
                     }>
                     <path className='asset-close-x' d="M4 4 L20 20 M20 4 L4 20" stroke="black" strokeWidth="2"/>
@@ -145,7 +150,7 @@ export function AssetCard({ assetType, assetSelected, onAssetChange }) {
                                 <button className='asset-card-button' onClick={handleBorrow}>
                                     {`Borrow: ${assetSelected.Available_Copies || assetSelected.Availability}/${assetSelected.Copies || assetSelected.Availability}`}
                                 </button>
-                                <button className='asset-card-button'>Test</button>
+                                <button className='asset-card-button'>Return</button>
                                 <button className='asset-card-button'>Test</button>
                             </span>
                         </div>
