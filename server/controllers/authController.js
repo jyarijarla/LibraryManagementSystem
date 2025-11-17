@@ -4,7 +4,7 @@ const { generateToken } = require('../utils/token');
 
 // Login Handler
 async function login(req, res) {
-  const { username, password, role } = req.body;
+  const { username, password } = req.body;
 
   // Validate input
   if (!username || !password) {
@@ -15,72 +15,66 @@ async function login(req, res) {
   }
 
   try {
-    // Query user from database (Role is tinyint: 1=student, 2=admin, 3=librarian)
-    let roleValue;
-    if (role === 'admin') roleValue = 2;
-    else if (role === 'librarian') roleValue = 3;
-    else roleValue = 1; // student
+    const userQuery = 'SELECT * FROM user WHERE Username = ?';
     
-    const query = 'SELECT * FROM user WHERE Username = ? AND Role = ?';
-    
-    db.query(query, [username, roleValue], async (err, results) => {
-      if (err) {
-        console.error('Database error:', err);
-        res.statusCode = 500;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ message: 'Database error', error: err.message }));
-        return;
-      }
-
-      if (results.length === 0) {
-        res.statusCode = 401;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ message: 'Invalid credentials' }));
-        return;
-      }
-
-      const user = results[0];
-
-      // Verify password
-      const isValidPassword = await bcrypt.compare(password, user.Password);
-      if (!isValidPassword) {
-        res.statusCode = 401;
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ message: 'Invalid credentials' }));
-        return;
-      }
-
-      // Map role to string
-      let userRole;
-      if (user.Role === 2) userRole = 'admin';
-      else if (user.Role === 3) userRole = 'librarian';
-      else userRole = 'student';
-
-      const token = generateToken({
-        userId: user.User_ID,
-        role: userRole
-      });
-
-      // Return user data (without password) - client will store in localStorage
-      res.statusCode = 200;
+    const [userResult] = await db.promise().query(userQuery, [username]);
+    if (userResult.length === 0) {
+      res.statusCode = 401;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({
-        message: 'Login successful',
-        token,
-        expiresIn: Number.parseInt(process.env.AUTH_TOKEN_TTL || '', 10) || 60 * 60 * 4,
-        user: {
-          id: user.User_ID,
-          username: user.Username,
-          email: user.User_Email,
-          firstName: user.First_Name,
-          lastName: user.Last_Name,
-          phone: user.User_Phone,
-          dob: user.Date_Of_Birth,
-          role: userRole,
-          balance: Number.parseFloat(user.Balance)
-        }
-      }));
+      res.end(JSON.stringify({ message: 'User does not exist' }));
+      return;
+    }
+    const user = userResult[0];
+
+    // Verify password
+    const isValidPassword = await bcrypt.compare(password, user.Password);
+    if (!isValidPassword) {
+      res.statusCode = 401;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ message: 'Invalid credentials' }));
+      return;
+    }
+
+    // Fetch role name
+    const [roleResult] = await db.promise().query(
+      `SELECT role_name
+       FROM user u 
+       JOIN role_type rt ON u.Role = rt.role_id 
+       WHERE Username = ?`, [username]
+    );
+    if(roleResult.length === 0) {
+      res.statusCode = 404;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ message: 'User with that role does not exist' }));
+      return;
+    }
+
+    const userRole = roleResult[0].role_name;
+
+    const token = generateToken({
+      userId: user.User_ID,
+      role: userRole
     });
+
+    // Return user data (without password) - client will store in localStorage
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({
+      message: 'Login successful',
+      token,
+      expiresIn: Number.parseInt(process.env.AUTH_TOKEN_TTL || '', 10) || 60 * 60 * 4,
+      user: {
+        id: user.User_ID,
+        username: user.Username,
+        email: user.User_Email,
+        firstName: user.First_Name,
+        lastName: user.Last_Name,
+        phone: user.User_Phone,
+        dob: user.Date_Of_Birth,
+        role: userRole,
+        balance: Number.parseFloat(user.Balance)
+      }
+    }));
   } catch (error) {
     console.error('Login error:', error);
     res.statusCode = 500;
