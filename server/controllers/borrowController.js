@@ -254,8 +254,8 @@ exports.returnBook = (req, res) => {
   
   // Update borrow record with return date and fine
   const updateQuery = fineAmount 
-    ? 'UPDATE borrow SET Return_Date = CURDATE(), Fee_Incurred = ? WHERE Borrow_ID = ? AND Return_Date IS NULL'
-    : 'UPDATE borrow SET Return_Date = CURDATE() WHERE Borrow_ID = ? AND Return_Date IS NULL';
+    ? 'UPDATE borrow SET Return_Date = NOW(), Fee_Incurred = ? WHERE Borrow_ID = ? AND Return_Date IS NULL'
+    : 'UPDATE borrow SET Return_Date = NOW() WHERE Borrow_ID = ? AND Return_Date IS NULL';
   
   const params = fineAmount ? [fineAmount, id] : [id];
   
