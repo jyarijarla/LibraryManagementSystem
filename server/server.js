@@ -107,6 +107,8 @@ const routes = [
 
   // Event routes
   { method: 'GET', path: '/api/events', handler: eventController.getAllEvents },
+  {method: 'POST', path: '/api/events', handler: eventController.createEvent},
+  {method: 'DELETE', path: '/api/events/:id', handler: eventController.deleteEvent},
   
   // Student routes
   { method: 'GET', path: '/api/students', handler: studentController.getAllStudents, auth: true, roles: ROLE_GROUPS.STAFF },
