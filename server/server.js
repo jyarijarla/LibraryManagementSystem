@@ -167,6 +167,7 @@ function setCorsHeaders(req, res) {
   const origin = req.headers.origin;
   if (allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
   } else {
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
