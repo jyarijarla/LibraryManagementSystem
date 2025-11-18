@@ -1,5 +1,86 @@
 const db = require('../db');
 
+exports.borrowAsset = async (req, res) => {
+  const connection = await db.promise().getConnection();
+    try {
+      const { userID, assetID } = req.body
+      console.log("Recieved data:", {userID, assetID})
+      if(!userID || !assetID) {
+        console.log("Missing required Fields")
+        throw Object.assign(new Error('Missing required fields'), {status: 400})
+      }
+      await connection.beginTransaction();
+      //check for existing asset
+      const [assetCheck] = await connection.query(
+        `SELECT Asset_ID FROM asset WHERE Asset_ID = ?`, [assetID]
+      )
+      if(!assetCheck[0]) {
+        throw Object.assign(new Error("Asset not found"), {status: 404});
+      }
+      //select rentable to borrow
+      let selRentable;
+      try{
+        const [getRentables] = await connection.query(
+          `SELECT Rentable_ID FROM rentable WHERE Asset_ID = ? AND Availability = 1`,
+          [assetID]
+        );
+        if(!getRentables[0]){
+          console.log("No rentable available for asset:", assetID);
+          throw Object.assign(new Error("No rentable available"), {status: 404});
+        }
+        selRentable = getRentables[0].Rentable_ID;
+      }
+      catch (error) {
+        console.log("Error fetching rentables:", error);
+        throw Object.assign(new Error("Rentable query failed"), {status: 500});
+      }
+      //get user role
+      const [userRoleQuery] = await connection.query(
+        `SELECT Role FROM user WHERE User_ID = ?`, [userID]
+      );
+      const userRole = userRoleQuery[0].Role;
+      //get basic borrow day limit
+      const [borrowDaysQuery] = await connection.query(
+        `SELECT borrow_days FROM role_type WHERE role_id = ?`, [userRole]
+      )
+      const borrowDays = borrowDaysQuery[0].borrow_days;
+      //calculate due date based on role
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + borrowDays);
+      const dueDateString = dueDate.toISOString().split('T')[0]; //YYYY-MM-DD
+      //borrow rentable
+      let newBorrowID;
+      try{
+        const [borrowInsertQuery] = await connection.query(
+          `INSERT INTO borrow (Borrower_ID, Rentable_ID, Due_Date) VALUES (?, ?, ?)`, 
+          [userID, selRentable, dueDateString]
+        );
+        newBorrowID = borrowInsertQuery.insertId;
+        console.log("Borrow ID assigned:", newBorrowID);
+      }
+      catch(error){
+        console.log("Insert failed:", error);
+        throw Object.assign(new Error("Insertion into borrow failed") , {status: 409})
+      }
+      //end transaction successfully
+      await connection.commit();
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ 
+        message: 'Borrow added successfully',
+        borrowID: newBorrowID,
+      }));
+    }
+    catch (error) {
+      //borrow failed
+      await connection.rollback();
+      console.log("Error in borrowAsset:", error);
+      res.writeHead(error.status || 500, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({message: error.message, status: error.status || 500}))
+    }
+    finally {
+      connection.release();
+    }
+}
 
 // Issue any asset (book, CD, audiobook, movie, technology, study-room)
 exports.issueBook = (req, res) => {
@@ -173,8 +254,8 @@ exports.returnBook = (req, res) => {
   
   // Update borrow record with return date and fine
   const updateQuery = fineAmount 
-    ? 'UPDATE borrow SET Return_Date = CURDATE(), Fee_Incurred = ? WHERE Borrow_ID = ? AND Return_Date IS NULL'
-    : 'UPDATE borrow SET Return_Date = CURDATE() WHERE Borrow_ID = ? AND Return_Date IS NULL';
+    ? 'UPDATE borrow SET Return_Date = NOW(), Fee_Incurred = ? WHERE Borrow_ID = ? AND Return_Date IS NULL'
+    : 'UPDATE borrow SET Return_Date = NOW() WHERE Borrow_ID = ? AND Return_Date IS NULL';
   
   const params = fineAmount ? [fineAmount, id] : [id];
   
@@ -189,44 +270,6 @@ exports.returnBook = (req, res) => {
       return res.writeHead(404, { 'Content-Type': 'application/json' })
         && res.end(JSON.stringify({ message: 'Borrow record not found or already returned' }));
     }
-    
-    const sendResponse = () => {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ 
-        message: 'Book returned successfully',
-        fine: fineAmount || 0
-      }));
-    };
-
-    const studyRoomQuery = `
-      SELECT sr.Asset_ID
-      FROM borrow b
-      JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
-      JOIN study_room sr ON r.Asset_ID = sr.Asset_ID
-      WHERE b.Borrow_ID = ?
-    `;
-
-    db.query(studyRoomQuery, [id], (roomErr, roomResults) => {
-      if (roomErr) {
-        console.error('Error checking study room status:', roomErr);
-        return sendResponse();
-      }
-
-      if (roomResults.length === 0) {
-        return sendResponse();
-      }
-
-      db.query(
-        'UPDATE study_room SET Availability = 1 WHERE Asset_ID = ?',
-        [roomResults[0].Asset_ID],
-        (updateErr) => {
-          if (updateErr) {
-            console.error('Error resetting study room availability:', updateErr);
-          }
-          sendResponse();
-        }
-      );
-    });
   });
 };
 

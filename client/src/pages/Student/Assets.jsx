@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
 import { useOverlay } from '../../components/FeedbackUI/OverlayContext'
@@ -41,7 +41,7 @@ return `/assets/${assetType}/${assetId}.${extension}`
 export function Assets(){
     const [error, setError] = useState('')
     const { setLoading } = useLoading();
-    const { setOverlayContent } = useOverlay();
+    const { setOverlayContent, refreshOverlay } = useOverlay();
 
     const [searchParams, setSearchParams] = useSearchParams()
     const [activeAssetTab, setActiveAssetTab] = useState(searchParams.get('type') || 'books')
@@ -167,8 +167,13 @@ export function Assets(){
     }
     const columns = getAssetTableColumns()
     const data = getCurrentAssetData()
-    
-
+    const dataRef = useRef();
+    dataRef.current = data;
+    const refreshAssets = async() => {
+        await fetchAssets(activeAssetTab);
+        refreshOverlay();
+        console.log("Refetching assets")
+    }
     useEffect(() => {
         const loadAsset = async () =>{
             setLoading({ isLoading: true })
@@ -238,7 +243,12 @@ export function Assets(){
                 </div>
             ) : (
                 data.map((item, index) => (
-                <div key={item.Asset_ID} className="asset-card" onClick={() => setOverlayContent(<AssetCard assetType={activeAssetTab} assetSelected={item}/>)}>
+                <div key={item.Asset_ID} className="asset-card" onClick={() => {
+                    setOverlayContent(<AssetCard 
+                        assetType={activeAssetTab} 
+                        getAsset={()=> dataRef.current.find(asset => asset.Asset_ID === item.Asset_ID)}
+                        onAssetChange={refreshAssets}/>)
+                }}>
                     <div className="card-header">
                     <span className="card-number">#{index + 1}</span>
                     

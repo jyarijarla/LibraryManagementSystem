@@ -125,10 +125,10 @@ const getAllTechnology = async (req, res) => {
         t.Model_Num, 
         t.Type, 
         t.Description,
-        t.Image_URL,
-        (SELECT COUNT(*) FROM rentable r WHERE r.Asset_ID = t.Asset_ID) as Copies,
-        (SELECT COUNT(*) FROM rentable r WHERE r.Asset_ID = t.Asset_ID AND r.Availability = 1) as Available_Copies
-      FROM technology t
+        t.Copies,
+        t.Available_Copies,
+        t.Image_URL
+      FROM technology_inventory t
       ORDER BY t.Type, t.Model_Num
     `;
     
