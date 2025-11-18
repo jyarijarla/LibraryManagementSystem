@@ -11,7 +11,7 @@ const createLibrarian = async () => {
     email: 'librarian1@library.com',
     phone: '555-0123',
     dateOfBirth: '1990-05-15',
-    password: process.env.LIBRARIAN_PASSWORD || 'ChangeMe@2024!', // Use env variable for security
+    password: process.env.LIBRARIAN_PASSWORD, // Use env variable for security
     role: 3 // Role 3 = Librarian (1=Student, 2=Admin, 3=Librarian)
   };
 
