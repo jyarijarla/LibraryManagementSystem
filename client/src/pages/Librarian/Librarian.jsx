@@ -1572,6 +1572,7 @@ function Librarian() {
       }
       throw error
     } finally {
+      console.log("Returned ")
       if (!silent) {
         setLoading(false)
       }

@@ -146,6 +146,7 @@
   color: #6b7280;
   cursor: pointer;
   transition: all 0.3s ease;
+  flex: 1;
 }
 
 .asset-tab:hover {

@@ -78,7 +78,24 @@ async function borrowAsset(assetID) {
         })
     return response.data;
 }
-
+async function holdAsset(assetID) {
+    const response = await axios.post(`${API_URL}/borrow`,
+        { userID: localStorage.getItem("userId"), assetID: assetID },{
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+        })
+    return response.data;
+}
+async function returnAsset(borrowID) {
+    const response = await axios.post(`${API_URL}/`,
+        { userID: localStorage.getItem("userId"), assetID: assetID },{
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+        })
+    return response.data;
+}
 export function AssetCard({ assetType, getAsset, onAssetChange }) {
     console.log("Re-rendered")
     const { closeOverlay } = useOverlay();
@@ -88,7 +105,7 @@ export function AssetCard({ assetType, getAsset, onAssetChange }) {
         setLoading({ isLoading: true })
         try {
             await borrowAsset(assetSelected.Asset_ID);
-            console.log("Borrowed book")
+            console.log("Borrowed asset")
             await onAssetChange();
         } catch (error) {
             console.error("Borrow failed", error);
@@ -96,6 +113,29 @@ export function AssetCard({ assetType, getAsset, onAssetChange }) {
             setLoading({ isLoading: false })
         }
     } 
+    const handleHold = async() => {
+        setLoading({ isLoading: true })
+        try {
+            await holdAsset(assetSelected.Asset_ID);
+            console.log("Held asset")
+            await onAssetChange();
+        } catch (error) {
+            console.error("Hold failed", error);
+        } finally {
+            setLoading({ isLoading: false })
+        }
+    }
+    const handleReturn = async() => {
+        setLoading({ isLoading: true })
+        try {
+            await returnAsset(assetSelected.Asset_ID);
+            await onAssetChange();
+        } catch (error) {
+            console.error("Return failed", error)
+        } finally {
+            setLoading({ isLoading: false })
+        }
+    }
     return (
         <div key={assetSelected} className='asset-card-content '>
             <div className='asset-card-header'>
@@ -145,13 +185,26 @@ export function AssetCard({ assetType, getAsset, onAssetChange }) {
                             </div>
                         </div>
                         <div className='asset-card-asset-details asset-card-section-col'>
-                            <span className='asset-card-button-container'>
-
-                                <button className='asset-card-button' onClick={handleBorrow}>
-                                    {`Borrow: ${assetSelected.Available_Copies || assetSelected.Availability}/${assetSelected.Copies || assetSelected.Availability}`}
-                                </button>
-                                <button className='asset-card-button'>Return</button>
-                                <button className='asset-card-button'>Test</button>
+                            <span className='asset-card-button-section'>
+                                <span className='asset-card-button-helper'><small>Available Copies: {assetSelected.Available_Copies || assetSelected.Availability}/{assetSelected.Copies || 1}</small></span>
+                                <span className='asset-card-button-container'>
+                                    <button className='asset-card-button' onClick={handleBorrow}>
+                                        {'Borrow'}
+                                    </button>
+                                    <button className='asset-card-button' onClick={handleHold}>
+                                        {'Hold'}
+                                    </button>
+                                </span>
+                            </span>
+                            <span className='asset-card-button-section'>
+                                <span className='asset-card-button-container'>
+                                    <button className='asset-card-button'>Waitlist</button>
+                                </span>
+                            </span>
+                            <span className='asset-card-button-section'>
+                                <span className='asset-card-button-container'>
+                                    <button className='asset-card-button' onClick={handleReturn}>Return</button>
+                                </span>
                             </span>
                         </div>
                     </div>

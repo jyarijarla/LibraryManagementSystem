@@ -39,6 +39,7 @@
 .asset-card-section-col {
   justify-self: center;
   padding: 10px;
+  margin: 2px 5px;
 }
 .asset-close-button {
   justify-self: right;
@@ -83,16 +84,22 @@
 .asset-card-asset-details {
   width: 100%;
 }
+
 .asset-card-button-container{
   display: flex;
-  width: 100%;
-  justify-content: center;
+  flex: 1;
+  flex-direction: row;
+  margin: 2px 1px;
+}
+.asset-card-button-helper{
+  margin: 0px 10px
 }
 .asset-card-button{
   background-color: #9ca3af;
   border-radius: 6px;
   margin: 0px 5px;
   padding: 4px 10px;
+  flex: 1;
 }
 .asset-close-x:hover {
   stroke: white;

@@ -129,11 +129,15 @@ const routes = [
   
   // Borrow routes
   { method: 'GET', path: '/api/borrow-records', handler: borrowController.getAllRecords, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'POST', path: '/api/borrow/issue', handler: borrowController.issueBook, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'PUT', path: '/api/borrow-records/:id/return', handler: borrowController.returnBook, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'PUT', path: '/api/borrow-records/:id/renew', handler: borrowController.renewBook, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'POST', path: '/api/borrow/issue', handler: borrowController.issueAsset, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'PUT', path: '/api/borrow-records/:id/return', handler: borrowController.returnAsset, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'PUT', path: '/api/borrow-records/:id/renew', handler: borrowController.renewAsset, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/dashboard/stats', handler: borrowController.getDashboardStats, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'POST', path: '/api/borrow', handler: borrowController.borrowAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
+  { method: 'PUT', path: '/api/borrow/return/:id', handler: borrowController.returnAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
+
+  // Hold routes
+  { method: 'POST', path: '/api/hold', handler: borrowController.borrowAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
 
   // Report routes
   { method: 'GET', path: '/api/reports/most-borrowed', handler: reportController.getMostBorrowedAssets, auth: true, roles: ROLE_GROUPS.STAFF },
