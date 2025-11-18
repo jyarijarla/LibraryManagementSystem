@@ -11,7 +11,7 @@ const createLibrarian = async () => {
     email: 'librarian1@library.com',
     phone: '555-0123',
     dateOfBirth: '1990-05-15',
-    password: 'Librarian@123', // Simple password for testing
+    password: process.env.LIBRARIAN_PASSWORD || 'ChangeMe@2024!', // Use env variable for security
     role: 3 // Role 3 = Librarian (1=Student, 2=Admin, 3=Librarian)
   };
 
@@ -32,7 +32,7 @@ const createLibrarian = async () => {
         console.log('================================');
         console.log('📧 Email:', librarianData.email);
         console.log('👤 Username:', librarianData.username);
-        console.log('🔑 Password:', librarianData.password);
+        console.log('🔑 Password: ********** (hidden for security)');
         console.log('👥 Existing Role:', results[0].Role);
         console.log('================================');
         
@@ -77,7 +77,7 @@ const createLibrarian = async () => {
           console.log('================================');
           console.log('📧 Email:', librarianData.email);
           console.log('👤 Username:', librarianData.username);
-          console.log('🔑 Password:', librarianData.password);
+          console.log('🔑 Password: ********** (hidden for security)');
           console.log('👥 Role: Librarian (Role ID: 3)');
           console.log('🆔 User ID:', result.insertId);
           console.log('================================');
@@ -85,7 +85,7 @@ const createLibrarian = async () => {
           console.log('1. Go to the login page');
           console.log('2. Select "Librarian" as role');
           console.log('3. Enter username: librarian1');
-          console.log('4. Enter password: Librarian@123');
+          console.log('4. Enter password from LIBRARIAN_PASSWORD env variable');
           process.exit(0);
         }
       );
