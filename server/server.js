@@ -12,7 +12,7 @@ const notificationController = require('./controllers/notificationController');
 const memberController = require('./controllers/memberController');
 const eventController = require('./controllers/eventController');
 const fineController = require('./controllers/fineController');
-const { authenticateRequest, enforceRoles } = require('./middleware/authMiddleware');
+const { authenticateRequest, enforceRoles, revokeToken } = require('./middleware/authMiddleware');
 
 const ROLES = {
   STUDENT: 'student',
@@ -66,7 +66,11 @@ const routes = [
   // Auth routes
   { method: 'POST', path: '/api/signup', handler: authController },
   { method: 'POST', path: '/api/login', handler: authController },
-  { method: 'POST', path: '/api/logout', handler: authController },
+  { method: 'POST', path: '/api/logout', handler: async (req, res) => {
+    const user = await authenticateRequest(req, res);
+    if (!user) return;
+    revokeToken(req, res);
+  }, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   
   // Asset routes - Books
   { method: 'GET', path: '/api/assets/books', handler: assetController.getAllBooks, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
@@ -189,7 +193,7 @@ function findMatchingRoute(method, pathname) {
 // Helper to handle matched route
 async function handleMatchedRoute(req, res, matchedRoute, pathname, urlParts) {
   if (matchedRoute.auth) {
-    const user = authenticateRequest(req, res);
+    const user = await authenticateRequest(req, res);
     if (!user) {
       return;
     }

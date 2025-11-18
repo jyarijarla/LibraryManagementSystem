@@ -165,23 +165,73 @@ const getLibrarianSummary = (req, res) => {
   const librarianId = req.params.id;
   const { from, to } = req.query;
 
-  // Note: Borrow table only has: Borrow_ID, Borrower_ID, Rentable_ID, Borrow_Date, Due_Date, Return_Date, Fee_Incurred
-  // No Renew_Date or Processed_By columns exist
+  /**
+   * We report issued/returned/renewed within the selected window, broken down by asset type.
+   * Processed_By is optional; include rows with matching librarian or NULL (legacy data).
+   * For unpaid fines, we show ALL current unpaid fines (not filtered by date) since they are a current liability.
+   */
   const query = `
     SELECT 
-      COUNT(CASE WHEN br.Return_Date IS NULL THEN 1 END) AS books_issued,
-      COUNT(CASE WHEN br.Return_Date IS NOT NULL THEN 1 END) AS books_returned,
-      COUNT(CASE WHEN br.Renew_Date IS NOT NULL THEN 1 END) AS renewals,
-      COALESCE(SUM(CASE WHEN br.Return_Date IS NOT NULL THEN br.Fee_Incurred ELSE 0 END), 0) AS fines_collected,
-      COUNT(CASE WHEN br.Return_Date IS NULL AND br.Due_Date < CURDATE() THEN 1 END) AS overdue_books
+      COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? THEN 1 END) AS assets_issued_total,
+      COUNT(CASE WHEN br.Return_Date BETWEEN ? AND ? THEN 1 END) AS assets_returned_total,
+      COUNT(CASE WHEN br.Renew_Date BETWEEN ? AND ? THEN 1 END) AS renewals,
+      COALESCE(SUM(CASE WHEN br.Return_Date BETWEEN ? AND ? THEN br.Fee_Incurred ELSE 0 END), 0) AS fines_collected,
+      (SELECT COALESCE(SUM(
+        COALESCE(b.Fee_Incurred, 
+          CASE 
+            WHEN b.Return_Date IS NULL AND b.Due_Date < CURDATE() 
+            THEN DATEDIFF(CURDATE(), b.Due_Date) * 1.00
+            ELSE 0 
+          END
+        )
+      ), 0) 
+       FROM borrow b 
+       WHERE b.Return_Date IS NULL 
+       AND b.Due_Date < CURDATE()
+       AND (b.Processed_By = ? OR b.Processed_By IS NULL)) AS fines_unpaid,
+      COUNT(CASE WHEN br.Return_Date IS NULL AND br.Due_Date < CURDATE() THEN 1 END) AS overdue_books,
+      COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND bk.Asset_ID IS NOT NULL THEN 1 END) AS books_issued,
+      COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND cd.Asset_ID IS NOT NULL THEN 1 END) AS cds_issued,
+      COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND ab.Asset_ID IS NOT NULL THEN 1 END) AS audiobooks_issued,
+      COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND mv.Asset_ID IS NOT NULL THEN 1 END) AS movies_issued,
+      COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND t.Asset_ID IS NOT NULL THEN 1 END) AS technology_issued,
+      COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND sr.Asset_ID IS NOT NULL THEN 1 END) AS study_rooms_issued
     FROM borrow br
+    JOIN rentable r ON br.Rentable_ID = r.Rentable_ID
+    LEFT JOIN book bk ON r.Asset_ID = bk.Asset_ID
+    LEFT JOIN cd ON r.Asset_ID = cd.Asset_ID
+    LEFT JOIN audiobook ab ON r.Asset_ID = ab.Asset_ID
+    LEFT JOIN movie mv ON r.Asset_ID = mv.Asset_ID
+    LEFT JOIN technology t ON r.Asset_ID = t.Asset_ID
+    LEFT JOIN study_room sr ON r.Asset_ID = sr.Asset_ID
     WHERE (br.Processed_By = ? OR br.Processed_By IS NULL)
-      AND ((br.Borrow_Date >= ? AND br.Borrow_Date <= ?)
-       OR (br.Return_Date >= ? AND br.Return_Date <= ?)
-       OR (br.Renew_Date >= ? AND br.Renew_Date <= ?))
+      AND (
+        (br.Borrow_Date BETWEEN ? AND ?)
+        OR (br.Return_Date BETWEEN ? AND ?)
+        OR (br.Renew_Date BETWEEN ? AND ?)
+      )
   `;
 
-  db.query(query, [librarianId, from, to, from, to, from, to], (err, results) => {
+  db.query(
+    query,
+    [
+      from, to,               // issued window
+      from, to,               // returned window
+      from, to,               // renewals window
+      from, to,               // fines collected window
+      librarianId,            // fines_unpaid subquery - librarian filter
+      from, to,               // books issued window
+      from, to,               // cds issued
+      from, to,               // audiobooks issued
+      from, to,               // movies issued
+      from, to,               // technology issued
+      from, to,               // study rooms issued
+      librarianId,            // WHERE clause librarian filter
+      from, to,               // filter window for WHERE clause
+      from, to,
+      from, to
+    ],
+    (err, results) => {
     if (err) {
       console.error('Error fetching librarian summary:', err);
       res.statusCode = 500;
@@ -192,7 +242,8 @@ const getLibrarianSummary = (req, res) => {
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify(results[0] || {}));
-  });
+    }
+  );
 };
 
 // Librarian Personal Report: Detailed Transactions
@@ -206,7 +257,7 @@ const getLibrarianTransactions = (req, res) => {
     memberNames, 
     assetTitles, 
     assetTypes,
-    hasFine
+    fineStatus
   } = req.query;
 
   // Parse comma-separated arrays
@@ -313,12 +364,12 @@ const getLibrarianTransactions = (req, res) => {
     }
   }
 
-  // Has fine filter - simple yes/no filter
-  if (hasFine) {
-    if (hasFine === 'with-fine') {
-      query += ` AND br.Fee_Incurred > 0`;
-    } else if (hasFine === 'no-fine') {
-      query += ` AND (br.Fee_Incurred IS NULL OR br.Fee_Incurred = 0)`;
+  // Fine status filter - paid or unpaid
+  if (fineStatus) {
+    if (fineStatus === 'paid') {
+      query += ` AND br.Fee_Incurred > 0 AND br.Return_Date IS NOT NULL`;
+    } else if (fineStatus === 'unpaid') {
+      query += ` AND br.Fee_Incurred > 0 AND br.Return_Date IS NULL`;
     }
   }
 

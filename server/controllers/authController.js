@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
 const db = require('../db');
-const { generateToken } = require('../utils/token');
+const { generateToken, createFingerprint } = require('../utils/token');
 
 // Login Handler
 async function login(req, res) {
@@ -56,10 +56,17 @@ async function login(req, res) {
       else if (user.Role === 3) userRole = 'librarian';
       else userRole = 'student';
 
+      // Create security fingerprint based on IP and User-Agent
+      const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || 
+                       req.socket.remoteAddress || 
+                       'unknown';
+      const userAgent = req.headers['user-agent'] || 'unknown';
+      const fingerprint = createFingerprint(clientIp, userAgent);
+
       const token = generateToken({
         userId: user.User_ID,
         role: userRole
-      });
+      }, { fingerprint });
 
       // Return user data (without password) - client will store in localStorage
       res.statusCode = 200;

@@ -1,4 +1,14 @@
-const { verifyToken } = require('../utils/token');
+const { verifyToken, createFingerprint } = require('../utils/token');
+const db = require('../db');
+
+// In-memory token blacklist (in production, use Redis or database)
+const tokenBlacklist = new Set();
+
+function addToBlacklist(jti) {
+  tokenBlacklist.add(jti);
+  // Auto-cleanup after 24 hours
+  setTimeout(() => tokenBlacklist.delete(jti), 24 * 60 * 60 * 1000);
+}
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -14,15 +24,65 @@ function authenticateRequest(req, res) {
   }
 
   const token = authHeader.replace('Bearer ', '').trim();
+  
   try {
-    const payload = verifyToken(token);
-    req.user = {
-      id: payload.userId,
-      role: payload.role
-    };
-    return req.user;
+    // Create fingerprint from current request
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || 
+                     req.socket.remoteAddress || 
+                     'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    const fingerprint = createFingerprint(clientIp, userAgent);
+
+    // Verify token with fingerprint check
+    const payload = verifyToken(token, { fingerprint });
+    
+    // Check if token is blacklisted
+    if (payload.jti && tokenBlacklist.has(payload.jti)) {
+      sendJson(res, 401, { message: 'Token has been revoked' });
+      return null;
+    }
+
+    // Verify user still exists and is active in database
+    return new Promise((resolve) => {
+      db.query(
+        'SELECT User_ID, Role, Username FROM user WHERE User_ID = ?',
+        [payload.userId],
+        (err, results) => {
+          if (err || results.length === 0) {
+            sendJson(res, 401, { message: 'User account not found or has been deleted' });
+            resolve(null);
+            return;
+          }
+
+          const user = results[0];
+          
+          // Verify role matches
+          let expectedRole;
+          if (user.Role === 2) expectedRole = 'admin';
+          else if (user.Role === 3) expectedRole = 'librarian';
+          else expectedRole = 'student';
+
+          if (expectedRole !== payload.role) {
+            sendJson(res, 401, { message: 'User role has changed. Please login again.' });
+            resolve(null);
+            return;
+          }
+
+          req.user = {
+            id: payload.userId,
+            role: payload.role,
+            username: user.Username,
+            tokenId: payload.jti
+          };
+          resolve(req.user);
+        }
+      );
+    });
   } catch (error) {
-    sendJson(res, 401, { message: 'Invalid or expired token', error: error.message });
+    const errorMessage = error.message.includes('fingerprint') 
+      ? 'Security validation failed. Please login again from your original device.'
+      : 'Invalid or expired token';
+    sendJson(res, 401, { message: errorMessage, error: error.message });
     return null;
   }
 }
@@ -45,7 +105,18 @@ function enforceRoles(req, res, allowedRoles = []) {
   return true;
 }
 
+function revokeToken(req, res) {
+  if (req.user && req.user.tokenId) {
+    addToBlacklist(req.user.tokenId);
+    sendJson(res, 200, { message: 'Logged out successfully' });
+  } else {
+    sendJson(res, 400, { message: 'No active session' });
+  }
+}
+
 module.exports = {
   authenticateRequest,
-  enforceRoles
+  enforceRoles,
+  revokeToken,
+  addToBlacklist
 };

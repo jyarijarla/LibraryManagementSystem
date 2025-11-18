@@ -15,7 +15,12 @@ import {
   User,
   Book,
   TrendingUp,
-  X
+  X,
+  Disc,
+  Headphones,
+  Film,
+  Laptop,
+  Building2
 } from 'lucide-react'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import './LibrarianReport.css'
@@ -26,11 +31,18 @@ const API_URL = window.location.hostname === 'localhost'
 
 function LibrarianReport() {
   const [summary, setSummary] = useState({
-    books_issued: 0,
-    books_returned: 0,
+    assets_issued_total: 0,
+    assets_returned_total: 0,
     renewals: 0,
     fines_collected: 0,
-    overdue_books: 0
+    fines_unpaid: 0,
+    overdue_books: 0,
+    books_issued: 0,
+    cds_issued: 0,
+    audiobooks_issued: 0,
+    movies_issued: 0,
+    technology_issued: 0,
+    study_rooms_issued: 0
   })
   const [transactions, setTransactions] = useState([])
   const [dailyActivity, setDailyActivity] = useState([])
@@ -61,7 +73,7 @@ function LibrarianReport() {
     memberNames: [], // Changed to array for multiple selections
     assetTitles: [], // Changed to array for multiple selections
     assetTypes: [], // Changed to array for multiple selections
-    hasFine: '' // 'all', 'with-fine', 'no-fine'
+    fineStatus: '' // '', 'paid', 'unpaid'
   })
 
   const [appliedFilters, setAppliedFilters] = useState(filters)
@@ -114,7 +126,7 @@ function LibrarianReport() {
         memberNames: appliedFilters.memberNames.join(','),
         assetTitles: appliedFilters.assetTitles.join(','),
         assetTypes: appliedFilters.assetTypes.join(','),
-        hasFine: appliedFilters.hasFine
+        fineStatus: appliedFilters.fineStatus
       }).toString()
 
       const [summaryRes, transactionsRes, activityRes] = await Promise.all([
@@ -128,16 +140,24 @@ function LibrarianReport() {
       const activityData = await activityRes.json()
 
       console.log('API Responses:', { summaryData, transactionsData, activityData })
+      console.log('Unpaid Fines from API:', summaryData.fines_unpaid)
 
       // Handle error responses
       if (!summaryRes.ok || summaryData.error) {
         console.error('Summary API error:', summaryData)
         setSummary({
-          books_issued: 0,
-          books_returned: 0,
+          assets_issued_total: 0,
+          assets_returned_total: 0,
           renewals: 0,
           fines_collected: 0,
-          overdue_books: 0
+          fines_unpaid: 0,
+          overdue_books: 0,
+          books_issued: 0,
+          cds_issued: 0,
+          audiobooks_issued: 0,
+          movies_issued: 0,
+          technology_issued: 0,
+          study_rooms_issued: 0
         })
       } else {
         setSummary(summaryData)
@@ -159,11 +179,18 @@ function LibrarianReport() {
     } catch (error) {
       console.error('Error fetching librarian report data:', error)
       setSummary({
-        books_issued: 0,
-        books_returned: 0,
+        assets_issued_total: 0,
+        assets_returned_total: 0,
         renewals: 0,
         fines_collected: 0,
-        overdue_books: 0
+        fines_unpaid: 0,
+        overdue_books: 0,
+        books_issued: 0,
+        cds_issued: 0,
+        audiobooks_issued: 0,
+        movies_issued: 0,
+        technology_issued: 0,
+        study_rooms_issued: 0
       })
       setTransactions([])
       setDailyActivity([])
@@ -215,13 +242,13 @@ function LibrarianReport() {
 
   const getSummaryText = () => {
     const days = Math.ceil((new Date(appliedFilters.to) - new Date(appliedFilters.from)) / (1000 * 60 * 60 * 24))
-    return `Between ${new Date(appliedFilters.from).toLocaleDateString()} and ${new Date(appliedFilters.to).toLocaleDateString()} (${days} days), you issued ${summary.books_issued || 0} books and processed ${summary.renewals || 0} renewals.`
+    return `Between ${new Date(appliedFilters.from).toLocaleDateString()} and ${new Date(appliedFilters.to).toLocaleDateString()} (${days} days), you issued ${summary.assets_issued_total || 0} items and processed ${summary.renewals || 0} renewals.`
   }
 
   const summaryCards = [
     {
       title: 'Assets Issued',
-      value: summary.books_issued || 0,
+      value: summary.assets_issued_total || 0,
       icon: BookOpen,
       color: 'from-green-500 to-emerald-600',
       bgColor: 'bg-green-50',
@@ -229,19 +256,67 @@ function LibrarianReport() {
     },
     {
       title: 'Assets Returned',
-      value: summary.books_returned || 0,
+      value: summary.assets_returned_total || 0,
       icon: BookCheck,
       color: 'from-blue-500 to-blue-600',
       bgColor: 'bg-blue-50',
       textColor: 'text-blue-600'
     },
     {
-      title: 'Renewals',
-      value: summary.renewals || 0,
-      icon: RefreshCw,
+      title: 'Books Issued',
+      value: summary.books_issued || 0,
+      icon: Book,
+      color: 'from-blue-500 to-indigo-600',
+      bgColor: 'bg-blue-50',
+      textColor: 'text-blue-600'
+    },
+    {
+      title: 'CDs Issued',
+      value: summary.cds_issued || 0,
+      icon: Disc,
       color: 'from-purple-500 to-purple-600',
       bgColor: 'bg-purple-50',
       textColor: 'text-purple-600'
+    },
+    {
+      title: 'Audiobooks Issued',
+      value: summary.audiobooks_issued || 0,
+      icon: Headphones,
+      color: 'from-amber-500 to-orange-600',
+      bgColor: 'bg-amber-50',
+      textColor: 'text-amber-600'
+    },
+    {
+      title: 'Movies Issued',
+      value: summary.movies_issued || 0,
+      icon: Film,
+      color: 'from-rose-500 to-pink-600',
+      bgColor: 'bg-rose-50',
+      textColor: 'text-rose-600'
+    },
+    {
+      title: 'Technology Issued',
+      value: summary.technology_issued || 0,
+      icon: Laptop,
+      color: 'from-teal-500 to-emerald-600',
+      bgColor: 'bg-teal-50',
+      textColor: 'text-teal-600'
+    },
+    {
+      title: 'Study Rooms Reserved',
+      value: summary.study_rooms_issued || 0,
+      icon: Building2,
+      color: 'from-cyan-500 to-blue-500',
+      bgColor: 'bg-cyan-50',
+      textColor: 'text-cyan-600'
+    },
+    {
+      title: 'Renewals',
+      value: summary.renewals || 0,
+      icon: RefreshCw,
+      color: 'from-gray-500 to-gray-600',
+      bgColor: 'bg-gray-50',
+      textColor: 'text-gray-700'
     },
     {
       title: 'Fines Collected',
@@ -250,6 +325,14 @@ function LibrarianReport() {
       color: 'from-green-500 to-green-600',
       bgColor: 'bg-green-50',
       textColor: 'text-green-600'
+    },
+    {
+      title: 'Unpaid Fines',
+      value: `$${(parseFloat(summary.fines_unpaid) || 0).toFixed(2)}`,
+      icon: AlertCircle,
+      color: 'from-orange-500 to-orange-600',
+      bgColor: 'bg-orange-50',
+      textColor: 'text-orange-600'
     },
     {
       title: 'Overdue Items',
@@ -362,7 +445,7 @@ function LibrarianReport() {
             {showFilters ? 'Hide Filters' : 'Show Filters'}
           </button>
           
-          {(appliedFilters.actions.length > 0 || appliedFilters.memberNames.length > 0 || appliedFilters.assetTitles.length > 0 || appliedFilters.assetTypes.length > 0 || appliedFilters.hasFine) && (
+          {(appliedFilters.actions.length > 0 || appliedFilters.memberNames.length > 0 || appliedFilters.assetTitles.length > 0 || appliedFilters.assetTypes.length > 0 || appliedFilters.fineStatus) && (
             <button
               onClick={handleClearFilters}
               className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
@@ -645,13 +728,13 @@ function LibrarianReport() {
                 Fine Status
               </label>
               <select
-                value={filters.hasFine}
-                onChange={(e) => setFilters({ ...filters, hasFine: e.target.value })}
+                value={filters.fineStatus}
+                onChange={(e) => setFilters({ ...filters, fineStatus: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               >
                 <option value="">All Transactions</option>
-                <option value="with-fine">With Fines Only</option>
-                <option value="no-fine">No Fines</option>
+                <option value="paid">Paid Fines</option>
+                <option value="unpaid">Unpaid Fines</option>
               </select>
             </div>
 
