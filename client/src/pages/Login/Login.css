@@ -1,3 +1,9 @@
+.home-back-redirect {
+  color: blue;
+}
+.home-back-redirect :hover {
+  color:#0369a1;
+}
 .login-container {
   display: flex;
   justify-content: center;
