@@ -55,7 +55,6 @@ function Login() {
         body: JSON.stringify({ 
           username: formData.username, 
           password: formData.password, 
-          role: formData.role 
         }),
       })
 
@@ -208,25 +207,6 @@ function Login() {
         
         <form onSubmit={isSignUp ? handleSignUpSubmit : handleLoginSubmit} className="login-form">
           {error && <div className="error-message">{error}</div>}
-          
-          {!isSignUp && (
-            <div className="form-group">
-              <label htmlFor="role">Login As</label>
-              <select
-                id="role"
-                name="role"
-                value={formData.role}
-                onChange={handleChange}
-                className="role-dropdown"
-                disabled={isLoading}
-                required
-              >
-                <option value="student">Student</option>
-                <option value="librarian">Librarian</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-          )}
 
           {isSignUp && (
             <div className="signup-info">
