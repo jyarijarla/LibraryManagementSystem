@@ -22,6 +22,10 @@ const Events = () => {
   // expandedId → stores which card is expanded (null = none)
   const [expandedId, setExpandedId] = useState(null)
 
+  // selectedDate → stores the currently selected date for filtering
+  const [selectedDate, setSelectedDate] = useState("");
+
+
 function formatTimeTo12Hour(timeStr) {
   if (!timeStr) return ''
   const parts = String(timeStr).split(':')
@@ -134,26 +138,124 @@ function formatTimeTo12Hour(timeStr) {
     }
   }
 
+// Convert and compare dates only if a date is selected
+const filteredEvents = selectedDate
+  ? events.filter(ev => occursOnDate(ev, selectedDate))
+  : events;
+
+function normalize(dateStr) {
+  const d = new Date(dateStr)
+  if (isNaN(d)) return null
+  return d.toISOString().slice(0, 10) // always YYYY-MM-DD
+}
+
+
+// Returns true if a recurring event should appear on selectedDate
+function occursOnDate(event, selectedDate) {
+  const eventDateNorm = normalize(event.Event_Date);
+  const filterDateNorm = selectedDate;
+
+  if (!event.Event_Date) return false;
+
+  const eventDate = new Date(eventDateNorm);
+  const filterDate = new Date(filterDateNorm);
+
+  const filterDay = filterDate.getDay();
+  const eventDay = eventDate.getDay();
+
+  switch (Number(event.recurring || 0)) {
+
+    // No recurrence
+    case 0:
+  return normalize(event.Event_Date) === selectedDate
+
+
+    // Weekly
+    case 1:
+      return (
+        filterDate >= eventDate &&
+        filterDay === eventDay
+      );
+
+    // Daily
+    case 2:
+      return filterDate >= eventDate;
+
+    // Monthly (same day of month)
+    case 3:
+      return (
+        filterDate >= eventDate &&
+        filterDate.getDate() === eventDate.getDate()
+      );
+
+    // Yearly (same month + same day)
+    case 4:
+      return (
+        filterDate >= eventDate &&
+        filterDate.getDate() === eventDate.getDate() &&
+        filterDate.getMonth() === eventDate.getMonth()
+      );
+
+    // Weekdays (Mon–Fri)
+    case 5:
+      return (
+        filterDate >= eventDate &&
+        filterDay >= 1 && filterDay <= 5
+      );
+
+    // Weekends (Sat–Sun)
+    case 6:
+      return (
+        filterDate >= eventDate &&
+        (filterDay === 0 || filterDay === 6)
+      );
+
+    default:
+      return false;
+  }
+}
+
+
 
   return (
     <div className="p-6">
 
       {/* Page Header */}
+
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
-            <Calendar className="w-6 h-6 text-indigo-600" />
-            Library Events
-          </h1>
-          <p className="text-sm text-gray-600">Upcoming and recurring events at a glance</p>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-3">
+          <Calendar className="w-6 h-6 text-indigo-600" />
+          Library Events
+        </h1>
+        <p className="text-sm text-gray-600">Upcoming and recurring events at a glance</p>
       </div>
+
+      {/* Date filter */}
+      <div className="flex items-center gap-3">
+    <input 
+    type="date"
+    value={selectedDate}
+    onChange={e => setSelectedDate(e.target.value)}
+    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+  />
+
+  <button
+    onClick={() => setSelectedDate("")}
+    className="px-3 py-2 text-sm rounded-lg bg-gray-100 hover:bg-gray-200 border border-gray-300"
+  >
+    Show All
+  </button>
+</div>
+</div>
+
+
 
 
       {/* Grid of event cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
 
-        {events.map(ev => {
+        {filteredEvents.map(ev => {
 
           // Determine if THIS card is expanded
           const isExpanded = expandedId === ev.Event_ID
