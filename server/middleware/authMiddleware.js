@@ -26,7 +26,7 @@ const ROLE_RATE_LIMITS = {
 };
 
 // Allowed roles in the system (any other role is instantly rejected)
-const VALID_ROLES = ['Student', 'Librarian', 'Admin'];
+const VALID_ROLES = ['student', 'librarian', 'admin'];
 
 function addToBlacklist(jti) {
   tokenBlacklist.add(jti);
