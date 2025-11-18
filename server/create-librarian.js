@@ -5,7 +5,7 @@ const bcrypt = require('bcryptjs');
 // Create a test librarian account
 const createLibrarian = async () => {
   const librarianData = {
-    username: 'librarian1',
+    username: 'librarian2',
     firstName: 'Hao',
     lastName: 'Pham',
     email: 'librarian1@library.com',
