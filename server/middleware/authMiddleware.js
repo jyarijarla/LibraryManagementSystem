@@ -80,7 +80,7 @@ function authenticateRequest(req, res) {
     });
   } catch (error) {
     const errorMessage = error.message.includes('fingerprint') 
-      ? 'Security validation failed. Please login again from your original device.'
+      ? 'Fuck You Hung'
       : 'Invalid or expired token';
     sendJson(res, 401, { message: errorMessage, error: error.message });
     return null;
