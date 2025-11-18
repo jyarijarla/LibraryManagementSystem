@@ -5,11 +5,15 @@ const db = require('../db');
 // In-memory token blacklist (in production, use Redis or database)
 const tokenBlacklist = new Set();
 const usedNonces = new Map(); // Track used nonces to prevent replay attacks
-const requestCounts = new Map(); // Track request rates per user
+const requestCounts = new Map(); // Track request rates per user (per minute)
+const burstCounts = new Map(); // Track burst requests (per 10 seconds)
 const suspiciousIPs = new Set(); // Track suspicious IPs
+const blockedIPs = new Map(); // Track permanently blocked IPs with timestamps
 
 // Security constants
-const MAX_REQUESTS_PER_MINUTE = 5; // Rate limit
+const MAX_REQUESTS_PER_MINUTE = 200; // Hard limit - block after this
+const SUSPICIOUS_REQUEST_THRESHOLD = 50; // Flag suspicious behavior
+const BURST_THRESHOLD = 20; // Max requests in 10 seconds (burst detection)
 const NONCE_EXPIRY_MS = 300000; // 5 minutes
 const REQUEST_TIMESTAMP_TOLERANCE_MS = 60000; // 1 minute tolerance
 const SECRET_PEPPER = process.env.SECRET_PEPPER || crypto.randomBytes(32).toString('hex');
@@ -34,6 +38,22 @@ setInterval(() => {
 setInterval(() => {
   requestCounts.clear();
 }, 60000); // Reset every minute
+
+// Reset burst counters more frequently
+setInterval(() => {
+  burstCounts.clear();
+}, 10000); // Reset every 10 seconds
+
+// Clean up old blocked IPs (unblock after 1 hour)
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, blockTime] of blockedIPs.entries()) {
+    if (now - blockTime > 3600000) { // 1 hour
+      blockedIPs.delete(ip);
+      console.log(`[SECURITY] IP ${ip} unblocked after timeout`);
+    }
+  }
+}, 300000); // Check every 5 minutes
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -106,31 +126,71 @@ function validateRequestIntegrity(req) {
 
 /**
  * Check rate limiting per user and IP combination
+ * Multi-layer protection: burst detection + rate limiting + IP blocking
  */
 function checkRateLimit(userId, clientIp) {
   const key = `${userId}:${clientIp}`;
-  const current = requestCounts.get(key) || 0;
+  const ipKey = clientIp;
   
-  if (current >= MAX_REQUESTS_PER_MINUTE) {
-    // Mark IP as suspicious after repeated rate limit violations
-    suspiciousIPs.add(clientIp);
-    setTimeout(() => suspiciousIPs.delete(clientIp), 3600000); // Block for 1 hour
+  // Check if IP is permanently blocked
+  if (blockedIPs.has(ipKey)) {
+    const blockTime = blockedIPs.get(ipKey);
+    const minutesBlocked = Math.floor((Date.now() - blockTime) / 60000);
+    console.log(`[SECURITY BLOCK] Blocked IP attempted access: ${ipKey} (blocked ${minutesBlocked} minutes ago)`);
+    return { 
+      allowed: false, 
+      reason: 'Your IP has been blocked due to suspicious activity. Please contact support.' 
+    };
+  }
+  
+  // Check burst protection (too many requests in 10 seconds)
+  const burstCount = burstCounts.get(key) || 0;
+  if (burstCount >= BURST_THRESHOLD) {
+    console.log(`[SECURITY ALERT] BURST ATTACK DETECTED: ${burstCount} requests in 10s from user ${userId} at IP ${ipKey}`);
+    
+    // Immediately block IP after burst attack
+    blockedIPs.set(ipKey, Date.now());
+    suspiciousIPs.add(ipKey);
     
     return { 
       allowed: false, 
-      reason: `Rate limit exceeded. Maximum ${MAX_REQUESTS_PER_MINUTE} requests per minute allowed.` 
+      reason: 'Too many requests in a short time. Your IP has been blocked for security.' 
     };
   }
   
-  // Check if IP is marked as suspicious
-  if (suspiciousIPs.has(clientIp)) {
+  // Check rate limit (requests per minute)
+  const current = requestCounts.get(key) || 0;
+  
+  // Hard limit - block after exceeding
+  if (current >= MAX_REQUESTS_PER_MINUTE) {
+    console.log(`[SECURITY ALERT] Rate limit exceeded: ${current} requests/min from user ${userId} at IP ${ipKey}`);
+    
+    // Block IP after consistent abuse
+    blockedIPs.set(ipKey, Date.now());
+    suspiciousIPs.add(ipKey);
+    
     return { 
       allowed: false, 
-      reason: 'Access temporarily blocked due to suspicious activity.' 
+      reason: `Rate limit exceeded. Your IP has been blocked. Maximum ${MAX_REQUESTS_PER_MINUTE} requests per minute allowed.` 
     };
   }
   
+  // Warn about suspicious behavior (approaching limit)
+  if (current >= SUSPICIOUS_REQUEST_THRESHOLD) {
+    console.log(`[SECURITY WARNING] High request rate: ${current} requests/min from user ${userId} at IP ${ipKey}`);
+    suspiciousIPs.add(ipKey);
+    setTimeout(() => suspiciousIPs.delete(ipKey), 300000); // Remove flag after 5 minutes if behavior improves
+  }
+  
+  // Check if IP is marked as suspicious (temporary flag)
+  if (suspiciousIPs.has(ipKey) && current >= SUSPICIOUS_REQUEST_THRESHOLD) {
+    console.log(`[SECURITY] Suspicious IP making more requests: ${ipKey}`);
+  }
+  
+  // Increment counters
   requestCounts.set(key, current + 1);
+  burstCounts.set(key, burstCount + 1);
+  
   return { allowed: true };
 }
 
@@ -151,23 +211,26 @@ function authenticateRequest(req, res) {
     const userAgent = req.headers['user-agent'] || 'unknown';
     
     // Additional security: Check for common Postman/API tool signatures
-    const suspiciousAgents = ['postman', 'insomnia', 'httpclient', 'curl', 'wget', 'python-requests'];
+    const suspiciousAgents = ['postman', 'insomnia', 'httpclient', 'curl', 'wget', 'python-requests', 'axios/', 'node-fetch'];
     const isSuspicious = suspiciousAgents.some(agent => 
       userAgent.toLowerCase().includes(agent)
     );
     
-    // Block suspicious agents if strict mode is enabled
-    const blockApiTools = process.env.BLOCK_API_TOOLS === 'true';
-    if (isSuspicious && blockApiTools) {
+    // Check for automated tools but don't block legitimate browsers
+    const isLikelyBrowser = /mozilla|chrome|safari|firefox|edge|opera/i.test(userAgent);
+    
+    if (isSuspicious && !isLikelyBrowser) {
+      console.log(`[SECURITY ALERT] API tool blocked: ${userAgent} from IP: ${clientIp}`);
       sendJson(res, 403, { 
-        message: 'Access from automated tools is not allowed. Please use the official application.' 
+        message: 'Automated access detected. Please use the official web application.',
+        code: 'AUTOMATED_TOOL_DETECTED'
       });
       return null;
     }
     
-    // Log suspicious access attempts even if not blocking
-    if (isSuspicious) {
-      console.log(`[SECURITY] Suspicious User-Agent detected: ${userAgent} from IP: ${clientIp}`);
+    // Log any non-browser access for monitoring
+    if (!isLikelyBrowser) {
+      console.log(`[SECURITY WARNING] Non-browser access: ${userAgent} from IP: ${clientIp}`);
     }
     
     const fingerprint = createFingerprint(clientIp, userAgent);
@@ -176,16 +239,22 @@ function authenticateRequest(req, res) {
     const payload = verifyToken(token, { fingerprint });
     
     // Validate request integrity (replay attack prevention)
-    const integrityCheck = validateRequestIntegrity(req);
-    if (!integrityCheck.valid) {
-      sendJson(res, 401, { message: integrityCheck.reason });
-      return null;
-    }
+    // DISABLED FOR NOW - uncomment when client is migrated to use secureFetch
+    // const integrityCheck = validateRequestIntegrity(req);
+    // if (!integrityCheck.valid) {
+    //   sendJson(res, 401, { message: integrityCheck.reason });
+    //   return null;
+    // }
     
-    // Check rate limiting
+    // Intelligent rate limiting - track but allow legitimate use
     const rateLimitCheck = checkRateLimit(payload.userId, clientIp);
     if (!rateLimitCheck.allowed) {
-      sendJson(res, 429, { message: rateLimitCheck.reason });
+      console.log(`[SECURITY ALERT] Rate limit exceeded: User ${payload.userId} from IP ${clientIp}`);
+      sendJson(res, 429, { 
+        message: 'Too many requests. Please slow down.',
+        code: 'RATE_LIMIT_EXCEEDED',
+        retryAfter: 60
+      });
       return null;
     }
     
