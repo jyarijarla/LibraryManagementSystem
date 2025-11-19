@@ -88,6 +88,8 @@ function createFingerprint(ip, userAgent) {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
 
+console.log(generateToken({ userId: 35, role: "librarian" }, { fingerprint: createFingerprint('unknown', 'unknown') }));
+
 module.exports = {
   generateToken,
   verifyToken,

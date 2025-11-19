@@ -14,6 +14,7 @@
     "start": "npm run start --workspace server",
     "db:test": "npm run db:test --workspace server",
     "db:run-cli": "npm run db:run-cli --workspace server",
+    "db:triggers": "node server/create-triggers.js",
     "lint:server": "npm run lint --workspace server"
   },
   "devDependencies": {
@@ -26,5 +27,10 @@
   },
   "overrides": {
     "vite": "npm:rolldown-vite@7.1.14"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "dotenv": "^17.2.3",
+    "mysql2": "^3.15.3"
   }
 }

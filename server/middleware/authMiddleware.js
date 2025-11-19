@@ -5,25 +5,11 @@ const db = require('../db');
 // In-memory token blacklist (in production, use Redis or database)
 const tokenBlacklist = new Set();
 const usedNonces = new Map(); // Track used nonces to prevent replay attacks
-const requestCounts = new Map(); // Track request rates per user (per minute)
-const burstCounts = new Map(); // Track burst requests (per 10 seconds)
-const suspiciousIPs = new Set(); // Track suspicious IPs
-const blockedIPs = new Map(); // Track permanently blocked IPs with timestamps
 
 // Security constants
-const MAX_REQUESTS_PER_MINUTE = 200; // Hard limit - block after this
-const SUSPICIOUS_REQUEST_THRESHOLD = 50; // Flag suspicious behavior
-const BURST_THRESHOLD = 20; // Max requests in 10 seconds (burst detection)
 const NONCE_EXPIRY_MS = 300000; // 5 minutes
 const REQUEST_TIMESTAMP_TOLERANCE_MS = 60000; // 1 minute tolerance
 const SECRET_PEPPER = process.env.SECRET_PEPPER || crypto.randomBytes(32).toString('hex');
-
-// Role-based rate limits (stricter for non-admin roles)
-const ROLE_RATE_LIMITS = {
-  'Student': 30,      // Students get 30 requests/min max
-  'Librarian': 100,   // Librarians get 100 requests/min
-  'Admin': 200        // Admins get full limit
-};
 
 // Allowed roles in the system (any other role is instantly rejected)
 const VALID_ROLES = ['student', 'librarian', 'admin'];
@@ -43,27 +29,6 @@ setInterval(() => {
     }
   }
 }, 60000); // Clean every minute
-
-// Reset rate limiting counters
-setInterval(() => {
-  requestCounts.clear();
-}, 60000); // Reset every minute
-
-// Reset burst counters more frequently
-setInterval(() => {
-  burstCounts.clear();
-}, 10000); // Reset every 10 seconds
-
-// Clean up old blocked IPs (unblock after 1 hour)
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, blockTime] of blockedIPs.entries()) {
-    if (now - blockTime > 3600000) { // 1 hour
-      blockedIPs.delete(ip);
-      console.log(`[SECURITY] IP ${ip} unblocked after timeout`);
-    }
-  }
-}, 300000); // Check every 5 minutes
 
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
@@ -134,92 +99,7 @@ function validateRequestIntegrity(req) {
   return { valid: true };
 }
 
-/**
- * Check rate limiting per user and IP combination
- * Multi-layer protection: burst detection + rate limiting + IP blocking + role-based limits
- */
-function checkRateLimit(userId, clientIp, userRole) {
-  const key = `${userId}:${clientIp}`;
-  const ipKey = clientIp;
-  
-  // Get role-specific rate limit (default to lowest if role not recognized)
-  const roleLimit = ROLE_RATE_LIMITS[userRole] || 30;
-  
-  // Check if IP is permanently blocked
-  if (blockedIPs.has(ipKey)) {
-    const blockTime = blockedIPs.get(ipKey);
-    const minutesBlocked = Math.floor((Date.now() - blockTime) / 60000);
-    console.log(`[SECURITY BLOCK] Blocked IP attempted access: ${ipKey} (blocked ${minutesBlocked} minutes ago)`);
-    return { 
-      allowed: false, 
-      reason: 'Your IP has been blocked due to suspicious activity. Please contact support.' 
-    };
-  }
-  
-  // Check burst protection (too many requests in 10 seconds)
-  const burstCount = burstCounts.get(key) || 0;
-  if (burstCount >= BURST_THRESHOLD) {
-    console.log(`[SECURITY ALERT] BURST ATTACK DETECTED: ${burstCount} requests in 10s from user ${userId} at IP ${ipKey}`);
-    
-    // Immediately block IP after burst attack
-    blockedIPs.set(ipKey, Date.now());
-    suspiciousIPs.add(ipKey);
-    
-    return { 
-      allowed: false, 
-      reason: 'Too many requests in a short time. Your IP has been blocked for security.' 
-    };
-  }
-  
-  // Check rate limit (requests per minute)
-  const current = requestCounts.get(key) || 0;
-  
-  // Check role-specific limit first (stricter)
-  if (current >= roleLimit) {
-    console.log(`[SECURITY ALERT] Role-based rate limit exceeded: ${current} requests/min from ${userRole} user ${userId} at IP ${ipKey} (limit: ${roleLimit})`);
-    
-    // Block IP after exceeding role limit
-    blockedIPs.set(ipKey, Date.now());
-    suspiciousIPs.add(ipKey);
-    
-    return { 
-      allowed: false, 
-      reason: `Rate limit for ${userRole} role exceeded. Your IP has been blocked. Maximum ${roleLimit} requests per minute allowed for your role.` 
-    };
-  }
-  
-  // Hard limit - block after exceeding (fallback)
-  if (current >= MAX_REQUESTS_PER_MINUTE) {
-    console.log(`[SECURITY ALERT] Rate limit exceeded: ${current} requests/min from user ${userId} at IP ${ipKey}`);
-    
-    // Block IP after consistent abuse
-    blockedIPs.set(ipKey, Date.now());
-    suspiciousIPs.add(ipKey);
-    
-    return { 
-      allowed: false, 
-      reason: `Rate limit exceeded. Your IP has been blocked. Maximum ${MAX_REQUESTS_PER_MINUTE} requests per minute allowed.` 
-    };
-  }
-  
-  // Warn about suspicious behavior (approaching limit)
-  if (current >= SUSPICIOUS_REQUEST_THRESHOLD) {
-    console.log(`[SECURITY WARNING] High request rate: ${current} requests/min from user ${userId} at IP ${ipKey}`);
-    suspiciousIPs.add(ipKey);
-    setTimeout(() => suspiciousIPs.delete(ipKey), 300000); // Remove flag after 5 minutes if behavior improves
-  }
-  
-  // Check if IP is marked as suspicious (temporary flag)
-  if (suspiciousIPs.has(ipKey) && current >= SUSPICIOUS_REQUEST_THRESHOLD) {
-    console.log(`[SECURITY] Suspicious IP making more requests: ${ipKey}`);
-  }
-  
-  // Increment counters
-  requestCounts.set(key, current + 1);
-  burstCounts.set(key, burstCount + 1);
-  
-  return { allowed: true };
-}
+// Rate limiting removed - you can add your own implementation later if needed
 
 function authenticateRequest(req, res) {
   const authHeader = req.headers.authorization || '';
@@ -268,30 +148,9 @@ function authenticateRequest(req, res) {
     // CRITICAL: Validate role is in allowed list (prevent fake roles in token)
     if (!VALID_ROLES.includes(payload.role)) {
       console.log(`[SECURITY ALERT] INVALID ROLE IN TOKEN: "${payload.role}" from IP: ${clientIp}`);
-      blockedIPs.set(clientIp, Date.now()); // Block immediately for role tampering
       sendJson(res, 403, { 
-        message: 'Invalid role detected. Your IP has been blocked.',
+        message: 'Invalid role detected. Access denied.',
         code: 'INVALID_ROLE'
-      });
-      return null;
-    }
-    
-    // Validate request integrity (replay attack prevention)
-    // DISABLED FOR NOW - uncomment when client is migrated to use secureFetch
-    // const integrityCheck = validateRequestIntegrity(req);
-    // if (!integrityCheck.valid) {
-    //   sendJson(res, 401, { message: integrityCheck.reason });
-    //   return null;
-    // }
-    
-    // Intelligent rate limiting with role-based limits
-    const rateLimitCheck = checkRateLimit(payload.userId, clientIp, payload.role);
-    if (!rateLimitCheck.allowed) {
-      console.log(`[SECURITY ALERT] Rate limit exceeded: User ${payload.userId} from IP ${clientIp}`);
-      sendJson(res, 429, { 
-        message: 'Too many requests. Please slow down.',
-        code: 'RATE_LIMIT_EXCEEDED',
-        retryAfter: 60
       });
       return null;
     }
@@ -332,8 +191,7 @@ function authenticateRequest(req, res) {
               // CRITICAL: Verify role from database matches token AND is valid
               if (dbRole !== payload.role) {
                 console.log(`[SECURITY ALERT] ROLE MISMATCH: Token says "${payload.role}" but DB says "${dbRole}" for user ${payload.userId}`);
-                blockedIPs.set(clientIp, Date.now()); // Block for role tampering attempt
-                sendJson(res, 401, { message: 'Role verification failed. Your IP has been blocked.' });
+                sendJson(res, 401, { message: 'Role verification failed. Access denied.' });
                 resolve(null);
                 return;
               }
@@ -341,7 +199,6 @@ function authenticateRequest(req, res) {
               // Double-check role is valid even if it matches
               if (!VALID_ROLES.includes(dbRole)) {
                 console.log(`[SECURITY ALERT] INVALID ROLE IN DATABASE: "${dbRole}" for user ${payload.userId}`);
-                blockedIPs.set(clientIp, Date.now());
                 sendJson(res, 403, { message: 'Invalid role in system. Access denied.' });
                 resolve(null);
                 return;
