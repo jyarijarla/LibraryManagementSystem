@@ -41,8 +41,7 @@ const ASSET_TYPE_OPTIONS = [
   { value: 'CD', label: 'CDs', icon: Disc },
   { value: 'Audiobook', label: 'Audiobooks', icon: Headphones },
   { value: 'Movie', label: 'Movies', icon: Film },
-  { value: 'Technology', label: 'Technology', icon: Laptop },
-  { value: 'Study Room', label: 'Study Rooms', icon: Building2 }
+  { value: 'Technology', label: 'Technology', icon: Laptop }
 ]
 
 const TRANSACTION_STATUS_OPTIONS = [
@@ -157,8 +156,7 @@ const buildDefaultAssetFilters = () => {
     status: [],
     fineMin: '',
     fineMax: '',
-    overdueBucket: '',
-    roomId: ''
+    overdueBucket: ''
   }
 }
 
@@ -212,7 +210,7 @@ function LibrarianReport() {
       return
     }
     fetchAssetData()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [librarianId, appliedAssetFilters])
 
   useEffect(() => {
@@ -220,14 +218,14 @@ function LibrarianReport() {
       return
     }
     fetchRoomBookings()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [librarianId, appliedRoomFilters])
 
   useEffect(() => {
     if (!librarianId) return
     fetchAutocompleteData()
     fetchRoomMetadata()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [librarianId])
 
   const fetchAutocompleteData = async () => {
@@ -262,8 +260,7 @@ function LibrarianReport() {
         assetTitles: appliedAssetFilters.assetTitles.join(','),
         assetTypes: appliedAssetFilters.assetTypes.join(','),
         status: appliedAssetFilters.status.join(','),
-        overdueBucket: appliedAssetFilters.overdueBucket,
-        roomId: appliedAssetFilters.roomId
+        overdueBucket: appliedAssetFilters.overdueBucket
       })
 
       if (appliedAssetFilters.fineStatus && appliedAssetFilters.fineStatus !== 'all') {
@@ -802,9 +799,9 @@ function LibrarianReport() {
           {isFilterOpen && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
+              animate={{ height: 'auto', opacity: 1, transitionEnd: { overflow: 'visible' } }}
+              exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
+              style={{ overflow: 'hidden' }}
             >
               {activeTab === 'assets' ? (
                 <div className="space-y-6">
@@ -974,7 +971,11 @@ function LibrarianReport() {
                           {showAssetDropdown && assetsList.length > 0 && (
                             <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                               {assetsList
-                                .filter(asset => asset.book_title.toLowerCase().includes(assetSearchText.toLowerCase()))
+                                .filter(asset => {
+                                  const matchesSearch = asset.book_title.toLowerCase().includes(assetSearchText.toLowerCase())
+                                  const matchesType = assetFilters.assetTypes.length === 0 || assetFilters.assetTypes.includes(asset.asset_type)
+                                  return matchesSearch && matchesType
+                                })
                                 .map(asset => (
                                   <button
                                     key={asset.Asset_ID}
@@ -995,16 +996,6 @@ function LibrarianReport() {
                                 ))}
                             </div>
                           )}
-                        </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">Study Room # (if applicable)</label>
-                          <input
-                            type="text"
-                            value={assetFilters.roomId}
-                            onChange={(e) => setAssetFilters(prev => ({ ...prev, roomId: e.target.value }))}
-                            placeholder="Room number"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                          />
                         </div>
                       </div>
                     </div>
@@ -1244,7 +1235,7 @@ function LibrarianReport() {
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.div>
+      </motion.div >
 
       {activeTab === 'assets' ? (
         <>
@@ -1368,7 +1359,13 @@ function LibrarianReport() {
                             </div>
                           </td>
                           <td className="px-3 py-3 text-sm text-gray-800">
-                            <p className="font-semibold truncate" title={transaction.book_title}>{transaction.book_title}</p>
+                            <p
+                              className="font-semibold truncate cursor-pointer hover:text-emerald-600 transition-colors"
+                              title={`Filter by ${transaction.book_title}`}
+                              onClick={() => handleAssetClick(transaction.book_title)}
+                            >
+                              {transaction.book_title}
+                            </p>
                             <p className="text-xs text-gray-500">{transaction.asset_type}</p>
                           </td>
                           <td className="px-3 py-3 text-sm font-medium text-gray-700">{transaction.action}</td>
@@ -1499,8 +1496,9 @@ function LibrarianReport() {
             </table>
           </div>
         </motion.div>
-      )}
-    </div>
+      )
+      }
+    </div >
   )
 }
 
