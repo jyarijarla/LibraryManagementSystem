@@ -133,8 +133,10 @@ const routes = [
   { method: 'PUT', path: '/api/borrow-records/:id/return', handler: borrowController.returnAsset, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'PUT', path: '/api/borrow-records/:id/renew', handler: borrowController.renewAsset, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/dashboard/stats', handler: borrowController.getDashboardStats, auth: true, roles: ROLE_GROUPS.STAFF },
+
+  { method: "GET", path: '/api/borrow-records/user', handler: borrowController.getUserBorrows, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
   { method: 'POST', path: '/api/borrow', handler: borrowController.borrowAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
-  { method: 'PUT', path: '/api/borrow/return/:id', handler: borrowController.returnAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
+  { method: 'PUT', path: '/api/borrow/return/:id', handler: borrowController.userReturnAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
 
   // Hold routes
   { method: 'POST', path: '/api/hold', handler: borrowController.holdAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH},

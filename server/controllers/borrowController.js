@@ -165,42 +165,87 @@ exports.holdAsset = async (req, res) => {
       connection.release();
     }
 }
-exports.waitlistAsset = async (req, res) => {
-    const { assetID } = req.body
+
+exports.cancelHold = async (req, res) => {
+  const { holdID } = req.body
     if(!assetID) {
       res.writeHead(400, { 'Content-Type': 'application/json' })
       return res.end(JSON.stringify({ message: "Missing required fields"}));
     }
-    const userID = req.user.id;
-    const connection = await db.promise().getConnection();
     try {
-      connection.beginTransaction();
-
-      const [assetCheck] = await connection.query(
-        `SELECT * FROM asset WHERE Asset_ID = ? LIMIT 1`, [assetID]
+      const [cancelResult] = await db.promise().query(`CALL db_cancel_hold(?)`,
+        [holdID]
       )
-      if(assetCheck.length === 0) {
-        throw Object.assign(new Error("Asset not found"), {status: 404})
-      }
-      const [waitlistInsertQuery] = await connection.query(
-        'INSERT INTO waitlist (Waitlister_ID, Asset_ID) VALUES (?, ?)',
-        [userID, assetID]
-      )
-      newWaitlistID = waitlistInsertQuery.insertId;
-
-      await connection.commit();
-      res.writeHead(201, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: "Waitlist entry created", id: newWaitlistID }));
+      console.log("Hold canceled successfuly")
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ 
+        message: 'Waitlist added successfully',
+      }));
     } catch (error) {
-      //waitlist failed
-      await connection.rollback();
-      console.log("Error in waitlistAsset:", error);
-      res.writeHead(error.status || 500, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({message: error.message, status: error.status || 500}))
+      console.log("Error canceling hold:", error);
+      res.writeHead( 500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({message: error.message, status: 500}))
     }
-    finally {
-      connection.release();
+}
+
+exports.userCancelHold = async (req, res) => {
+  const userID = req.user.id
+
+  const [validHolder] = await db.promise().query(
+    `SELECT Borrower_ID FROM borrow WHERE Borrow_ID = ? AND Return_Date IS NULL`,
+    [borrowID]
+  )
+  if(validBorrower.length === 0){
+    return res.writeHead(404, { 'Content-Type': 'application/json' })
+        && res.end(JSON.stringify({ message: 'Borrow does not exist'}));
+  }
+  if(validBorrower[0] != userID){
+    return res.writeHead(401, { 'Content-Type': 'application/json' })
+        && res.end(JSON.stringify({ message: 'Unauthorized return'}));
+  }
+  const newReq = {
+    ...req,
+    params: { id: borrowID }, 
+  };
+  return returnAsset(newReq, res);
+}
+
+exports.waitlistAsset = async (req, res) => {
+  const { assetID } = req.body
+  if(!assetID) {
+    res.writeHead(400, { 'Content-Type': 'application/json' })
+    return res.end(JSON.stringify({ message: "Missing required fields"}));
+  }
+  const userID = req.user.id;
+  const connection = await db.promise().getConnection();
+  try {
+    connection.beginTransaction();
+
+    const [assetCheck] = await connection.query(
+      `SELECT * FROM asset WHERE Asset_ID = ? LIMIT 1`, [assetID]
+    )
+    if(assetCheck.length === 0) {
+      throw Object.assign(new Error("Asset not found"), {status: 404})
     }
+    const [waitlistInsertQuery] = await connection.query(
+      'INSERT INTO waitlist (Waitlister_ID, Asset_ID) VALUES (?, ?)',
+      [userID, assetID]
+    )
+    newWaitlistID = waitlistInsertQuery.insertId;
+
+    await connection.commit();
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ message: "Waitlist entry created", id: newWaitlistID }));
+  } catch (error) {
+    //waitlist failed
+    await connection.rollback();
+    console.log("Error in waitlistAsset:", error);
+    res.writeHead(error.status || 500, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({message: error.message, status: error.status || 500}))
+  }
+  finally {
+    connection.release();
+  }
 }
 // Issue any asset (book, CD, audiobook, movie, technology, study-room)
 exports.issueAsset = (req, res) => {
@@ -473,6 +518,36 @@ exports.renewAsset = (req, res) => {
     }
   );
 };
+
+const helpGetBorrows = async (user_id, has_returned = true, columns = ['*']) => {//helper
+  const colString = columns.join(', ')
+  const condition = has_returned ? '' : 'AND Return_Date IS NULL';
+  const [borrowResults] =  await db.promise().query(
+    `SELECT ${colString} FROM borrow WHERE Borrower_ID=? ${(condition)}`,
+    [user_id]
+  );
+  return borrowResults;
+}
+
+const helpGetHolds = async (user_id, has_inactive = true, columns = ['*']) => {//helper
+  const colString = columns.join(', ')
+  const condition = has_inactive ? '' : 'AND active_key IS NULL';
+  const [holdResults] =  await db.promise().query(
+    `SELECT ${colString} FROM hold WHERE Holder_ID=? ${(condition)}`,
+    [user_id]
+  );
+  return holdResults;
+}
+
+const helpGetWaits = async (user_id, has_inactive = true, columns = ['*']) => {//helper
+  const colString = columns.join(', ')
+  const condition = has_inactive ? '' : 'AND active_key IS NULL';
+  const [waitsResults] =  await db.promise().query(
+    `SELECT ${colString} FROM waitlist WHERE Waitlister_ID=? ${(condition)}`,
+    [user_id]
+  );
+  return waitsResults;
+}
 
 // Get dashboard stats
 exports.getDashboardStats = (req, res) => {
