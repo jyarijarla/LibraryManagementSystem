@@ -269,9 +269,6 @@ export function AssetCard({ assetType, getAsset, onAssetChange, setError }) {
                                 <button className='asset-btn asset-btn-secondary' onClick={handleWaitlist}>
                                     Join Waitlist
                                 </button>
-                                <button className='asset-btn asset-btn-danger' onClick={handleReturn}>
-                                    Return Asset
-                                </button>
                             </div>
                         </div>
                     </div>
