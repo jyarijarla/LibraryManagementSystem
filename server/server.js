@@ -123,6 +123,7 @@ const routes = [
   { method: 'PUT', path: '/api/students/:id', handler: studentController.updateStudent, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'DELETE', path: '/api/students/:id', handler: studentController.deleteStudent, auth: true, roles: ROLE_GROUPS.STAFF },
 
+
   // Member routes
   { method: 'GET', path: '/api/members', handler: memberController.getAllMembers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/members/:id', handler: memberController.getMemberProfile, auth: true, roles: ROLE_GROUPS.STAFF },

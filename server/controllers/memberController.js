@@ -343,7 +343,7 @@ exports.updateMember = (req, res) => {
     params.push(phone || null);
   }
   if (dateOfBirth) {
-    updates.push('Date_Of_Birth = ?');
+    updates.push('Date_Of_Birth = DATE(?)');
     params.push(dateOfBirth);
   }
   // Status field removed - Account_Status column doesn't exist

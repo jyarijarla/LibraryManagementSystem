@@ -277,6 +277,28 @@
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
 }
 
+/* Explicit style for Create User button to ensure green theme */
+.create-user-button {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(16,185,129,0.18);
+}
+.create-user-button:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(16,185,129,0.24);
+}
+
+/* Create submit button inside modal */
+.create-submit {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 6px 18px rgba(16,185,129,0.18) !important;
+}
+.create-submit:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(16,185,129,0.24) !important;
+}
+
 /* Table */
 .table-container {
   background: white;
@@ -707,6 +729,99 @@
   font-size: 24px;
   color: #111827;
   margin-bottom: 24px;
+}
+
+/* User modal layout tweaks: labels, values, two-column grid, wrapping */
+.user-modal .user-info-sections {
+  gap: 28px;
+}
+.user-modal .info-grid {
+  display: block;
+}
+.user-modal .info-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+.user-modal .info-row:last-of-type { border-bottom: none; }
+.user-modal .info-label {
+  width: 140px; /* slightly narrower so values get more room */
+  flex-shrink: 0;
+  color: #6b7280;
+  font-weight: 700;
+  font-size: 13px;
+}
+.user-modal .info-value {
+  flex: 1 1 auto;
+  color: #111827;
+  font-size: 14px;
+  /* Keep values on a single line and show ellipsis if too long */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.info-value-copy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.copy-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #374151;
+}
+
+.copy-btn:hover {
+  background: #f3f4f6;
+  transform: translateY(-1px);
+}
+.user-modal .stats-grid {
+  display: block;
+}
+.user-modal .stats-row { display: flex; align-items: center; gap: 40px; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
+.user-modal .stats-value { flex: 1; color: #111827; font-weight: 600; text-align: right; }
+.user-modal .stats-row:last-of-type { border-bottom: none; }
+.user-modal .stats-label { width: 160px; color: #6b7280; font-weight: 700; }
+.user-modal .stats-value { flex: 1; color: #111827; font-weight: 600; }
+.user-modal .stats-row, .user-modal .info-row { margin-bottom: 6px; }
+.user-modal .section-title { color: #374151; }
+
+/* Make Personal Info section visually inline (no box) */
+.user-modal .user-info-section {
+  background: #f9fafb;
+  padding: 24px 20px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+.user-modal .user-info-details .info-row {
+  border-bottom: 1px solid #f3f4f6;
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+  border: none;
+}
+
+.user-modal .user-info-details .info-row:last-of-type {
+  border-bottom: none;
+}
+
+/* Ensure modal content doesn't overflow on small screens */
+@media (max-width: 640px) {
+  .user-modal .info-grid {
+    grid-template-columns: 1fr;
+  }
+  .modal-content { padding: 20px; }
 }
 
 .modal-content h3 {
@@ -1596,3 +1711,27 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Compact user table + action styles (minimal layout) */
+.data-table th, .data-table td {
+  padding: 8px 10px;
+  font-size: 13px;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.data-table thead th { background: linear-gradient(180deg,#111827 0%, #0b1220 100%); color: #fff; font-size:12px }
+.col-studentid { width: 160px; }
+.col-first { width: 160px; }
+.col-last { width: 160px; }
+.col-role { width: 120px; text-align: left; }
+
+.row-action-group { display: inline-flex; gap: 8px; align-items: center; justify-content: center; }
+.icon-btn { border: none; background: transparent; padding: 6px; border-radius: 8px; cursor: pointer; min-width:36px; min-height:36px; display:inline-flex; align-items:center; justify-content:center; }
+.icon-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(2,6,23,0.08); }
+.delete-icon { background: linear-gradient(135deg,#ef4444,#dc2626); color:white; }
+
+/* Ensure modal view uses existing extravagant styles; add small responsive tweaks */
+.user-view-extravagant { max-width: 880px; width: 96%; }
+@media (max-width: 720px) { .data-table th, .data-table td { white-space: normal; } }

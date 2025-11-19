@@ -15,9 +15,11 @@ async function login(req, res) {
   }
 
   try {
-    const userQuery = 'SELECT * FROM user WHERE Username = ?';
-    
-    const [userResult] = await db.promise().query(userQuery, [username]);
+    // Allow login by username OR email. Trim input to avoid accidental spaces.
+    const identifier = String(username || '').trim();
+    const userQuery = 'SELECT * FROM user WHERE Username = ? OR User_Email = ?';
+
+    const [userResult] = await db.promise().query(userQuery, [identifier, identifier]);
     if (userResult.length === 0) {
       res.statusCode = 401;
       res.setHeader('Content-Type', 'application/json');
@@ -25,6 +27,14 @@ async function login(req, res) {
       return;
     }
     const user = userResult[0];
+
+    // Ensure a password is set for this account
+    if (!user.Password) {
+      res.statusCode = 403;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ message: 'Account does not have a password set. Ask an administrator to set or reset the password.' }));
+      return;
+    }
 
     // Verify password
     const isValidPassword = await bcrypt.compare(password, user.Password);
@@ -191,9 +201,9 @@ async function signup(req, res) {
       // Insert new user - use placeholder 'N/A' for Student_ID if column doesn't exist yet
       const insertQuery = role === 'student'
         ? `INSERT INTO user (Username, Password, User_Email, User_Phone, First_Name, Last_Name, Date_Of_Birth, Role, Balance, Student_ID)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00, ?)`
+          VALUES (?, ?, ?, ?, ?, ?, DATE(?), ?, 0.00, ?)`
         : `INSERT INTO user (Username, Password, User_Email, User_Phone, First_Name, Last_Name, Date_Of_Birth, Role, Balance)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00)`;
+          VALUES (?, ?, ?, ?, ?, ?, DATE(?), ?, 0.00)`;
 
       const insertParams = role === 'student'
         ? [username, hashedPassword, email, phone || null, firstName, lastName || null, dob || null, roleValue, studentId]
