@@ -10,8 +10,21 @@
 
 .asset-card-header {
   height: 48px;
-  padding: 10px;
+  padding: 10px 16px;
   background-image: linear-gradient(to right, brown, red);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.asset-card-header-title {
+  color: white;
+  font-weight: 700;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 70%;
 }
 .asset-card-scroll-wrapper {
   overflow-y: auto;
@@ -83,6 +96,37 @@
 }
 .asset-card-asset-details {
   width: 100%;
+}
+
+.asset-card-asset-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.asset-attributes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.asset-attribute-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.asset-attribute-label {
+  min-width: 110px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.asset-attribute-value {
+  color: #4b5563;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .asset-card-button-container{

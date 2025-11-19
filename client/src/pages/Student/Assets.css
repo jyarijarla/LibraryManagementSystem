@@ -1,0 +1,74 @@
+.outer-attribute-row {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px;
+  align-items: start;
+}
+
+.card-title {
+  font-weight: 700;
+  color: white;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outer-attribute-label {
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  padding-right: 6px;
+  max-width: 120px; /* keep labels reasonable */
+}
+
+.outer-attribute-value {
+  color: #4b5563;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 640px) {
+  .outer-attribute-row {
+    grid-template-columns: 1fr;
+  }
+  .outer-attribute-label {
+    white-space: normal;
+    max-width: none;
+  }
+  .outer-attribute-value {
+    white-space: normal;
+  }
+}
+
+/* Outer card field styling to replace Admin `.card-field` without forcing min-width */
+.outer-card-field {
+  padding: 10px 0;
+  border-bottom: 1px solid #f3f4f6;
+  display: block;
+}
+
+.outer-card-field:last-child {
+  border-bottom: none;
+}
+
+/* Slightly smaller label/value for compact card display */
+.outer-attribute-label {
+  font-size: 12px;
+}
+
+.outer-attribute-value {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  /* When wrapping occurs, lower font sizes to keep layout tidy */
+  .outer-attribute-label,
+  .outer-attribute-value {
+    font-size: 12px;
+  }
+}
