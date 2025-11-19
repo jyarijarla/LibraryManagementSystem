@@ -1,4 +1,5 @@
 const db = require('../db');
+const { getConfigValue } = require('./configController');
 
 // Generate random password for each new member
 const generateInitialPassword = () => {
@@ -11,9 +12,17 @@ const generateInitialPassword = () => {
 };
 
 // Get all members with search, filter, and pagination
-exports.getAllMembers = (req, res) => {
+exports.getAllMembers = async (req, res) => {
   const { search = '', status = 'all', page = 1, limit = 20 } = req.query;
   const offset = (page - 1) * limit;
+
+  // Get fine rate from config
+  let fineRate = 1.00;
+  try {
+    fineRate = await getConfigValue('FINE_RATE_PER_DAY');
+  } catch (error) {
+    console.warn('Failed to fetch fine rate, using default: $1.00');
+  }
 
   let query = `
     SELECT 
@@ -27,13 +36,13 @@ exports.getAllMembers = (req, res) => {
       'active' as Account_Status,
       COUNT(DISTINCT CASE WHEN b.Return_Date IS NULL THEN b.Borrow_ID END) as Borrowed_Count,
       COALESCE(SUM(CASE WHEN b.Return_Date IS NULL AND DATEDIFF(CURDATE(), b.Due_Date) > 0 
-        THEN DATEDIFF(CURDATE(), b.Due_Date) * 1.00 ELSE 0 END), 0) as Outstanding_Fines
+        THEN DATEDIFF(CURDATE(), b.Due_Date) * ? ELSE 0 END), 0) as Outstanding_Fines
     FROM user u
     LEFT JOIN borrow b ON u.User_ID = b.Borrower_ID
     WHERE u.Role = 1
   `;
 
-  const params = [];
+  const params = [fineRate];
 
   // Add search filter
   if (search) {
@@ -103,8 +112,16 @@ exports.getAllMembers = (req, res) => {
 };
 
 // Get member profile with detailed information
-exports.getMemberProfile = (req, res) => {
+exports.getMemberProfile = async (req, res) => {
   const { id } = req.params;
+
+  // Get fine rate from config
+  let fineRate = 1.00;
+  try {
+    fineRate = await getConfigValue('FINE_RATE_PER_DAY');
+  } catch (error) {
+    console.warn('Failed to fetch fine rate, using default: $1.00');
+  }
 
   // Get member basic info
   db.query(`
@@ -142,7 +159,7 @@ exports.getMemberProfile = (req, res) => {
         DATEDIFF(CURDATE(), b.Due_Date) as Days_Overdue,
         CASE 
           WHEN b.Return_Date IS NULL AND DATEDIFF(CURDATE(), b.Due_Date) > 0 
-          THEN DATEDIFF(CURDATE(), b.Due_Date) * 1.00 
+          THEN DATEDIFF(CURDATE(), b.Due_Date) * ? 
           ELSE 0 
         END as Fine_Amount,
         COALESCE(bk.Title, cd.Title, ab.Title, m.Title, CONCAT('Tech-', t.Model_Num), CONCAT('Room-', sr.Room_Number)) as Asset_Title,
@@ -165,7 +182,7 @@ exports.getMemberProfile = (req, res) => {
       LEFT JOIN study_room sr ON r.Asset_ID = sr.Asset_ID
       WHERE b.Borrower_ID = ? AND b.Return_Date IS NULL
       ORDER BY b.Due_Date ASC
-    `, [id], (err, currentBorrows) => {
+    `, [fineRate, id], (err, currentBorrows) => {
       if (err) {
         console.error('Error fetching current borrows:', err);
         currentBorrows = [];
@@ -211,10 +228,10 @@ exports.getMemberProfile = (req, res) => {
           SELECT 
             COALESCE(SUM(Fee_Incurred), 0) as totalFines,
             COALESCE(SUM(CASE WHEN Return_Date IS NULL AND DATEDIFF(CURDATE(), Due_Date) > 0 
-              THEN DATEDIFF(CURDATE(), Due_Date) * 1.00 ELSE 0 END), 0) as unpaidFines
+              THEN DATEDIFF(CURDATE(), Due_Date) * ? ELSE 0 END), 0) as unpaidFines
           FROM borrow 
           WHERE Borrower_ID = ?
-        `, [id], (err, fineResult) => {
+        `, [fineRate, id], (err, fineResult) => {
           if (err) {
             console.error('Error calculating fines:', err);
           }

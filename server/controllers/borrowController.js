@@ -2,85 +2,85 @@ const db = require('../db');
 
 exports.borrowAsset = async (req, res) => {
   const connection = await db.promise().getConnection();
+  try {
+    const { assetID } = req.body
+    console.log("Recieved data:", { assetID })
+    if (!assetID) {
+      console.log("Missing required Fields")
+      throw Object.assign(new Error('Missing required fields'), { status: 400 })
+    }
+    const userID = req.user.id
+    await connection.beginTransaction();
+    //check for existing asset
+    const [assetCheck] = await connection.query(
+      `SELECT Asset_ID FROM asset WHERE Asset_ID = ?`, [assetID]
+    )
+    if (!assetCheck[0]) {
+      throw Object.assign(new Error("Asset not found"), { status: 404 });
+    }
+    //select rentable to borrow
+    let selRentable;
     try {
-      const { assetID } = req.body
-      console.log("Recieved data:", {assetID})
-      if(!assetID) {
-        console.log("Missing required Fields")
-        throw Object.assign(new Error('Missing required fields'), {status: 400})
-      }
-      const userID = req.user.id
-      await connection.beginTransaction();
-      //check for existing asset
-      const [assetCheck] = await connection.query(
-        `SELECT Asset_ID FROM asset WHERE Asset_ID = ?`, [assetID]
-      )
-      if(!assetCheck[0]) {
-        throw Object.assign(new Error("Asset not found"), {status: 404});
-      }
-      //select rentable to borrow
-      let selRentable;
-      try{
-        const [getRentables] = await connection.query(
-          `SELECT Rentable_ID FROM rentable WHERE Asset_ID = ? AND Availability = 1`,
-          [assetID]
-        );
-        if(!getRentables[0]){
-          console.log("No rentable available for asset:", assetID);
-          throw Object.assign(new Error("No rentable available"), {status: 404});
-        }
-        selRentable = getRentables[0].Rentable_ID;
-      }
-      catch (error) {
-        console.log("Error fetching rentables:", error);
-        throw Object.assign(new Error("Rentable query failed"), {status: 500});
-      }
-      //get user role
-      const [userRoleQuery] = await connection.query(
-        `SELECT Role FROM user WHERE User_ID = ?`, [userID]
+      const [getRentables] = await connection.query(
+        `SELECT Rentable_ID FROM rentable WHERE Asset_ID = ? AND Availability = 1`,
+        [assetID]
       );
-      const userRole = userRoleQuery[0].Role;
-      //get basic borrow day limit
-      const [borrowDaysQuery] = await connection.query(
-        `SELECT borrow_days FROM role_type WHERE role_id = ?`, [userRole]
-      )
-      const borrowDays = borrowDaysQuery[0].borrow_days;
-      //calculate due date based on role
-      const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + borrowDays);
-      const dueDateString = dueDate.toISOString().split('T')[0]; //YYYY-MM-DD
-      //borrow rentable
-      let newBorrowID;
-      try{
-        const [borrowInsertQuery] = await connection.query(
-          `INSERT INTO borrow (Borrower_ID, Rentable_ID, Due_Date) VALUES (?, ?, ?)`, 
-          [userID, selRentable, dueDateString]
-        );
-        newBorrowID = borrowInsertQuery.insertId;
-        console.log("Borrow ID assigned:", newBorrowID);
+      if (!getRentables[0]) {
+        console.log("No rentable available for asset:", assetID);
+        throw Object.assign(new Error("No rentable available"), { status: 404 });
       }
-      catch(error){
-        console.log("Insert failed:", error);
-        throw Object.assign(new Error("Insertion into borrow failed") , {status: 409})
-      }
-      //end transaction successfully
-      await connection.commit();
-      res.writeHead(201, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ 
-        message: 'Borrow added successfully',
-        borrowID: newBorrowID,
-      }));
+      selRentable = getRentables[0].Rentable_ID;
     }
     catch (error) {
-      //borrow failed
-      await connection.rollback();
-      console.log("Error in borrowAsset:", error);
-      res.writeHead(error.status || 500, { 'Content-Type': 'application/json' })
-        .end(JSON.stringify({message: error.message, status: error.status || 500}))
+      console.log("Error fetching rentables:", error);
+      throw Object.assign(new Error("Rentable query failed"), { status: 500 });
     }
-    finally {
-      connection.release();
+    //get user role
+    const [userRoleQuery] = await connection.query(
+      `SELECT Role FROM user WHERE User_ID = ?`, [userID]
+    );
+    const userRole = userRoleQuery[0].Role;
+    //get basic borrow day limit
+    const [borrowDaysQuery] = await connection.query(
+      `SELECT borrow_days FROM role_type WHERE role_id = ?`, [userRole]
+    )
+    const borrowDays = borrowDaysQuery[0].borrow_days;
+    //calculate due date based on role
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + borrowDays);
+    const dueDateString = dueDate.toISOString().split('T')[0]; //YYYY-MM-DD
+    //borrow rentable
+    let newBorrowID;
+    try {
+      const [borrowInsertQuery] = await connection.query(
+        `INSERT INTO borrow (Borrower_ID, Rentable_ID, Due_Date) VALUES (?, ?, ?)`,
+        [userID, selRentable, dueDateString]
+      );
+      newBorrowID = borrowInsertQuery.insertId;
+      console.log("Borrow ID assigned:", newBorrowID);
     }
+    catch (error) {
+      console.log("Insert failed:", error);
+      throw Object.assign(new Error("Insertion into borrow failed"), { status: 409 })
+    }
+    //end transaction successfully
+    await connection.commit();
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      message: 'Borrow added successfully',
+      borrowID: newBorrowID,
+    }));
+  }
+  catch (error) {
+    //borrow failed
+    await connection.rollback();
+    console.log("Error in borrowAsset:", error);
+    res.writeHead(error.status || 500, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ message: error.message, status: error.status || 500 }))
+  }
+  finally {
+    connection.release();
+  }
 }
 
 exports.holdAsset = async (req, res) => {
@@ -173,24 +173,24 @@ exports.holdAsset = async (req, res) => {
 
 exports.cancelHold = async (req, res) => {
   const { holdID } = req.body
-    if(!assetID) {
-      res.writeHead(400, { 'Content-Type': 'application/json' })
-      return res.end(JSON.stringify({ message: "Missing required fields"}));
-    }
-    try {
-      const [cancelResult] = await db.promise().query(`CALL db_cancel_hold(?)`,
-        [holdID]
-      )
-      console.log("Hold canceled successfuly")
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ 
-        message: 'Waitlist added successfully',
-      }));
-    } catch (error) {
-      console.log("Error canceling hold:", error);
-      res.writeHead( 500, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({message: error.message, status: 500}))
-    }
+  if (!assetID) {
+    res.writeHead(400, { 'Content-Type': 'application/json' })
+    return res.end(JSON.stringify({ message: "Missing required fields" }));
+  }
+  try {
+    const [cancelResult] = await db.promise().query(`CALL db_cancel_hold(?)`,
+      [holdID]
+    )
+    console.log("Hold canceled successfuly")
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      message: 'Waitlist added successfully',
+    }));
+  } catch (error) {
+    console.log("Error canceling hold:", error);
+    res.writeHead(500, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ message: error.message, status: 500 }))
+  }
 }
 
 exports.userCancelHold = async (req, res) => {
@@ -200,26 +200,26 @@ exports.userCancelHold = async (req, res) => {
     `SELECT Borrower_ID FROM borrow WHERE Borrow_ID = ? AND Return_Date IS NULL`,
     [borrowID]
   )
-  if(validBorrower.length === 0){
+  if (validBorrower.length === 0) {
     return res.writeHead(404, { 'Content-Type': 'application/json' })
-        && res.end(JSON.stringify({ message: 'Borrow does not exist'}));
+      && res.end(JSON.stringify({ message: 'Borrow does not exist' }));
   }
-  if(validBorrower[0] != userID){
+  if (validBorrower[0] != userID) {
     return res.writeHead(401, { 'Content-Type': 'application/json' })
-        && res.end(JSON.stringify({ message: 'Unauthorized return'}));
+      && res.end(JSON.stringify({ message: 'Unauthorized return' }));
   }
   const newReq = {
     ...req,
-    params: { id: borrowID }, 
+    params: { id: borrowID },
   };
   return cancelHold(newReq, res);
 }
 
 exports.waitlistAsset = async (req, res) => {
   const { assetID } = req.body
-  if(!assetID) {
+  if (!assetID) {
     res.writeHead(400, { 'Content-Type': 'application/json' })
-    return res.end(JSON.stringify({ message: "Missing required fields"}));
+    return res.end(JSON.stringify({ message: "Missing required fields" }));
   }
   const userID = req.user.id;
   const connection = await db.promise().getConnection();
@@ -229,8 +229,8 @@ exports.waitlistAsset = async (req, res) => {
     const [assetCheck] = await connection.query(
       `SELECT * FROM asset WHERE Asset_ID = ? LIMIT 1`, [assetID]
     )
-    if(assetCheck.length === 0) {
-      throw Object.assign(new Error("Asset not found"), {status: 404})
+    if (assetCheck.length === 0) {
+      throw Object.assign(new Error("Asset not found"), { status: 404 })
     }
     const [waitlistInsertQuery] = await connection.query(
       'INSERT INTO waitlist (Waitlister_ID, Asset_ID) VALUES (?, ?)',
@@ -246,7 +246,7 @@ exports.waitlistAsset = async (req, res) => {
     await connection.rollback();
     console.log("Error in waitlistAsset:", error);
     res.writeHead(error.status || 500, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({message: error.message, status: error.status || 500}))
+    res.end(JSON.stringify({ message: error.message, status: error.status || 500 }))
   }
   finally {
     connection.release();
@@ -255,23 +255,23 @@ exports.waitlistAsset = async (req, res) => {
 // Issue any asset (book, CD, audiobook, movie, technology, study-room)
 exports.issueAsset = (req, res) => {
   const { memberId, assetId, assetType, issueDate, dueDate } = req.body;
-  
+
   // Validate required fields
   if (!memberId || !assetId || !issueDate || !dueDate) {
     return res.writeHead(400, { 'Content-Type': 'application/json' })
       && res.end(JSON.stringify({ message: 'Missing required fields' }));
   }
-  
+
   // Map asset type to table name
   const assetTypeMap = {
     'books': 'book_inventory',
-    'cds': 'cd_inventory', 
+    'cds': 'cd_inventory',
     'audiobooks': 'audiobook_inventory',
     'movies': 'movie_inventory',
     'technology': 'technology_inventory',
     'study-rooms': 'study_room_inventory'
   };
-  
+
   const viewName = assetTypeMap[assetType] || 'book_inventory';
 
   const availabilityQuery = assetType === 'study-rooms'
@@ -284,7 +284,7 @@ exports.issueAsset = (req, res) => {
         WHERE sr.Asset_ID = ?
       `
     : `SELECT Available_Copies, Asset_ID, Copies FROM ${viewName} WHERE Asset_ID = ?`;
-  
+
   // Check if asset is available using the appropriate data source
   db.query(
     availabilityQuery,
@@ -295,17 +295,17 @@ exports.issueAsset = (req, res) => {
         return res.writeHead(500, { 'Content-Type': 'application/json' })
           && res.end(JSON.stringify({ message: 'Database error', error: err.message }));
       }
-      
+
       if (assetResults.length === 0) {
         return res.writeHead(404, { 'Content-Type': 'application/json' })
           && res.end(JSON.stringify({ message: 'Asset not found' }));
       }
-      
+
       if (assetResults[0].Available_Copies <= 0) {
         return res.writeHead(400, { 'Content-Type': 'application/json' })
           && res.end(JSON.stringify({ message: 'Asset is not available' }));
       }
-      
+
       // Get an available rentable_id for this asset (Availability = 1 means Available)
       db.query(
         'SELECT Rentable_ID FROM rentable WHERE Asset_ID = ? AND Availability = 1 LIMIT 1',
@@ -316,12 +316,12 @@ exports.issueAsset = (req, res) => {
             return res.writeHead(400, { 'Content-Type': 'application/json' })
               && res.end(JSON.stringify({ message: 'No available copies found for this asset' }));
           }
-          
+
           const rentableId = rentableResults[0].Rentable_ID;
-          
+
           // Get librarian ID from authenticated user (if available)
           const librarianId = req.user?.id || null;
-          
+
           // Insert borrow record with Processed_By field
           db.query(
             'INSERT INTO borrow (Borrower_ID, Rentable_ID, Borrow_Date, Due_Date, Processed_By) VALUES (?, ?, ?, ?, ?)',
@@ -332,10 +332,10 @@ exports.issueAsset = (req, res) => {
                 return res.writeHead(500, { 'Content-Type': 'application/json' })
                   && res.end(JSON.stringify({ message: 'Failed to issue asset', error: err.message }));
               }
-              
+
               const sendResponse = () => {
                 res.writeHead(201, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ 
+                res.end(JSON.stringify({
                   message: 'Asset issued successfully',
                   borrowId: insertResult.insertId
                 }));
@@ -405,7 +405,7 @@ exports.getAllRecords = (req, res) => {
     LEFT JOIN study_room sr ON r.Asset_ID = sr.Asset_ID
     ORDER BY b.Borrow_Date DESC
   `;
-  
+
   db.query(query, (err, results) => {
     if (err) {
       console.error('Error fetching borrow records:', err);
@@ -424,44 +424,64 @@ exports.returnAsset = async (req, res) => {
 
   const connection = await db.promise().getConnection();
 
-  try{
+  try {
     await connection.beginTransaction();
 
     //Get rentable to be returned
     const [borrowRecord] = await connection.query(
-      'SELECT Rentable_ID FROM borrow WHERE Borrow_ID = ? AND Return_Date IS NULL',
+      'SELECT Rentable_ID, Due_Date, Fee_Incurred FROM borrow WHERE Borrow_ID = ? AND Return_Date IS NULL',
       [id]
     );
-    
-    if(!borrowRecord.length) {
-      throw Object.assign(new Error('Borrow record not found or already returned'), {status: 404});
+
+    if (!borrowRecord.length) {
+      throw Object.assign(new Error('Borrow record not found or already returned'), { status: 404 });
     }
     const rentableId = borrowRecord[0].Rentable_ID;
-    // Update borrow record with return date and fine
-    const updateQuery = fineAmount 
-    ? 'UPDATE borrow SET Return_Date = NOW(), Fee_Incurred = ? WHERE Borrow_ID = ? AND Return_Date IS NULL'
-    : 'UPDATE borrow SET Return_Date = NOW() WHERE Borrow_ID = ? AND Return_Date IS NULL';
-  
-    const params = fineAmount ? [fineAmount, id] : [id];
+    const dueDate = new Date(borrowRecord[0].Due_Date);
+    const currentFee = parseFloat(borrowRecord[0].Fee_Incurred || 0);
+    const today = new Date();
 
-    await connection.query(updateQuery, params);
-    
+    // Calculate fine using date-only difference to match MySQL DATEDIFF
+    let totalFine = 0;
+    const todayDateOnly = new Date(today.setHours(0, 0, 0, 0));
+    const dueDateOnly = new Date(dueDate.setHours(0, 0, 0, 0));
+
+    if (todayDateOnly > dueDateOnly) {
+      const diffTime = Math.abs(todayDateOnly - dueDateOnly);
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+      // Get fine rate (default to 1.00 if not found, or fetch from config if possible)
+      const [configResult] = await connection.query("SELECT Config_Value FROM system_config WHERE `Config_Key` = 'FINE_RATE_PER_DAY'");
+      const fineRate = configResult.length ? parseFloat(configResult[0].Config_Value) : 1.00;
+
+      totalFine = diffDays * fineRate;
+    }
+
+    // Calculate remaining debt: Total Fine - Paid Amount (currentFee)
+    // Ensure debt is not negative (in case of overpayment or logic quirk)
+    const newFee = Math.max(0, totalFine - currentFee);
+
+    // Update borrow record with return date, fine (Debt), and Processed_By
+    const updateQuery = 'UPDATE borrow SET Return_Date = NOW(), Fee_Incurred = ?, Processed_By = ? WHERE Borrow_ID = ? AND Return_Date IS NULL';
+
+    await connection.query(updateQuery, [newFee, req.user.id, id]);
+
     await connection.query(
       `UPDATE rentable SET Availability = 1 WHERE Rentable_ID = ?`, [rentableId]
     );
-  
+
     await connection.commit();
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
+    res.end(JSON.stringify({
       message: 'Asset returned successfully',
     }));
   } catch (error) {
     await connection.rollback();
     console.error('Error returning book:', error);
-      return res.writeHead(error.status || 500, { 'Content-Type': 'application/json' })
-        && res.end(JSON.stringify({ message: 'Failed to return asset', error: error.message }));
-    } finally {
-      connection.release();
+    return res.writeHead(error.status || 500, { 'Content-Type': 'application/json' })
+      && res.end(JSON.stringify({ message: 'Failed to return asset', error: error.message }));
+  } finally {
+    connection.release();
   }
 };
 
@@ -474,31 +494,32 @@ exports.userReturnAsset = async (req, res) => {
     `SELECT Borrower_ID FROM borrow WHERE Borrow_ID = ? AND Return_Date IS NULL`,
     [borrowID]
   )
-  if(validBorrower.length === 0){
+  if (validBorrower.length === 0) {
     return res.writeHead(404, { 'Content-Type': 'application/json' })
-        && res.end(JSON.stringify({ message: 'Borrow does not exist'}));
+      && res.end(JSON.stringify({ message: 'Borrow does not exist' }));
   }
-  if(validBorrower[0] != userID){
+  if (validBorrower[0] != userID) {
     return res.writeHead(401, { 'Content-Type': 'application/json' })
-        && res.end(JSON.stringify({ message: 'Unauthorized return'}));
+      && res.end(JSON.stringify({ message: 'Unauthorized return' }));
   }
+
   const newReq = {
     ...req,
-    params: { id: borrowID }, 
+    params: { id: borrowID },
   };
-  return returnAsset(newReq, res);
+  return exports.returnAsset(newReq, res);
 };
 
 // Renew asset
 exports.renewAsset = (req, res) => {
   const { id } = req.params;
   const { newDueDate } = req.body;
-  
+
   if (!newDueDate) {
     return res.writeHead(400, { 'Content-Type': 'application/json' })
       && res.end(JSON.stringify({ message: 'New due date is required' }));
   }
-  
+
   // Update due date and set renew date for active borrow
   db.query(
     'UPDATE borrow SET Due_Date = ?, Renew_Date = CURDATE() WHERE Borrow_ID = ? AND Return_Date IS NULL',
@@ -509,14 +530,14 @@ exports.renewAsset = (req, res) => {
         return res.writeHead(500, { 'Content-Type': 'application/json' })
           && res.end(JSON.stringify({ message: 'Failed to renew asset', error: err.message }));
       }
-      
+
       if (result.affectedRows === 0) {
         return res.writeHead(404, { 'Content-Type': 'application/json' })
           && res.end(JSON.stringify({ message: 'Borrow record not found or already returned' }));
       }
-      
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ 
+      res.end(JSON.stringify({
         message: 'Asset renewed successfully',
         newDueDate: newDueDate
       }));
@@ -527,7 +548,7 @@ exports.renewAsset = (req, res) => {
 const helpGetBorrows = async (user_id, has_returned = true, columns = ['*']) => {//helper
   const colString = columns.join(', ')
   const condition = has_returned ? '' : 'AND Return_Date IS NULL';
-  const [borrowResults] =  await db.promise().query(
+  const [borrowResults] = await db.promise().query(
     `SELECT ${colString} FROM borrow WHERE Borrower_ID=? ${(condition)}`,
     [user_id]
   );
@@ -537,7 +558,7 @@ const helpGetBorrows = async (user_id, has_returned = true, columns = ['*']) => 
 const helpGetHolds = async (user_id, has_inactive = true, columns = ['*']) => {//helper
   const colString = columns.join(', ')
   const condition = has_inactive ? '' : 'AND active_key IS NULL';
-  const [holdResults] =  await db.promise().query(
+  const [holdResults] = await db.promise().query(
     `SELECT ${colString} FROM hold WHERE Holder_ID=? ${(condition)}`,
     [user_id]
   );
@@ -547,7 +568,7 @@ const helpGetHolds = async (user_id, has_inactive = true, columns = ['*']) => {/
 const helpGetWaits = async (user_id, has_inactive = true, columns = ['*']) => {//helper
   const colString = columns.join(', ')
   const condition = has_inactive ? '' : 'AND active_key IS NULL';
-  const [waitsResults] =  await db.promise().query(
+  const [waitsResults] = await db.promise().query(
     `SELECT ${colString} FROM waitlist WHERE Waitlister_ID=? ${(condition)}`,
     [user_id]
   );
@@ -562,10 +583,10 @@ exports.getDashboardStats = (req, res) => {
     totalStudents: 'SELECT COUNT(*) as count FROM user WHERE Role = 3',
     borrowedBooks: 'SELECT COUNT(*) as count FROM borrow WHERE Return_Date IS NULL'
   };
-  
+
   const results = {};
   let completed = 0;
-  
+
   Object.keys(queries).forEach(key => {
     db.query(queries[key], (err, result) => {
       if (err) {
@@ -574,7 +595,7 @@ exports.getDashboardStats = (req, res) => {
       } else {
         results[key] = result[0].count || 0;
       }
-      
+
       completed++;
       if (completed === Object.keys(queries).length) {
         res.writeHead(200, { 'Content-Type': 'application/json' });

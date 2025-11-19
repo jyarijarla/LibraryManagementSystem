@@ -4,9 +4,19 @@ import { ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
 import { useOverlay } from '../../components/FeedbackUI/OverlayContext'
 import { useLoading } from '../../components/FeedbackUI/LoadingContext'
 import { AssetCard } from './AssetCard'
+import { Search } from 'lucide-react'
 const API_URL = window.location.hostname === 'localhost' 
 ? 'http://localhost:3000/api'
 : 'https://librarymanagementsystem-z2yw.onrender.com/api'
+
+const ASSET_TABS = [
+    { id: 'books', label: 'Books', icon: '📚', placeholder: 'Search books...' },
+    { id: 'cds', label: 'CDs', icon: '💿', placeholder: 'Search CDs...' },
+    { id: 'audiobooks', label: 'Audiobooks', icon: '🎧', placeholder: 'Search audiobooks...' },
+    { id: 'movies', label: 'Movies', icon: '🎬', placeholder: 'Search movies...' },
+    { id: 'technology', label: 'Technology', icon: '💻', placeholder: 'Search devices...' },
+    { id: 'study-rooms', label: 'Study Rooms', icon: '🚪', placeholder: 'Search rooms...' }
+]
 
 const renderCellContent = (item, col, rowIndex) => {
     if (col.key === 'rowNum') {
@@ -49,6 +59,8 @@ export function Assets(){
 
     const [searchParams, setSearchParams] = useSearchParams()
     const [activeAssetTab, setActiveAssetTab] = useState(searchParams.get('type') || 'books')
+    const [searchQuery, setSearchQuery] = useState('')
+    const [availabilityFilter, setAvailabilityFilter] = useState('all')
 
     const [imageRefreshKey] = useState(() => Date.now()) // Cache buster for images
     
@@ -62,6 +74,8 @@ export function Assets(){
 
     const changeAssetTab = (assetTab) => {
         setActiveAssetTab(assetTab)
+        setSearchQuery('')
+        setAvailabilityFilter('all')
         const params = new URLSearchParams(searchParams)
         params.set('type', assetTab)
         setSearchParams(params)
@@ -173,6 +187,30 @@ export function Assets(){
     const data = getCurrentAssetData()
     const dataRef = useRef();
     dataRef.current = data;
+
+    const isAssetAvailable = (asset) => {
+        if (typeof asset.Availability === 'number') return asset.Availability === 1
+        if (typeof asset.Availability === 'string') return asset.Availability.toLowerCase().includes('avail')
+        if (typeof asset.Available_Copies === 'number') return asset.Available_Copies > 0
+        return true
+    }
+
+    const normalizedQuery = searchQuery.trim().toLowerCase()
+    const displayedData = data.filter((item) => {
+        const matchesAvailability =
+            availabilityFilter === 'all' ||
+            (availabilityFilter === 'available' && isAssetAvailable(item)) ||
+            (availabilityFilter === 'unavailable' && !isAssetAvailable(item))
+
+        const matchesSearch = !normalizedQuery || Object.values(item || {})
+            .filter(value => typeof value === 'string' || typeof value === 'number')
+            .some(value => String(value).toLowerCase().includes(normalizedQuery))
+
+        return matchesAvailability && matchesSearch
+    })
+
+    const currentTabConfig = ASSET_TABS.find(tab => tab.id === activeAssetTab)
+
     const refreshAssets = async() => {
         await fetchAssets(activeAssetTab);
         refreshOverlay();
@@ -200,53 +238,54 @@ export function Assets(){
             <ErrorPopup errorMessage={error} />
 
             {/* Sub-tabs for different asset types */}
-            <div className="asset-tabs">
-            <button 
-                className={`asset-tab ${activeAssetTab === 'books' ? 'active' : ''}`}
-                onClick={() => changeAssetTab('books')}
-            >
-                📚 Books
-            </button>
-            <button 
-                className={`asset-tab ${activeAssetTab === 'cds' ? 'active' : ''}`}
-                onClick={() => changeAssetTab('cds')}
-            >
-                💿 CDs
-            </button>
-            <button 
-                className={`asset-tab ${activeAssetTab === 'audiobooks' ? 'active' : ''}`}
-                onClick={() => changeAssetTab('audiobooks')}
-            >
-                🎧 Audiobooks
-            </button>
-            <button 
-                className={`asset-tab ${activeAssetTab === 'movies' ? 'active' : ''}`}
-                onClick={() => changeAssetTab('movies')}
-            >
-                🎬 Movies
-            </button>
-            <button 
-                className={`asset-tab ${activeAssetTab === 'technology' ? 'active' : ''}`}
-                onClick={() => changeAssetTab('technology')}
-            >
-                💻 Technology
-            </button>
-            <button 
-                className={`asset-tab ${activeAssetTab === 'study-rooms' ? 'active' : ''}`}
-                onClick={() => changeAssetTab('study-rooms')}
-            >
-                🚪 Study Rooms
-            </button>
+            <div className="student-asset-toolbar">
+                <div className="student-asset-tabs">
+                    {ASSET_TABS.map((tab) => (
+                        <button
+                            key={tab.id}
+                            className={`student-asset-tab ${activeAssetTab === tab.id ? 'active' : ''}`}
+                            onClick={() => changeAssetTab(tab.id)}
+                        >
+                            <span className="student-asset-tab-icon">{tab.icon}</span>
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+                <div className="student-asset-search-row">
+                    <div className="student-asset-input">
+                        <Search size={18} className="student-asset-search-icon" />
+                        <input
+                            type="text"
+                            placeholder={currentTabConfig?.placeholder || 'Search assets...'}
+                            value={searchQuery}
+                            onChange={(event) => setSearchQuery(event.target.value)}
+                        />
+                    </div>
+                    <select
+                        className="student-asset-filter"
+                        value={availabilityFilter}
+                        onChange={(event) => setAvailabilityFilter(event.target.value)}
+                    >
+                        <option value="all">All availability</option>
+                        <option value="available">Available only</option>
+                        <option value="unavailable">Checked out</option>
+                    </select>
+                    <div className="student-asset-count">
+                        Showing:
+                        <span>{displayedData.length}</span>
+                        {displayedData.length === 1 ? ' item' : ' items'}
+                    </div>
+                </div>
             </div>
 
             <div className="cards-container">
-            {data.length === 0 ? (
+            {displayedData.length === 0 ? (
                 <div className="empty-state">
                 <span className="empty-icon">📭</span>
                 <p>No {activeAssetTab} found</p>
                 </div>
             ) : (
-                data.map((item, index) => (
+                displayedData.map((item, index) => (
                 <div key={item.Asset_ID} className="asset-card" onClick={() => {
                     setOverlayContent(<AssetCard 
                         assetType={activeAssetTab} 
