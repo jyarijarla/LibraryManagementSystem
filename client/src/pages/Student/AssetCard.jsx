@@ -161,7 +161,7 @@ export function AssetCard({ assetType, getAsset, onAssetChange, setError }) {
             await onAssetChange();
         } catch (error) {
             console.error("Return failed", error)
-            setError('Hold failed')
+            setError('Return failed')
         } finally {
             setLoading({ isLoading: false })
         }
