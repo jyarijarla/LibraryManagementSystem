@@ -85,90 +85,90 @@ exports.borrowAsset = async (req, res) => {
 
 exports.holdAsset = async (req, res) => {
   const connection = await db.promise().getConnection();
+  try {
+    const { assetID } = req.body
+    const userID = req.user.id;
+    console.log("Recieved data:", { userID, assetID })
+    if (!userID || !assetID) {
+      console.log("Missing required Fields")
+      throw Object.assign(new Error('Missing required fields'), { status: 400 })
+    }
+    await connection.beginTransaction();
+    //check for existing asset
+    const [assetCheck] = await connection.query(
+      `SELECT Asset_ID FROM asset WHERE Asset_ID = ?`, [assetID]
+    )
+    if (!assetCheck[0]) {
+      throw Object.assign(new Error("Asset not found"), { status: 404 });
+    }
+    //select rentable to hold
+    let selRentable;
     try {
-      const { assetID } = req.body
-      const userID = req.user.id;
-      console.log("Recieved data:", {userID, assetID})
-      if(!userID || !assetID) {
-        console.log("Missing required Fields")
-        throw Object.assign(new Error('Missing required fields'), {status: 400})
-      }
-      await connection.beginTransaction();
-      //check for existing asset
-      const [assetCheck] = await connection.query(
-        `SELECT Asset_ID FROM asset WHERE Asset_ID = ?`, [assetID]
-      )
-      if(!assetCheck[0]) {
-        throw Object.assign(new Error("Asset not found"), {status: 404});
-      }
-      //select rentable to hold
-      let selRentable;
-      try{
-        const [getRentables] = await connection.query(
-          `SELECT Rentable_ID FROM rentable WHERE Asset_ID = ? AND Availability = 1`,
-          [assetID]
-        );
-        if(!getRentables[0]){
-          console.log("No rentable available for asset:", assetID);
-          throw Object.assign(new Error("No rentable available"), {status: 404});
-        }
-        selRentable = getRentables[0].Rentable_ID;
-      }
-      catch (error) {
-        console.log("Error fetching rentables:", error);
-        throw Object.assign(new Error("Rentable query failed"), {status: 500});
-      }
-      //get user role
-      const [userRoleQuery] = await connection.query(
-        `SELECT Role FROM user WHERE User_ID = ?`, [userID]
+      const [getRentables] = await connection.query(
+        `SELECT Rentable_ID FROM rentable WHERE Asset_ID = ? AND Availability = 1`,
+        [assetID]
       );
-      const userRole = userRoleQuery[0].Role;
-      //get basic hold day limit
-      const [holdDaysQuery] = await connection.query(
-        `SELECT hold_days FROM role_type WHERE role_id = ?`, [userRole]
-      )
-      const holdDays = holdDaysQuery[0].hold_days;
-      //calculate hold expire based on role
-      const holdExpires = new Date();
-      holdExpires.setDate(holdExpires.getDate() + holdDays);
-      const holdExpiresString = holdExpires.toISOString().split('T')[0]; //YYYY-MM-DD
-      //hold rentable
-      let newHoldID;
-      try{
-        const [holdInsertQuery] = await connection.query(
-          `INSERT INTO hold (Holder_ID, Rentable_ID, Hold_Expires) VALUES (?, ?, ?)`, 
-          [userID, selRentable, holdExpiresString]
-        );
-        newHoldID = holdInsertQuery.insertId;
-        console.log("Hold ID assigned:", newHoldID);
-        //Update availability
-        await connection.query(
+      if (!getRentables[0]) {
+        console.log("No rentable available for asset:", assetID);
+        throw Object.assign(new Error("No rentable available"), { status: 404 });
+      }
+      selRentable = getRentables[0].Rentable_ID;
+    }
+    catch (error) {
+      console.log("Error fetching rentables:", error);
+      throw Object.assign(new Error("Rentable query failed"), { status: 500 });
+    }
+    //get user role
+    const [userRoleQuery] = await connection.query(
+      `SELECT Role FROM user WHERE User_ID = ?`, [userID]
+    );
+    const userRole = userRoleQuery[0].Role;
+    //get basic hold day limit
+    const [holdDaysQuery] = await connection.query(
+      `SELECT hold_days FROM role_type WHERE role_id = ?`, [userRole]
+    )
+    const holdDays = holdDaysQuery[0].hold_days;
+    //calculate hold expire based on role
+    const holdExpires = new Date();
+    holdExpires.setDate(holdExpires.getDate() + holdDays);
+    const holdExpiresString = holdExpires.toISOString().split('T')[0]; //YYYY-MM-DD
+    //hold rentable
+    let newHoldID;
+    try {
+      const [holdInsertQuery] = await connection.query(
+        `INSERT INTO hold (Holder_ID, Rentable_ID, Hold_Expires) VALUES (?, ?, ?)`,
+        [userID, selRentable, holdExpiresString]
+      );
+      newHoldID = holdInsertQuery.insertId;
+      console.log("Hold ID assigned:", newHoldID);
+      //Update availability
+      await connection.query(
         `UPDATE rentable SET Availability = 3 WHERE Rentable_ID = ?`,
         [selRentable]
       );
-      }
-      catch(error){
-        console.log("Insert failed:", error);
-        throw Object.assign(new Error("Insertion into hold failed") , {status: 409})
-      }
-      //end transaction successfully
-      await connection.commit();
-      res.writeHead(201, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ 
-        message: 'Hold added successfully',
-        holdID: newHoldID,
-      }));
     }
     catch (error) {
-      //hold failed
-      await connection.rollback();
-      console.log("Error in holdAsset:", error);
-      res.writeHead(error.status || 500, { 'Content-Type': 'application/json' })
-        .end(JSON.stringify({message: error.message, status: error.status || 500}))
+      console.log("Insert failed:", error);
+      throw Object.assign(new Error("Insertion into hold failed"), { status: 409 })
     }
-    finally {
-      connection.release();
-    }
+    //end transaction successfully
+    await connection.commit();
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      message: 'Hold added successfully',
+      holdID: newHoldID,
+    }));
+  }
+  catch (error) {
+    //hold failed
+    await connection.rollback();
+    console.log("Error in holdAsset:", error);
+    res.writeHead(error.status || 500, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ message: error.message, status: error.status || 500 }))
+  }
+  finally {
+    connection.release();
+  }
 }
 
 exports.cancelHold = async (req, res) => {
@@ -603,4 +603,219 @@ exports.getDashboardStats = (req, res) => {
       }
     });
   });
+};
+
+// Get borrows for the logged-in user
+exports.getUserBorrows = async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const borrows = await helpGetBorrows(userId, true); // true to include returned items
+
+    // Enhance with asset details if needed, but helpGetBorrows might be raw
+    // Let's use a custom query to get full details similar to getAllRecords but filtered
+    const query = `
+      SELECT 
+        b.Borrow_ID,
+        b.Borrower_ID as User_ID,
+        r.Asset_ID,
+        COALESCE(bk.Title, cd.Title, ab.Title, mv.Title, CONCAT('Tech-', t.Model_Num), CONCAT('Room-', sr.Room_Number)) as Title,
+        COALESCE(bk.Author, cd.Artist, ab.Author, mv.Title, t.Model_Num, sr.Room_Number) as Author_Artist,
+        DATE_FORMAT(b.Borrow_Date, '%Y-%m-%d %H:%i:%s') as Borrow_Date,
+        DATE_FORMAT(b.Due_Date, '%Y-%m-%d') as Due_Date,
+        CASE 
+          WHEN b.Return_Date IS NULL THEN NULL 
+          ELSE DATE_FORMAT(b.Return_Date, '%Y-%m-%d %H:%i:%s') 
+        END as Return_Date,
+        CASE
+          WHEN bk.Asset_ID IS NOT NULL THEN 'Book'
+          WHEN cd.Asset_ID IS NOT NULL THEN 'CD'
+          WHEN ab.Asset_ID IS NOT NULL THEN 'Audiobook'
+          WHEN mv.Asset_ID IS NOT NULL THEN 'Movie'
+          WHEN t.Asset_ID IS NOT NULL THEN 'Technology'
+          WHEN sr.Asset_ID IS NOT NULL THEN 'Study Room'
+          ELSE 'Unknown'
+        END as Asset_Type,
+        b.Fee_Incurred as feeIncurred,
+        CASE 
+            WHEN b.Return_Date IS NULL AND b.Due_Date < CURDATE() THEN DATEDIFF(CURDATE(), b.Due_Date)
+            ELSE 0
+        END as Overdue_Days
+      FROM borrow b
+      JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
+      LEFT JOIN book bk ON r.Asset_ID = bk.Asset_ID
+      LEFT JOIN cd ON r.Asset_ID = cd.Asset_ID
+      LEFT JOIN audiobook ab ON r.Asset_ID = ab.Asset_ID
+      LEFT JOIN movie mv ON r.Asset_ID = mv.Asset_ID
+      LEFT JOIN technology t ON r.Asset_ID = t.Asset_ID
+      LEFT JOIN study_room sr ON r.Asset_ID = sr.Asset_ID
+      WHERE b.Borrower_ID = ?
+      ORDER BY b.Borrow_Date DESC
+    `;
+
+    db.query(query, [userId], (err, results) => {
+      if (err) {
+        console.error('Error fetching user borrows:', err);
+        return res.writeHead(500, { 'Content-Type': 'application/json' })
+          && res.end(JSON.stringify({ message: 'Database error', error: err.message }));
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(results));
+    });
+  } catch (error) {
+    console.error('Error in getUserBorrows:', error);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ message: 'Failed to fetch user borrows', error: error.message }));
+  }
+};
+
+// Get dashboard stats for the logged-in student
+exports.getStudentDashboardStats = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const connection = await db.promise();
+
+    // 1. Summary Counts
+    const summaryQueries = {
+      borrowed: `SELECT COUNT(*) as count FROM borrow WHERE Borrower_ID = ? AND Return_Date IS NULL`,
+      overdue: `SELECT COUNT(*) as count FROM borrow WHERE Borrower_ID = ? AND Return_Date IS NULL AND Due_Date < CURDATE()`,
+      bookings: `SELECT COUNT(*) as count FROM borrow b 
+                 JOIN rentable r ON b.Rentable_ID = r.Rentable_ID 
+                 JOIN study_room sr ON r.Asset_ID = sr.Asset_ID 
+                 WHERE b.Borrower_ID = ? AND b.Return_Date IS NULL AND b.Due_Date >= NOW()`,
+      // Note: Room bookings are stored in borrow table? 
+      // Based on issueAsset, yes, study rooms are issued. 
+      // But usually bookings are future events. 
+      // If "Book a Room" creates a borrow record immediately, then this works.
+      // If there's a separate booking system, we need to check. 
+      // Looking at issueAsset: it inserts into borrow. 
+      // Looking at holdAsset: it inserts into hold.
+      // Let's assume "Upcoming Room Bookings" are active borrows of study rooms that haven't happened yet? 
+      // Or maybe they are Holds? 
+      // "Reservations/Holds" usually implies books waiting to be picked up.
+      // "Room Bookings" might be a specific type of Hold or Borrow.
+      // For now, let's assume Room Bookings are Holds on Study Rooms or Borrows of Study Rooms.
+      // If it's a future booking, it's likely a Hold or a Borrow with future dates.
+      // Let's check if there's a 'booking' table. No.
+      // Let's assume Room Bookings are Borrows of type 'Study Room' that are active.
+      reservations: `SELECT COUNT(*) as count FROM hold WHERE Holder_ID = ? AND active_key IS NULL`,
+    };
+
+    // Fines Calculation
+    const [configRes] = await connection.query("SELECT Config_Value FROM system_config WHERE Config_Key = 'FINE_RATE_PER_DAY'");
+    const fineRate = configRes.length ? parseFloat(configRes[0].Config_Value) : 1.00;
+
+    const fineQuery = `
+        SELECT 
+          COALESCE(SUM(
+            CASE 
+              WHEN b.Return_Date IS NULL AND b.Due_Date < CURDATE() 
+              THEN DATEDIFF(CURDATE(), b.Due_Date) * ?
+              WHEN b.Return_Date IS NOT NULL AND b.Fee_Incurred > 0
+              THEN b.Fee_Incurred
+              ELSE 0 
+            END
+          ), 0) as total
+        FROM borrow b
+        WHERE b.Borrower_ID = ?
+    `;
+
+    // 2. Preview Lists
+    const previewQueries = {
+      // Current Borrowings (excluding rooms)
+      borrowings: `
+        SELECT 
+          b.Borrow_ID,
+          COALESCE(bk.Title, cd.Title, ab.Title, mv.Title, CONCAT('Tech-', t.Model_Num)) as Title,
+          b.Due_Date,
+          CASE 
+            WHEN b.Due_Date < CURDATE() THEN 'Overdue'
+            ELSE 'Active'
+          END as Status
+        FROM borrow b
+        JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
+        LEFT JOIN book bk ON r.Asset_ID = bk.Asset_ID
+        LEFT JOIN cd ON r.Asset_ID = cd.Asset_ID
+        LEFT JOIN audiobook ab ON r.Asset_ID = ab.Asset_ID
+        LEFT JOIN movie mv ON r.Asset_ID = mv.Asset_ID
+        LEFT JOIN technology t ON r.Asset_ID = t.Asset_ID
+        LEFT JOIN study_room sr ON r.Asset_ID = sr.Asset_ID
+        WHERE b.Borrower_ID = ? AND b.Return_Date IS NULL AND sr.Asset_ID IS NULL
+        ORDER BY b.Due_Date ASC
+        LIMIT 3
+      `,
+      // Upcoming Room Bookings (Borrows of study rooms)
+      bookings: `
+        SELECT 
+          b.Borrow_ID,
+          CONCAT('Room ', sr.Room_Number) as Room,
+          b.Borrow_Date as Start_Time,
+          b.Due_Date as End_Time
+        FROM borrow b
+        JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
+        JOIN study_room sr ON r.Asset_ID = sr.Asset_ID
+        WHERE b.Borrower_ID = ? AND b.Return_Date IS NULL
+        ORDER BY b.Borrow_Date ASC
+        LIMIT 2
+      `,
+      // Reservations / Holds
+      reservations: `
+        SELECT 
+          h.Hold_ID,
+          COALESCE(bk.Title, cd.Title, ab.Title, mv.Title, CONCAT('Tech-', t.Model_Num), CONCAT('Room-', sr.Room_Number)) as Title,
+          h.Hold_Date,
+          'Pending' as Status -- Simplified status
+        FROM hold h
+        JOIN rentable r ON h.Rentable_ID = r.Rentable_ID
+        LEFT JOIN book bk ON r.Asset_ID = bk.Asset_ID
+        LEFT JOIN cd ON r.Asset_ID = cd.Asset_ID
+        LEFT JOIN audiobook ab ON r.Asset_ID = ab.Asset_ID
+        LEFT JOIN movie mv ON r.Asset_ID = mv.Asset_ID
+        LEFT JOIN technology t ON r.Asset_ID = t.Asset_ID
+        LEFT JOIN study_room sr ON r.Asset_ID = sr.Asset_ID
+        WHERE h.Holder_ID = ? AND h.active_key IS NULL
+        ORDER BY h.Hold_Date DESC
+        LIMIT 2
+      `
+    };
+
+    const stats = {
+      summary: { borrowed: 0, overdue: 0, bookings: 0, reservations: 0, fines: 0 },
+      preview: { borrowings: [], bookings: [], reservations: [] }
+    };
+
+    // Execute Summary Queries
+    const [borrowedRes] = await connection.query(summaryQueries.borrowed, [userId]);
+    stats.summary.borrowed = borrowedRes[0].count;
+
+    const [overdueRes] = await connection.query(summaryQueries.overdue, [userId]);
+    stats.summary.overdue = overdueRes[0].count;
+
+    const [bookingsRes] = await connection.query(summaryQueries.bookings, [userId]);
+    stats.summary.bookings = bookingsRes[0].count;
+
+    const [reservationsRes] = await connection.query(summaryQueries.reservations, [userId]);
+    stats.summary.reservations = reservationsRes[0].count;
+
+    const [finesRes] = await connection.query(fineQuery, [fineRate, userId]);
+    stats.summary.fines = parseFloat(finesRes[0].total || 0).toFixed(2);
+
+    // Execute Preview Queries
+    const [borrowingsList] = await connection.query(previewQueries.borrowings, [userId]);
+    stats.preview.borrowings = borrowingsList;
+
+    const [bookingsList] = await connection.query(previewQueries.bookings, [userId]);
+    stats.preview.bookings = bookingsList;
+
+    const [reservationsList] = await connection.query(previewQueries.reservations, [userId]);
+    stats.preview.reservations = reservationsList;
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(stats));
+
+  } catch (error) {
+    console.error('Error fetching student dashboard stats:', error);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ message: 'Failed to fetch stats', error: error.message }));
+  }
 };

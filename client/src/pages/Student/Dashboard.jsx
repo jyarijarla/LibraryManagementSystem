@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate, Navigate, NavLink, Routes, Route } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -17,105 +17,221 @@ import {
     ShieldCheck,
     Sparkles,
     Clock3,
-    BookOpen
+    BookOpen,
+    User,
+    ChevronRight,
+    AlertCircle
 } from 'lucide-react'
 import { SuccessPopup } from '../../components/FeedbackUI/FeedbackUI'
 import './Dashboard.css'
 import { Assets } from './Assets'
+import Inventory from './Inventory'
+import Reports from './Reports'
 import { OverlayProvider } from '../../components/FeedbackUI/OverlayContext'
 import { LoadingProvider, useLoading } from '../../components/FeedbackUI/LoadingContext'
 
-function TestLoad() {
-    const { setLoading } = useLoading()
-    return (
-        <button
-            className="student-placeholder-action"
-            onClick={() => {
-                setLoading({ isLoading: true })
-                setTimeout(() => setLoading({ isLoading: false }), 2000)
-            }}
-        >
-            Trigger Loading Overlay
-        </button>
-    )
-}
+// --- Components ---
 
-const PlaceholderPanel = ({ title, description }) => (
-    <div className="student-placeholder-panel">
-        <h3>{title}</h3>
-        <p>{description}</p>
-        <div className="student-placeholder-chip">Feature in progress</div>
-    </div>
-)
-
-const studentRoutes = [
-    {
-        path: 'overview',
-        label: 'Overview',
-        icon: LayoutDashboard,
-        element: (
-            <PlaceholderPanel
-                title="Overview"
-                description="Personalized summaries, learning streaks and quick shortcuts will live here."
-            />
-        )
-    },
-    {
-        path: 'assets',
-        label: 'Assets',
-        icon: BookOpenCheck,
-        element: <Assets />
-    },
-    {
-        path: 'inventory',
-        label: 'Inventory',
-        icon: Layers,
-        element: (
-            <PlaceholderPanel
-                title="Inventory"
-                description="Track the items you have borrowed, holds and wishlists with visual insights."
-            />
-        )
-    },
-    {
-        path: 'reports',
-        label: 'Reports',
-        icon: BarChart3,
-        element: (
-            <PlaceholderPanel
-                title="Reports"
-                description="Reading history, learning analytics and exportable data will appear here soon."
-            />
-        )
-    },
-    {
-        path: 'test-loading',
-        label: 'Test Loading',
-        icon: Activity,
-        element: <TestLoad />
-    }
-]
-
-const tabClassName = ({ isActive }) => `student-tab ${isActive ? 'active' : ''}`
-
-const QuickStatCard = ({ title, value, change, icon: Icon, accent }) => (
-    <motion.div
-        layout
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="student-stat-card"
-    >
+const StatCard = ({ title, value, icon: Icon, accent, subtext }) => (
+    <div className="student-stat-card">
         <div className={`student-stat-icon ${accent}`}>
             <Icon size={20} />
         </div>
         <div>
             <p>{title}</p>
             <h3>{value}</h3>
-            <span>{change}</span>
+            {subtext && <span>{subtext}</span>}
         </div>
-    </motion.div>
+    </div>
 )
+
+const QuickActionCard = ({ title, icon: Icon, onClick }) => (
+    <button className="student-quick-action-card" onClick={onClick}>
+        <div className="student-quick-action-icon">
+            <Icon size={24} />
+        </div>
+        <span>{title}</span>
+    </button>
+)
+
+const SectionHeader = ({ title, actionLabel, onAction }) => (
+    <div className="student-section-header">
+        <h3>{title}</h3>
+        {actionLabel && (
+            <button className="student-section-action" onClick={onAction}>
+                {actionLabel} <ChevronRight size={16} />
+            </button>
+        )}
+    </div>
+)
+
+const PreviewList = ({ items, type, emptyMessage }) => {
+    if (!items || items.length === 0) {
+        return <div className="student-empty-state">{emptyMessage}</div>
+    }
+
+    return (
+        <div className="student-preview-list">
+            {items.map((item, index) => (
+                <div key={index} className="student-preview-item">
+                    <div className="student-preview-info">
+                        <h4>{item.Title || item.Room}</h4>
+                        <p>
+                            {type === 'borrowing' && `Due: ${new Date(item.Due_Date).toLocaleDateString()}`}
+                            {type === 'booking' && `${new Date(item.Start_Time).toLocaleDateString()} · ${new Date(item.Start_Time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                            {type === 'reservation' && `Requested: ${new Date(item.Hold_Date).toLocaleDateString()}`}
+                        </p>
+                    </div>
+                    <div className="student-preview-status">
+                        {type === 'borrowing' && (
+                            <span className={`status-badge ${item.Status.toLowerCase()}`}>{item.Status}</span>
+                        )}
+                        {type === 'booking' && (
+                            <button className="student-action-btn-sm danger">Cancel</button>
+                        )}
+                        {type === 'reservation' && (
+                            <span className="status-badge pending">Pending</span>
+                        )}
+                    </div>
+                </div>
+            ))}
+        </div>
+    )
+}
+
+// --- Dashboard Page Component ---
+
+function DashboardOverview({ stats, loading }) {
+    const navigate = useNavigate()
+
+    if (loading) return <div className="student-loading">Loading dashboard...</div>
+
+    // Safe access to stats
+    const summary = stats?.summary || { borrowed: 0, overdue: 0, bookings: 0, reservations: 0, fines: 0 }
+    const preview = stats?.preview || { borrowings: [], bookings: [], reservations: [] }
+
+    return (
+        <div className="student-dashboard-content">
+            {/* 1. Header (Handled by Topbar, but we can add a greeting here if needed) */}
+
+            {/* 2. Summary Section */}
+            <section className="student-summary-grid">
+                <StatCard
+                    title="Borrowed Assets"
+                    value={summary.borrowed}
+                    icon={BookOpen}
+                    accent="accent-blue"
+                />
+                <StatCard
+                    title="Overdue Assets"
+                    value={summary.overdue}
+                    icon={AlertCircle}
+                    accent="accent-red"
+                    subtext={summary.overdue > 0 ? "Action needed" : "All good"}
+                />
+                <StatCard
+                    title="Upcoming Bookings"
+                    value={summary.bookings}
+                    icon={CalendarCheck}
+                    accent="accent-purple"
+                />
+                <StatCard
+                    title="Reservations"
+                    value={summary.reservations}
+                    icon={Bookmark}
+                    accent="accent-amber"
+                />
+                <StatCard
+                    title="Outstanding Fines"
+                    value={`$${summary.fines}`}
+                    icon={ShieldCheck}
+                    accent={parseFloat(summary.fines) > 0 ? "accent-red" : "accent-green"}
+                />
+            </section>
+
+            {/* 3. Quick Actions */}
+            <section className="student-quick-actions-row">
+                <QuickActionCard title="Search Assets" icon={Search} onClick={() => navigate('/student/assets')} />
+                <QuickActionCard title="My Borrowings" icon={BookOpenCheck} onClick={() => navigate('/student/inventory')} />
+                <QuickActionCard title="Book a Room" icon={CalendarCheck} onClick={() => navigate('/student/assets?type=study-rooms')} />
+                <QuickActionCard title="My Reservations" icon={Layers} onClick={() => navigate('/student/inventory')} />
+                <QuickActionCard title="Pay Fines" icon={DollarSign} onClick={() => navigate('/student/reports')} />
+            </section>
+
+            <div className="student-dashboard-split">
+                <div className="student-dashboard-main-col">
+                    {/* 4. Current Borrowings (Preview) */}
+                    <section className="student-section-card">
+                        <SectionHeader
+                            title="Current Borrowings"
+                            actionLabel="View All"
+                            onAction={() => navigate('/student/inventory')}
+                        />
+                        <PreviewList
+                            items={preview.borrowings}
+                            type="borrowing"
+                            emptyMessage="You don't have any active borrowings."
+                        />
+                    </section>
+
+                    {/* 5. Upcoming Room Bookings (Preview) */}
+                    <section className="student-section-card">
+                        <SectionHeader
+                            title="Upcoming Room Bookings"
+                            actionLabel="View All"
+                            onAction={() => navigate('/student/inventory')}
+                        />
+                        <PreviewList
+                            items={preview.bookings}
+                            type="booking"
+                            emptyMessage="No upcoming room bookings."
+                        />
+                    </section>
+                </div>
+
+                <div className="student-dashboard-side-col">
+                    {/* 6. Reservations / Holds (Preview) */}
+                    <section className="student-section-card">
+                        <SectionHeader
+                            title="Reservations"
+                            actionLabel="View All"
+                            onAction={() => navigate('/student/inventory')}
+                        />
+                        <PreviewList
+                            items={preview.reservations}
+                            type="reservation"
+                            emptyMessage="No active reservations."
+                        />
+                    </section>
+
+                    {/* 7. Fines Overview */}
+                    <section className="student-section-card fines-card">
+                        <h3>Fines Overview</h3>
+                        <div className="fines-summary">
+                            <span className="fines-label">Total Unpaid</span>
+                            <span className="fines-amount">${summary.fines}</span>
+                        </div>
+                        <button className="student-btn-primary full-width" onClick={() => navigate('/student/reports')}>
+                            View Details
+                        </button>
+                    </section>
+
+                    {/* 10. Help & Library Info (Simplified) */}
+                    <section className="student-section-card help-card">
+                        <h3>Library Info</h3>
+                        <ul className="library-info-list">
+                            <li><span>🕒</span> Mon-Fri: 8am - 8pm</li>
+                            <li><span>📞</span> (555) 123-4567</li>
+                            <li><span>📧</span> help@library.edu</li>
+                        </ul>
+                    </section>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// --- Main Layout Components ---
 
 const StudentSidebar = ({ sidebarOpen, setSidebarOpen, onLogout }) => (
     <>
@@ -130,17 +246,22 @@ const StudentSidebar = ({ sidebarOpen, setSidebarOpen, onLogout }) => (
                 </div>
             </div>
             <nav className="student-sidebar-nav">
-                {studentRoutes.map(({ path, label, icon: Icon }) => (
-                    <NavLink
-                        key={path}
-                        to={`/student/${path}`}
-                        className={({ isActive }) => `student-sidebar-link ${isActive ? 'active' : ''}`}
-                        onClick={() => setSidebarOpen(false)}
-                    >
-                        <Icon size={20} />
-                        <span>{label}</span>
-                    </NavLink>
-                ))}
+                <NavLink to="/student/overview" className={({ isActive }) => `student-sidebar-link ${isActive ? 'active' : ''}`} onClick={() => setSidebarOpen(false)}>
+                    <LayoutDashboard size={20} />
+                    <span>Dashboard</span>
+                </NavLink>
+                <NavLink to="/student/assets" className={({ isActive }) => `student-sidebar-link ${isActive ? 'active' : ''}`} onClick={() => setSidebarOpen(false)}>
+                    <BookOpenCheck size={20} />
+                    <span>Assets</span>
+                </NavLink>
+                <NavLink to="/student/inventory" className={({ isActive }) => `student-sidebar-link ${isActive ? 'active' : ''}`} onClick={() => setSidebarOpen(false)}>
+                    <Layers size={20} />
+                    <span>Inventory</span>
+                </NavLink>
+                <NavLink to="/student/reports" className={({ isActive }) => `student-sidebar-link ${isActive ? 'active' : ''}`} onClick={() => setSidebarOpen(false)}>
+                    <BarChart3 size={20} />
+                    <span>Reports</span>
+                </NavLink>
             </nav>
             <div className="student-sidebar-footer">
                 <button className="student-sidebar-logout" onClick={onLogout}>
@@ -149,15 +270,13 @@ const StudentSidebar = ({ sidebarOpen, setSidebarOpen, onLogout }) => (
                 </button>
             </div>
         </div>
-        <div
-            className={`student-sidebar-overlay ${sidebarOpen ? 'visible' : ''}`}
-            onClick={() => setSidebarOpen(false)}
-        />
+        <div className={`student-sidebar-overlay ${sidebarOpen ? 'visible' : ''}`} onClick={() => setSidebarOpen(false)} />
     </>
 )
 
 const StudentTopbar = ({ sidebarOpen, setSidebarOpen }) => {
     const [searchValue, setSearchValue] = useState('')
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
 
     return (
         <header className="student-topbar">
@@ -166,8 +285,7 @@ const StudentTopbar = ({ sidebarOpen, setSidebarOpen }) => {
                     {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
                 </button>
                 <div>
-                    <p>Welcome back 👋</p>
-                    <span>Ready to keep learning?</span>
+                    <p>Welcome back, {user.First_Name || 'Student'} 👋</p>
                 </div>
             </div>
             <div className="student-topbar-right">
@@ -175,7 +293,7 @@ const StudentTopbar = ({ sidebarOpen, setSidebarOpen }) => {
                     <Search size={18} />
                     <input
                         type="text"
-                        placeholder="Search the catalog"
+                        placeholder="Search..."
                         value={searchValue}
                         onChange={(event) => setSearchValue(event.target.value)}
                     />
@@ -184,10 +302,15 @@ const StudentTopbar = ({ sidebarOpen, setSidebarOpen }) => {
                     <Bell size={20} />
                     <span className="student-indicator" />
                 </button>
+                <div className="student-profile-icon">
+                    <User size={20} />
+                </div>
             </div>
         </header>
     )
 }
+
+// --- Main Component ---
 
 function StudentDashboard() {
     const navigate = useNavigate()
@@ -202,70 +325,6 @@ function StudentDashboard() {
         navigate('/login')
     }
 
-    const quickStats = [
-        {
-            title: 'Active loans',
-            value: '04',
-            change: '+1 this week',
-            icon: Bookmark,
-            accent: 'accent-sky'
-        },
-        {
-            title: 'Reservations',
-            value: '02',
-            change: '1 ready for pickup',
-            icon: CalendarCheck,
-            accent: 'accent-rose'
-        },
-        {
-            title: 'Fines & holds',
-            value: '$0.00',
-            change: 'Cleared this month',
-            icon: ShieldCheck,
-            accent: 'accent-emerald'
-        },
-        {
-            title: 'Reading streak',
-            value: '12 days',
-            change: 'Keep it going!',
-            icon: Sparkles,
-            accent: 'accent-amber'
-        }
-    ]
-
-    const reminders = [
-        {
-            title: 'Return "Digital Logic"',
-            detail: 'Due Oct 12',
-            status: '2 days left',
-            icon: Clock3
-        },
-        {
-            title: 'Study room reservation',
-            detail: 'Room B · Oct 14 · 3PM',
-            status: 'Confirmed',
-            icon: CalendarCheck
-        }
-    ]
-
-    const quickActions = [
-        {
-            title: 'Browse catalog',
-            description: 'Explore books, movies, and more',
-            icon: BookOpenCheck
-        },
-        {
-            title: 'Reserve a room',
-            description: 'Find a study space for your group',
-            icon: CalendarCheck
-        },
-        {
-            title: 'Ask a librarian',
-            description: 'Get research or course support',
-            icon: Sparkles
-        }
-    ]
-
     return (
         <div className="student-dashboard-shell">
             <LoadingProvider>
@@ -278,84 +337,14 @@ function StudentDashboard() {
                     />
                     <div className="student-main">
                         <StudentTopbar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
-
                         <div className="student-inner">
-                            <section className="student-hero">
-                                <div className="student-hero-info">
-                                    <p>Student dashboard</p>
-                                    <h1>Track your borrowing journey</h1>
-                                    <p>
-                                        Stay aligned with the librarian experience—consistent typography, gradients,
-                                        and card styles keep the platform feeling unified.
-                                    </p>
-                                    <div className="student-hero-highlights">
-                                        <div>
-                                            <span>Next pickup</span>
-                                            <strong>Oct 14 · Room B</strong>
-                                        </div>
-                                        <div>
-                                            <span>Goal progress</span>
-                                            <strong>8/12 books</strong>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="student-hero-reminders">
-                                    <h4>Upcoming reminders</h4>
-                                    <ul>
-                                        {reminders.map(({ title, detail, status, icon: Icon }) => (
-                                            <li key={title}>
-                                                <div className="student-hero-icon">
-                                                    <Icon size={18} />
-                                                </div>
-                                                <div>
-                                                    <p>{title}</p>
-                                                    <span>{detail}</span>
-                                                </div>
-                                                <span className="student-hero-status">{status}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            </section>
-
-                            <section className="student-quick-actions">
-                                {quickActions.map(({ title, description, icon: Icon }) => (
-                                    <div key={title} className="student-action-card">
-                                        <div className="student-action-icon">
-                                            <Icon size={18} />
-                                        </div>
-                                        <div>
-                                            <h4>{title}</h4>
-                                            <p>{description}</p>
-                                        </div>
-                                        <button>Open</button>
-                                    </div>
-                                ))}
-                            </section>
-
-                            <section className="student-stats-grid">
-                                {quickStats.map((stat) => (
-                                    <QuickStatCard key={stat.title} {...stat} />
-                                ))}
-                            </section>
-
-                            <section className="student-tabs-panel">
-                                <nav className="student-tabs">
-                                    {studentRoutes.map(({ path, label }) => (
-                                        <NavLink key={path} to={`/student/${path}`} className={tabClassName}>
-                                            {label}
-                                        </NavLink>
-                                    ))}
-                                </nav>
-                                <div className="student-content-card">
-                                    <Routes>
-                                        <Route index element={<Navigate to="/student/assets" replace />} />
-                                        {studentRoutes.map(({ path, element }) => (
-                                            <Route key={path} path={path} element={element} />
-                                        ))}
-                                    </Routes>
-                                </div>
-                            </section>
+                            <Routes>
+                                <Route index element={<Navigate to="/student/overview" replace />} />
+                                <Route path="overview" element={<DashboardOverview />} />
+                                <Route path="assets" element={<Assets />} />
+                                <Route path="inventory" element={<div className="student-placeholder-panel"><h3>Inventory</h3><p>Coming soon...</p></div>} />
+                                <Route path="reports" element={<div className="student-placeholder-panel"><h3>Reports</h3><p>Coming soon...</p></div>} />
+                            </Routes>
                         </div>
                     </div>
                 </OverlayProvider>
@@ -363,5 +352,8 @@ function StudentDashboard() {
         </div>
     )
 }
+
+// Helper icon for Quick Actions (missing import)
+import { DollarSign } from 'lucide-react'
 
 export default StudentDashboard

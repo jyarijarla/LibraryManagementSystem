@@ -115,3 +115,48 @@ exports.cancelHold = (req, res) => {
     res.end(JSON.stringify({ message: 'Hold cancelled successfully' }));
   });
 };
+
+// Get holds for the logged-in user
+exports.getUserHolds = (req, res) => {
+  const userId = req.user.id;
+
+  const query = `
+    SELECT 
+      h.Hold_ID,
+      h.Hold_Date,
+      h.Hold_Expires,
+      h.Canceled_At,
+      h.Fulfilling_Borrow_ID,
+      COALESCE(bk.Title, cd.Title, ab.Title, m.Title, 
+        CONCAT('Tech-', t.Model_Num), CONCAT('Room-', sr.Room_Number)) as Asset_Title,
+      at.type_name as Asset_Type,
+      CASE 
+        WHEN h.Canceled_At IS NOT NULL THEN 'Cancelled'
+        WHEN h.Fulfilling_Borrow_ID IS NOT NULL THEN 'Fulfilled'
+        WHEN h.Hold_Expires < CURDATE() THEN 'Expired'
+        ELSE 'Active'
+      END as Status
+    FROM hold h
+    JOIN rentable r ON h.Rentable_ID = r.Rentable_ID
+    JOIN asset a ON r.Asset_ID = a.Asset_ID
+    JOIN asset_type at ON a.Asset_TypeID = at.type_id
+    LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
+    LEFT JOIN cd ON a.Asset_ID = cd.Asset_ID
+    LEFT JOIN audiobook ab ON a.Asset_ID = ab.Asset_ID
+    LEFT JOIN movie m ON a.Asset_ID = m.Asset_ID
+    LEFT JOIN technology t ON a.Asset_ID = t.Asset_ID
+    LEFT JOIN study_room sr ON a.Asset_ID = sr.Asset_ID
+    WHERE h.Holder_ID = ?
+    ORDER BY h.Hold_Date DESC
+  `;
+
+  db.query(query, [userId], (err, results) => {
+    if (err) {
+      console.error('Error fetching user holds:', err);
+      return res.writeHead(500, { 'Content-Type': 'application/json' })
+        && res.end(JSON.stringify({ message: 'Failed to fetch user holds' }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(results));
+  });
+};

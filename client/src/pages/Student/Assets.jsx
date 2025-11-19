@@ -4,51 +4,87 @@ import { ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
 import { useOverlay } from '../../components/FeedbackUI/OverlayContext'
 import { useLoading } from '../../components/FeedbackUI/LoadingContext'
 import { AssetCard } from './AssetCard'
-import { Search } from 'lucide-react'
-const API_URL = window.location.hostname === 'localhost' 
-? 'http://localhost:3000/api'
-: 'https://librarymanagementsystem-z2yw.onrender.com/api'
+import { Search, BookOpen, Disc, Headphones, Film, Laptop, Building2, SearchX } from 'lucide-react'
+const API_URL = window.location.hostname === 'localhost'
+    ? 'http://localhost:3000/api'
+    : 'https://librarymanagementsystem-z2yw.onrender.com/api'
 
 const ASSET_TABS = [
-    { id: 'books', label: 'Books', icon: '📚', placeholder: 'Search books...' },
-    { id: 'cds', label: 'CDs', icon: '💿', placeholder: 'Search CDs...' },
-    { id: 'audiobooks', label: 'Audiobooks', icon: '🎧', placeholder: 'Search audiobooks...' },
-    { id: 'movies', label: 'Movies', icon: '🎬', placeholder: 'Search movies...' },
-    { id: 'technology', label: 'Technology', icon: '💻', placeholder: 'Search devices...' },
-    { id: 'study-rooms', label: 'Study Rooms', icon: '🚪', placeholder: 'Search rooms...' }
+    {
+        id: 'books',
+        label: 'Books',
+        icon: BookOpen,
+        placeholder: 'Search books...',
+        activeClass: 'bg-blue-50 text-blue-700 border-b-2 border-blue-500'
+    },
+    {
+        id: 'cds',
+        label: 'CDs',
+        icon: Disc,
+        placeholder: 'Search CDs...',
+        activeClass: 'bg-purple-50 text-purple-700 border-b-2 border-purple-500'
+    },
+    {
+        id: 'audiobooks',
+        label: 'Audiobooks',
+        icon: Headphones,
+        placeholder: 'Search audiobooks...',
+        activeClass: 'bg-green-50 text-green-700 border-b-2 border-green-500'
+    },
+    {
+        id: 'movies',
+        label: 'Movies',
+        icon: Film,
+        placeholder: 'Search movies...',
+        activeClass: 'bg-red-50 text-red-700 border-b-2 border-red-500'
+    },
+    {
+        id: 'technology',
+        label: 'Technology',
+        icon: Laptop,
+        placeholder: 'Search devices...',
+        activeClass: 'bg-indigo-50 text-indigo-700 border-b-2 border-indigo-500'
+    },
+    {
+        id: 'study-rooms',
+        label: 'Study Rooms',
+        icon: Building2,
+        placeholder: 'Search rooms...',
+        activeClass: 'bg-amber-50 text-amber-700 border-b-2 border-amber-500'
+    }
 ]
 
 const renderCellContent = (item, col, rowIndex) => {
     if (col.key === 'rowNum') {
         return rowIndex + 1
     }
-    
+
     if (col.key === 'Availability') {
         const availString = (item[col.key] === 1 ? 'available' : 'unavailable')
         return (
             <span className={`status-badge ${availString}`}>
-            {availString }
+                {availString}
             </span>
         )
     }
-    
+
     if (col.key === 'Available_Copies') {
         return (
             <span className={`availability-indicator ${item[col.key] > 0 ? 'in-stock' : 'out-of-stock'}`}>
-            {item[col.key] === null ? '-' : item[col.key]}
+                {item[col.key] === null ? '-' : item[col.key]}
             </span>
         )
     }
-    
+
     return item[col.key]
 }
 
 const getAssetImagePath = (assetType, assetId, extension = 'png') => {
-// Returns image path with specified extension
-// Default to .png, but can be .jpg, .jpeg, .gif, .webp, etc.
-return `/assets/${assetType}/${assetId}.${extension}`
+    // Returns image path with specified extension
+    // Default to .png, but can be .jpg, .jpeg, .gif, .webp, etc.
+    return `/assets/${assetType}/${assetId}.${extension}`
 }
-export function Assets(){
+export function Assets() {
     const [error, setErrorState] = useState('')
     const setError = (sendError) => {
         setErrorState(sendError)
@@ -63,7 +99,7 @@ export function Assets(){
     const [availabilityFilter, setAvailabilityFilter] = useState('all')
 
     const [imageRefreshKey] = useState(() => Date.now()) // Cache buster for images
-    
+
     // State for all asset types
     const [books, setBooks] = useState([])
     const [cds, setCds] = useState([])
@@ -92,18 +128,18 @@ export function Assets(){
         }
         const data = await response.json()
         console.log(`Received ${data.length} ${assetType}`, data)
-        
+
         // Log images
         data.forEach(item => {
             if (item.Image_URL) {
-            console.log(`Asset ${item.Asset_ID} has image:`, item.Image_URL)
+                console.log(`Asset ${item.Asset_ID} has image:`, item.Image_URL)
             }
         })
-        
+
         // Sort by Asset_ID in ascending order
         const sortedData = data.sort((a, b) => a.Asset_ID - b.Asset_ID)
-        
-        switch(assetType) {
+
+        switch (assetType) {
             case 'books': setBooks(sortedData); break;
             case 'cds': setCds(sortedData); break;
             case 'audiobooks': setAudiobooks(sortedData); break;
@@ -114,7 +150,7 @@ export function Assets(){
         }
     }
     const getCurrentAssetData = () => {
-        switch(activeAssetTab) {
+        switch (activeAssetTab) {
             case 'books': return books
             case 'cds': return cds
             case 'audiobooks': return audiobooks
@@ -125,62 +161,62 @@ export function Assets(){
         }
     }
     const getAssetTableColumns = () => {
-        switch(activeAssetTab) {
-        case 'books':
-            return [
-            { key: 'rowNum', label: '#' },
-            { key: 'ISBN', label: 'ISBN' },
-            { key: 'Title', label: 'Title' },
-            { key: 'Author', label: 'Author' },
-            { key: 'Page_Count', label: 'Pages' },
-            { key: 'Copies', label: 'Total Copies' },
-            { key: 'Available_Copies', label: 'Available' }
-            ]
-        case 'cds':
-            return [
-            { key: 'rowNum', label: '#' },
-            { key: 'Title', label: 'Title' },
-            { key: 'Artist', label: 'Artist' },
-            { key: 'Total_Tracks', label: 'Tracks' },
-            { key: 'Total_Duration_In_Minutes', label: 'Duration (min)' },
-            { key: 'Copies', label: 'Total Copies' },
-            { key: 'Available_Copies', label: 'Available' }
-            ]
-        case 'audiobooks':
-            return [
-            { key: 'rowNum', label: '#' },
-            { key: 'ISBN', label: 'ISBN' },
-            { key: 'Title', label: 'Title' },
-            { key: 'Author', label: 'Author' },
-            { key: 'length', label: 'Length (min)' },
-            { key: 'Copies', label: 'Total Copies' },
-            { key: 'Available_Copies', label: 'Available' }
-            ]
-        case 'movies':
-            return [
-            { key: 'rowNum', label: '#' },
-            { key: 'Title', label: 'Title' },
-            { key: 'Release_Year', label: 'Year' },
-            { key: 'Age_Rating', label: 'Rating' },
-            { key: 'Available_Copies', label: 'Available' }
-            ]
-        case 'technology':
-            return [
-            { key: 'rowNum', label: '#' },
-            { key: 'Model_Num', label: 'Model #' },
-            { key: 'Type', label: 'Type' },
-            { key: 'Description', label: 'Description' },
-            { key: 'Available_Copies', label: 'Available' }
-            ]
-        case 'study-rooms':
-            return [
-            { key: 'rowNum', label: '#' },
-            { key: 'Room_Number', label: 'Room Number' },
-            { key: 'Capacity', label: 'Capacity' },
-            { key: 'Availability', label: 'Status' }
-            ]
-        default:
-            return []
+        switch (activeAssetTab) {
+            case 'books':
+                return [
+                    { key: 'rowNum', label: '#' },
+                    { key: 'ISBN', label: 'ISBN' },
+                    { key: 'Title', label: 'Title' },
+                    { key: 'Author', label: 'Author' },
+                    { key: 'Page_Count', label: 'Pages' },
+                    { key: 'Copies', label: 'Total Copies' },
+                    { key: 'Available_Copies', label: 'Available' }
+                ]
+            case 'cds':
+                return [
+                    { key: 'rowNum', label: '#' },
+                    { key: 'Title', label: 'Title' },
+                    { key: 'Artist', label: 'Artist' },
+                    { key: 'Total_Tracks', label: 'Tracks' },
+                    { key: 'Total_Duration_In_Minutes', label: 'Duration (min)' },
+                    { key: 'Copies', label: 'Total Copies' },
+                    { key: 'Available_Copies', label: 'Available' }
+                ]
+            case 'audiobooks':
+                return [
+                    { key: 'rowNum', label: '#' },
+                    { key: 'ISBN', label: 'ISBN' },
+                    { key: 'Title', label: 'Title' },
+                    { key: 'Author', label: 'Author' },
+                    { key: 'length', label: 'Length (min)' },
+                    { key: 'Copies', label: 'Total Copies' },
+                    { key: 'Available_Copies', label: 'Available' }
+                ]
+            case 'movies':
+                return [
+                    { key: 'rowNum', label: '#' },
+                    { key: 'Title', label: 'Title' },
+                    { key: 'Release_Year', label: 'Year' },
+                    { key: 'Age_Rating', label: 'Rating' },
+                    { key: 'Available_Copies', label: 'Available' }
+                ]
+            case 'technology':
+                return [
+                    { key: 'rowNum', label: '#' },
+                    { key: 'Model_Num', label: 'Model #' },
+                    { key: 'Type', label: 'Type' },
+                    { key: 'Description', label: 'Description' },
+                    { key: 'Available_Copies', label: 'Available' }
+                ]
+            case 'study-rooms':
+                return [
+                    { key: 'rowNum', label: '#' },
+                    { key: 'Room_Number', label: 'Room Number' },
+                    { key: 'Capacity', label: 'Capacity' },
+                    { key: 'Availability', label: 'Status' }
+                ]
+            default:
+                return []
         }
     }
     const columns = getAssetTableColumns()
@@ -211,13 +247,13 @@ export function Assets(){
 
     const currentTabConfig = ASSET_TABS.find(tab => tab.id === activeAssetTab)
 
-    const refreshAssets = async() => {
+    const refreshAssets = async () => {
         await fetchAssets(activeAssetTab);
         refreshOverlay();
         console.log("Refetching assets")
     }
     useEffect(() => {
-        const loadAsset = async () =>{
+        const loadAsset = async () => {
             setLoading({ isLoading: true })
             setError('')
             try {
@@ -231,7 +267,7 @@ export function Assets(){
         };
         loadAsset();
     }, [activeAssetTab])
-    return (    
+    return (
         <div className="tab-content">
             <div className="section-header"></div>
 
@@ -239,15 +275,18 @@ export function Assets(){
 
             {/* Sub-tabs for different asset types */}
             <div className="student-asset-toolbar">
-                <div className="student-asset-tabs">
+                <div className="flex flex-wrap border-b border-gray-200 mb-4">
                     {ASSET_TABS.map((tab) => (
                         <button
                             key={tab.id}
-                            className={`student-asset-tab ${activeAssetTab === tab.id ? 'active' : ''}`}
+                            className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${activeAssetTab === tab.id
+                                ? tab.activeClass
+                                : 'text-gray-600 hover:bg-gray-50'
+                                }`}
                             onClick={() => changeAssetTab(tab.id)}
                         >
-                            <span className="student-asset-tab-icon">{tab.icon}</span>
-                            {tab.label}
+                            <tab.icon className="w-5 h-5" />
+                            <span>{tab.label}</span>
                         </button>
                     ))}
                 </div>
@@ -279,76 +318,76 @@ export function Assets(){
             </div>
 
             <div className="cards-container">
-            {displayedData.length === 0 ? (
-                <div className="empty-state">
-                <span className="empty-icon">📭</span>
-                <p>No {activeAssetTab} found</p>
-                </div>
-            ) : (
-                displayedData.map((item, index) => (
-                <div key={item.Asset_ID} className="asset-card" onClick={() => {
-                    setOverlayContent(<AssetCard 
-                        assetType={activeAssetTab} 
-                        getAsset={()=> dataRef.current.find(asset => asset.Asset_ID === item.Asset_ID)}
-                        onAssetChange={refreshAssets}
-                        setError={setError}/>)
-                }}>
-                    <div className="card-header">
-                    <span className="card-number">#{index + 1}</span>
-                    
+                {displayedData.length === 0 ? (
+                    <div className="empty-state">
+                        <SearchX size={48} className="text-gray-300 mb-4" />
+                        <p>No {activeAssetTab} found</p>
                     </div>
-                    
-                    {/* Image Section */}
-                    <div className="card-image">
-                    <img 
-                        src={
-                        item.Image_URL 
-                            ? `${item.Image_URL}?t=${imageRefreshKey}` 
-                            : `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'png')}?t=${imageRefreshKey}`
-                        }
-                        alt={item.Title || item.Room_Number || 'Asset'}
-                        onLoad={(e) => {
-                        e.target.style.display = 'block';
-                        const placeholder = e.target.nextElementSibling;
-                        if (placeholder) placeholder.style.display = 'none';
-                        }}
-                        onError={(e) => {
-                        // Try other common extensions if PNG fails
-                        const currentSrc = e.target.src;
-                        if (currentSrc.includes('.png')) {
-                            e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'jpg')}?t=${imageRefreshKey}`;
-                        } else if (currentSrc.includes('.jpg')) {
-                            e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'jpeg')}?t=${imageRefreshKey}`;
-                        } else if (currentSrc.includes('.jpeg')) {
-                            e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'gif')}?t=${imageRefreshKey}`;
-                        } else if (currentSrc.includes('.gif')) {
-                            e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'webp')}?t=${imageRefreshKey}`;
-                        } else {
-                            // All extensions failed, show placeholder
-                            e.target.style.display = 'none';
-                            const placeholder = e.target.nextElementSibling;
-                            if (placeholder) placeholder.style.display = 'flex';
-                        }
-                        }}
-                    />
-                    <div className="image-placeholder-card">
-                        <span>N/A</span>
-                    </div>
-                    </div>
-                    
-                    <div className="card-body">
-                    {columns.slice(1).map(col => (
-                        <div key={col.key} className="card-field">
-                        <span className="field-label">{col.label}:</span>
-                        <span className="field-value">
-                            {renderCellContent(item, col, index)}
-                        </span>
+                ) : (
+                    displayedData.map((item, index) => (
+                        <div key={item.Asset_ID} className="asset-card" onClick={() => {
+                            setOverlayContent(<AssetCard
+                                assetType={activeAssetTab}
+                                getAsset={() => dataRef.current.find(asset => asset.Asset_ID === item.Asset_ID)}
+                                onAssetChange={refreshAssets}
+                                setError={setError} />)
+                        }}>
+                            <div className="card-header">
+                                <span className="card-number">#{index + 1}</span>
+
+                            </div>
+
+                            {/* Image Section */}
+                            <div className="card-image">
+                                <img
+                                    src={
+                                        item.Image_URL
+                                            ? `${item.Image_URL}?t=${imageRefreshKey}`
+                                            : `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'png')}?t=${imageRefreshKey}`
+                                    }
+                                    alt={item.Title || item.Room_Number || 'Asset'}
+                                    onLoad={(e) => {
+                                        e.target.style.display = 'block';
+                                        const placeholder = e.target.nextElementSibling;
+                                        if (placeholder) placeholder.style.display = 'none';
+                                    }}
+                                    onError={(e) => {
+                                        // Try other common extensions if PNG fails
+                                        const currentSrc = e.target.src;
+                                        if (currentSrc.includes('.png')) {
+                                            e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'jpg')}?t=${imageRefreshKey}`;
+                                        } else if (currentSrc.includes('.jpg')) {
+                                            e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'jpeg')}?t=${imageRefreshKey}`;
+                                        } else if (currentSrc.includes('.jpeg')) {
+                                            e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'gif')}?t=${imageRefreshKey}`;
+                                        } else if (currentSrc.includes('.gif')) {
+                                            e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'webp')}?t=${imageRefreshKey}`;
+                                        } else {
+                                            // All extensions failed, show placeholder
+                                            e.target.style.display = 'none';
+                                            const placeholder = e.target.nextElementSibling;
+                                            if (placeholder) placeholder.style.display = 'flex';
+                                        }
+                                    }}
+                                />
+                                <div className="image-placeholder-card">
+                                    <span>N/A</span>
+                                </div>
+                            </div>
+
+                            <div className="card-body">
+                                {columns.slice(1).map(col => (
+                                    <div key={col.key} className="card-field">
+                                        <span className="field-label">{col.label}:</span>
+                                        <span className="field-value">
+                                            {renderCellContent(item, col, index)}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
-                    ))}
-                    </div>
-                </div>
-                ))
-            )}
+                    ))
+                )}
             </div>
         </div>
     )
