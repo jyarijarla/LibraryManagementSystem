@@ -656,7 +656,7 @@ exports.getUserBorrows = async (req, res) => {
         b.Borrow_ID,
         b.Borrower_ID as User_ID,
         r.Asset_ID,
-        COALESCE(bk.Title, cd.Title, ab.Title, mv.Title, CONCAT('Tech-', t.Model_Num), CONCAT('Room-', sr.Room_Number)) as Title,
+        COALESCE(bk.Title, cd.Title, ab.Title, mv.Title, CONCAT('Tech-', t.Model_Num), CONCAT('Room-', sr.Room_Number)) as Asset_Title,
         COALESCE(bk.Author, cd.Artist, ab.Author, mv.Title, t.Model_Num, sr.Room_Number) as Author_Artist,
         DATE_FORMAT(b.Borrow_Date, '%Y-%m-%d %H:%i:%s') as Borrow_Date,
         DATE_FORMAT(b.Due_Date, '%Y-%m-%d') as Due_Date,

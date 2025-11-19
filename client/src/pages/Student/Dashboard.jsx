@@ -20,13 +20,14 @@ import {
     BookOpen,
     User,
     ChevronRight,
-    AlertCircle
+    AlertCircle,
+    History as HistoryIcon
 } from 'lucide-react'
 import { SuccessPopup } from '../../components/FeedbackUI/FeedbackUI'
 import './Dashboard.css'
 import { Assets } from './Assets'
-import Inventory from './Inventory'
-import Reports from './Reports'
+
+import History from './History'
 import { OverlayProvider } from '../../components/FeedbackUI/OverlayContext'
 import { LoadingProvider, useLoading } from '../../components/FeedbackUI/LoadingContext'
 
@@ -183,10 +184,10 @@ function DashboardOverview() {
             {/* 3. Quick Actions */}
             <section className="student-quick-actions-row">
                 <QuickActionCard title="Search Assets" icon={Search} onClick={() => navigate('/student/assets')} />
-                <QuickActionCard title="My Borrowings" icon={BookOpenCheck} onClick={() => navigate('/student/inventory')} />
+                <QuickActionCard title="My Borrowings" icon={BookOpenCheck} onClick={() => navigate('/student/history')} />
                 <QuickActionCard title="Book a Room" icon={CalendarCheck} onClick={() => navigate('/student/assets?type=study-rooms')} />
-                <QuickActionCard title="My Reservations" icon={Layers} onClick={() => navigate('/student/inventory')} />
-                <QuickActionCard title="Pay Fines" icon={DollarSign} onClick={() => navigate('/student/reports')} />
+                <QuickActionCard title="My Reservations" icon={Layers} onClick={() => navigate('/student/history')} />
+                <QuickActionCard title="Pay Fines" icon={DollarSign} onClick={() => navigate('/student/history')} />
             </section>
 
             <div className="student-dashboard-split">
@@ -196,7 +197,7 @@ function DashboardOverview() {
                         <SectionHeader
                             title="Current Borrowings"
                             actionLabel="View All"
-                            onAction={() => navigate('/student/inventory')}
+                            onAction={() => navigate('/student/history')}
                         />
                         <PreviewList
                             items={preview.borrowings}
@@ -210,7 +211,7 @@ function DashboardOverview() {
                         <SectionHeader
                             title="Upcoming Room Bookings"
                             actionLabel="View All"
-                            onAction={() => navigate('/student/inventory')}
+                            onAction={() => navigate('/student/history')}
                         />
                         <PreviewList
                             items={preview.bookings}
@@ -226,7 +227,7 @@ function DashboardOverview() {
                         <SectionHeader
                             title="Reservations"
                             actionLabel="View All"
-                            onAction={() => navigate('/student/inventory')}
+                            onAction={() => navigate('/student/history')}
                         />
                         <PreviewList
                             items={preview.reservations}
@@ -242,7 +243,7 @@ function DashboardOverview() {
                             <span className="fines-label">Total Unpaid</span>
                             <span className="fines-amount">${summary.fines}</span>
                         </div>
-                        <button className="student-btn-primary full-width" onClick={() => navigate('/student/reports')}>
+                        <button className="student-btn-primary full-width" onClick={() => navigate('/student/history')}>
                             View Details
                         </button>
                     </section>
@@ -285,13 +286,10 @@ const StudentSidebar = ({ sidebarOpen, setSidebarOpen, onLogout }) => (
                     <BookOpenCheck size={20} />
                     <span>Assets</span>
                 </NavLink>
-                <NavLink to="/student/inventory" className={({ isActive }) => `student-sidebar-link ${isActive ? 'active' : ''}`} onClick={() => setSidebarOpen(false)}>
-                    <Layers size={20} />
-                    <span>Inventory</span>
-                </NavLink>
-                <NavLink to="/student/reports" className={({ isActive }) => `student-sidebar-link ${isActive ? 'active' : ''}`} onClick={() => setSidebarOpen(false)}>
-                    <BarChart3 size={20} />
-                    <span>Reports</span>
+
+                <NavLink to="/student/history" className={({ isActive }) => `student-sidebar-link ${isActive ? 'active' : ''}`} onClick={() => setSidebarOpen(false)}>
+                    <HistoryIcon size={20} />
+                    <span>History</span>
                 </NavLink>
             </nav>
             <div className="student-sidebar-footer">
@@ -373,8 +371,8 @@ function StudentDashboard() {
                                 <Route index element={<Navigate to="/student/overview" replace />} />
                                 <Route path="overview" element={<DashboardOverview />} />
                                 <Route path="assets" element={<Assets />} />
-                                <Route path="inventory" element={<div className="student-placeholder-panel"><h3>Inventory</h3><p>Coming soon...</p></div>} />
-                                <Route path="reports" element={<Reports />} />
+
+                                <Route path="history" element={<History />} />
                             </Routes>
                         </div>
                     </div>
