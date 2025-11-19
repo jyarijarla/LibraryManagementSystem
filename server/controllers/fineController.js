@@ -13,39 +13,49 @@ const { getConfigValue } = require('./configController');
  */
 
 /**
- * Get the current fine rate from database configuration
- * Falls back to $1.00 if configuration is not available
+ * Get the current fine configuration from database
+ * Falls back to defaults if configuration is not available
  */
-const getFineRate = async () => {
+const getFineConfig = async () => {
   try {
-    return await getConfigValue('FINE_RATE_PER_DAY');
+    const [rate, maxDays] = await Promise.all([
+      getConfigValue('FINE_RATE_PER_DAY'),
+      getConfigValue('FINE_MAX_DAYS')
+    ]);
+    return {
+      rate: parseFloat(rate || 1.00),
+      maxDays: parseInt(maxDays || 30)
+    };
   } catch (error) {
-    console.warn('Failed to fetch fine rate from config, using default: $1.00', error.message);
-    return 1.00;
+    console.warn('Failed to fetch fine config, using defaults', error.message);
+    return { rate: 1.00, maxDays: 30 };
   }
 };
 
 /**
  * Calculate fine amount based on due date
  * @param {Date} dueDate - The due date of the borrowed item
- * @param {number} fineRate - Fine rate per day (optional, will fetch from config if not provided)
+ * @param {number} fineRate - Fine rate per day (optional)
+ * @param {number} maxDays - Max days to charge (optional)
  * @returns {Promise<number>} - Fine amount in dollars
  */
-const calculateFineAmount = async (dueDate, fineRate = null) => {
+const calculateFineAmount = async (dueDate, fineRate = null, maxDays = null) => {
   const today = new Date();
   const due = new Date(dueDate);
 
   // Only calculate fine if overdue
   if (today <= due) return 0;
 
-  // Get fine rate from config if not provided
-  if (fineRate === null) {
-    fineRate = await getFineRate();
+  // Get config if not provided
+  if (fineRate === null || maxDays === null) {
+    const config = await getFineConfig();
+    fineRate = config.rate;
+    maxDays = config.maxDays;
   }
 
-  // Calculate days overdue, capped at 30 days
+  // Calculate days overdue, capped at maxDays
   const daysOverdue = Math.ceil((today - due) / (1000 * 60 * 60 * 24));
-  return Math.min(daysOverdue, 30) * fineRate;
+  return Math.min(daysOverdue, maxDays) * fineRate;
 };
 
 /**
@@ -55,8 +65,8 @@ const calculateFineAmount = async (dueDate, fineRate = null) => {
 exports.getAllFines = async (req, res) => {
   const { status, userId, severity, fromDate, toDate } = req.query;
 
-  // Get fine rate from config
-  const fineRate = await getFineRate();
+  // Get fine rate and max days from config
+  const { rate: fineRate, maxDays } = await getFineConfig();
 
   let query = `
     SELECT 
@@ -83,9 +93,9 @@ exports.getAllFines = async (req, res) => {
       COALESCE(b.Fee_Incurred, 
         CASE 
           WHEN b.Return_Date IS NULL AND b.Due_Date < CURDATE() 
-          THEN LEAST(DATEDIFF(CURDATE(), b.Due_Date), 30) * ?
+          THEN LEAST(DATEDIFF(CURDATE(), b.Due_Date), ?) * ?
           WHEN b.Return_Date IS NOT NULL AND b.Return_Date > b.Due_Date
-          THEN LEAST(DATEDIFF(b.Return_Date, b.Due_Date), 30) * ?
+          THEN LEAST(DATEDIFF(b.Return_Date, b.Due_Date), ?) * ?
           ELSE 0 
         END
       ) as Fine_Amount,
@@ -116,20 +126,22 @@ exports.getAllFines = async (req, res) => {
     WHERE 1=1
   `;
 
-  // Add fine rate as first two parameters
-  const params = [fineRate, fineRate];
+  // Add fine rate and max days parameters
+  const params = [maxDays, fineRate, maxDays, fineRate];
 
   // Filter by status
   if (status === 'unpaid') {
     query += ` AND (
-      (b.Return_Date IS NULL AND b.Due_Date < CURDATE() AND (LEAST(DATEDIFF(CURDATE(), b.Due_Date), 30) * 1.00) > COALESCE(b.Fee_Incurred, 0)) OR
+      (b.Return_Date IS NULL AND b.Due_Date < CURDATE() AND (LEAST(DATEDIFF(CURDATE(), b.Due_Date), ?) * ?) > COALESCE(b.Fee_Incurred, 0)) OR
       (b.Return_Date IS NOT NULL AND b.Fee_Incurred > 0)
     )`;
   } else if (status === 'paid') {
     query += ` AND (
       (b.Return_Date IS NOT NULL AND b.Fee_Incurred = 0 AND b.Return_Date > b.Due_Date) OR
-      (b.Return_Date IS NULL AND b.Due_Date < CURDATE() AND (LEAST(DATEDIFF(CURDATE(), b.Due_Date), 30) * 1.00) <= COALESCE(b.Fee_Incurred, 0))
+      (b.Return_Date IS NULL AND b.Due_Date < CURDATE() AND (LEAST(DATEDIFF(CURDATE(), b.Due_Date), ?) * ?) <= COALESCE(b.Fee_Incurred, 0))
     )`;
+    // Add params for unpaid/paid calculation
+    params.push(maxDays, fineRate);
   } else if (status === 'overdue') {
     query += ` AND b.Return_Date IS NULL AND b.Due_Date < CURDATE()`;
   }
@@ -189,8 +201,8 @@ exports.getAllFines = async (req, res) => {
 exports.getFineById = async (req, res) => {
   const { borrowId } = req.params;
 
-  // Get fine rate from config
-  const fineRate = await getFineRate();
+  // Get fine rate and max days from config
+  const { rate: fineRate, maxDays } = await getFineConfig();
 
   const query = `
     SELECT 
@@ -218,9 +230,9 @@ exports.getFineById = async (req, res) => {
       b.Fee_Incurred as Paid_Amount,
       CASE 
         WHEN b.Return_Date IS NULL AND b.Due_Date < CURDATE() 
-        THEN LEAST(DATEDIFF(CURDATE(), b.Due_Date), 30) * ?
+        THEN LEAST(DATEDIFF(CURDATE(), b.Due_Date), ?) * ?
         WHEN b.Return_Date IS NOT NULL AND b.Return_Date > b.Due_Date
-        THEN LEAST(DATEDIFF(b.Return_Date, b.Due_Date), 30) * ?
+        THEN LEAST(DATEDIFF(b.Return_Date, b.Due_Date), ?) * ?
         ELSE 0 
       END as Calculated_Fine,
       b.Processed_By,
@@ -239,7 +251,7 @@ exports.getFineById = async (req, res) => {
     WHERE b.Borrow_ID = ?
   `;
 
-  db.query(query, [fineRate, fineRate, borrowId], (err, results) => {
+  db.query(query, [maxDays, fineRate, maxDays, fineRate, borrowId], (err, results) => {
     if (err) {
       console.error('Error fetching fine details:', err);
       return res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -409,7 +421,11 @@ exports.getFineStats = (req, res) => {
 
     const fineRate = configResults.length ? parseFloat(configResults[0].Config_Value) : 1.00;
 
-    const query = `
+    // Get max days
+    db.query("SELECT Config_Value FROM system_config WHERE `Config_Key` = 'FINE_MAX_DAYS'", (err, maxDaysResults) => {
+      const maxDays = maxDaysResults.length ? parseInt(maxDaysResults[0].Config_Value) : 30;
+
+      const query = `
       SELECT 
         COUNT(CASE 
           WHEN b.Return_Date IS NULL AND b.Due_Date < CURDATE() 
@@ -423,7 +439,7 @@ exports.getFineStats = (req, res) => {
         
         COALESCE(SUM(CASE 
           WHEN b.Return_Date IS NULL AND b.Due_Date < CURDATE() 
-          THEN (LEAST(DATEDIFF(CURDATE(), b.Due_Date), 30) * ?) - COALESCE(b.Fee_Incurred, 0)
+          THEN (LEAST(DATEDIFF(CURDATE(), b.Due_Date), ?) * ?) - COALESCE(b.Fee_Incurred, 0)
           WHEN b.Return_Date IS NOT NULL AND b.Fee_Incurred > 0 
           THEN b.Fee_Incurred
           ELSE 0 
@@ -431,7 +447,7 @@ exports.getFineStats = (req, res) => {
         
         COALESCE(SUM(CASE 
           WHEN b.Return_Date IS NOT NULL AND b.Return_Date > b.Due_Date
-          THEN (LEAST(DATEDIFF(b.Return_Date, b.Due_Date), 30) * ?) - COALESCE(b.Fee_Incurred, 0)
+          THEN (LEAST(DATEDIFF(b.Return_Date, b.Due_Date), ?) * ?) - COALESCE(b.Fee_Incurred, 0)
           WHEN b.Return_Date IS NULL AND b.Fee_Incurred > 0
           THEN b.Fee_Incurred
           ELSE 0 
@@ -461,26 +477,27 @@ exports.getFineStats = (req, res) => {
       WHERE b.Due_Date IS NOT NULL
     `;
 
-    db.query(query, [fineRate, fineRate], (err, results) => {
-      if (err) {
-        console.error('Error fetching fine stats:', err);
-        return res.writeHead(500, { 'Content-Type': 'application/json' })
-          && res.end(JSON.stringify({ message: 'Error fetching fine stats' }));
-      }
+      db.query(query, [maxDays, fineRate, maxDays, fineRate], (err, results) => {
+        if (err) {
+          console.error('Error fetching fine stats:', err);
+          return res.writeHead(500, { 'Content-Type': 'application/json' })
+            && res.end(JSON.stringify({ message: 'Error fetching fine stats' }));
+        }
 
-      const stats = results[0];
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        totalOverdueItems: parseInt(stats.total_overdue_items || 0),
-        usersWithOverdue: parseInt(stats.users_with_overdue || 0),
-        totalUnpaidFines: parseFloat(stats.total_unpaid_fines || 0).toFixed(2),
-        totalCollectedFines: parseFloat(stats.total_collected_fines || 0).toFixed(2),
-        criticalOverdues: parseInt(stats.critical_overdues || 0),
-        urgentOverdues: parseInt(stats.urgent_overdues || 0),
-        warningOverdues: parseInt(stats.warning_overdues || 0),
-        avgDaysOverdue: parseFloat(stats.avg_days_overdue || 0).toFixed(1),
-        fineRatePerDay: fineRate
-      }));
+        const stats = results[0];
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          totalOverdueItems: parseInt(stats.total_overdue_items || 0),
+          usersWithOverdue: parseInt(stats.users_with_overdue || 0),
+          totalUnpaidFines: parseFloat(stats.total_unpaid_fines || 0).toFixed(2),
+          totalCollectedFines: parseFloat(stats.total_collected_fines || 0).toFixed(2),
+          criticalOverdues: parseInt(stats.critical_overdues || 0),
+          urgentOverdues: parseInt(stats.urgent_overdues || 0),
+          warningOverdues: parseInt(stats.warning_overdues || 0),
+          avgDaysOverdue: parseFloat(stats.avg_days_overdue || 0).toFixed(1),
+          fineRatePerDay: fineRate
+        }));
+      });
     });
   });
 };
@@ -492,8 +509,8 @@ exports.getFineStats = (req, res) => {
 exports.getUserFines = async (req, res) => {
   const { userId } = req.params;
 
-  // Get fine rate from config
-  const fineRate = await getFineRate();
+  // Get fine config
+  const { rate: fineRate, maxDays } = await getFineConfig();
 
   const query = `
 SELECT
@@ -520,9 +537,9 @@ END as Days_Overdue,
   COALESCE(b.Fee_Incurred,
     CASE 
           WHEN b.Return_Date IS NULL AND b.Due_Date < CURDATE() 
-          THEN LEAST(DATEDIFF(CURDATE(), b.Due_Date), 30) * ?
+          THEN LEAST(DATEDIFF(CURDATE(), b.Due_Date), ?) * ?
     WHEN b.Return_Date IS NOT NULL AND b.Return_Date > b.Due_Date
-          THEN LEAST(DATEDIFF(b.Return_Date, b.Due_Date), 30) * ?
+          THEN LEAST(DATEDIFF(b.Return_Date, b.Due_Date), ?) * ?
     ELSE 0 
         END
   ) as Fine_Amount,
@@ -550,7 +567,7 @@ END as Status
     ORDER BY b.Due_Date DESC
   `;
 
-  db.query(query, [fineRate, fineRate, userId], (err, results) => {
+  db.query(query, [maxDays, fineRate, maxDays, fineRate, userId], (err, results) => {
     if (err) {
       console.error('Error fetching user fines:', err);
       return res.writeHead(500, { 'Content-Type': 'application/json' })

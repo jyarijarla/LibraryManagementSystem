@@ -438,11 +438,20 @@ exports.returnAsset = async (req, res) => {
       const diffTime = Math.abs(todayDateOnly - dueDateOnly);
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
-      // Get fine rate (default to 1.00 if not found, or fetch from config if possible)
-      const [configResult] = await connection.query("SELECT Config_Value FROM system_config WHERE `Config_Key` = 'FINE_RATE_PER_DAY'");
-      const fineRate = configResult.length ? parseFloat(configResult[0].Config_Value) : 1.00;
+      // Get fine rate and max days from config
+      const [configResult] = await connection.query("SELECT Config_Key, Config_Value FROM system_config WHERE Config_Key IN ('FINE_RATE_PER_DAY', 'FINE_MAX_DAYS')");
 
-      totalFine = diffDays * fineRate;
+      let fineRate = 1.00;
+      let maxDays = 30;
+
+      configResult.forEach(row => {
+        if (row.Config_Key === 'FINE_RATE_PER_DAY') fineRate = parseFloat(row.Config_Value);
+        if (row.Config_Key === 'FINE_MAX_DAYS') maxDays = parseInt(row.Config_Value);
+      });
+
+      // Cap the days overdue
+      const cappedDays = Math.min(diffDays, maxDays);
+      totalFine = cappedDays * fineRate;
     }
 
     // Calculate remaining debt: Total Fine - Paid Amount (currentFee)

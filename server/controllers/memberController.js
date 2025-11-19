@@ -1,4 +1,5 @@
 const db = require('../db');
+const bcrypt = require('bcryptjs');
 const { getConfigValue } = require('./configController');
 
 // Generate random password for each new member
@@ -280,31 +281,38 @@ exports.addMember = (req, res) => {
           && res.end(JSON.stringify({ error: 'Username or email already exists' }));
       }
 
-      // Use password sent from frontend (already generated there)
-      const initialPassword = password;
-
-      // Insert new member (Role = 1 for student/member)
-      db.query(
-        `INSERT INTO user (Username, First_Name, Last_Name, User_Email, User_Phone, Date_Of_Birth, Password, Role, Balance) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0.00)`,
-        [username, firstName, lastName || '', email, phone || null, dateOfBirth, initialPassword],
-        (err, result) => {
-          if (err) {
-            console.error('Error adding member:', err);
-            return res.writeHead(500, { 'Content-Type': 'application/json' })
-              && res.end(JSON.stringify({ error: 'Failed to add member: ' + err.message }));
-          }
-
-          // TODO: Send email with credentials to member's email address
-          console.log(`Member created - Username: ${username}, Email: ${email}, Password: ${initialPassword}`);
-
-          res.writeHead(201, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ 
-            message: 'Member added successfully. Credentials sent to email.',
-            memberId: result.insertId
-          }));
+      // Hash password
+      bcrypt.hash(password, 10, (hashErr, hashedPassword) => {
+        if (hashErr) {
+          console.error('Error hashing password:', hashErr);
+          return res.writeHead(500, { 'Content-Type': 'application/json' })
+            && res.end(JSON.stringify({ error: 'Error processing password' }));
         }
-      );
+
+        // Insert new member (Role = 1 for student/member)
+        db.query(
+          `INSERT INTO user (Username, First_Name, Last_Name, User_Email, User_Phone, Date_Of_Birth, Password, Role, Balance) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0.00)`,
+          [username, firstName, lastName || '', email, phone || null, dateOfBirth, hashedPassword],
+          (err, result) => {
+            if (err) {
+              console.error('Error adding member:', err);
+              return res.writeHead(500, { 'Content-Type': 'application/json' })
+                && res.end(JSON.stringify({ error: 'Failed to add member: ' + err.message }));
+            }
+
+            // TODO: Send email with credentials to member's email address
+            // Log plain text password for admin to see (in real app, send via email)
+            console.log(`Member created - Username: ${username}, Email: ${email}, Password: ${password}`);
+
+            res.writeHead(201, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              message: 'Member added successfully. Credentials sent to email.',
+              memberId: result.insertId
+            }));
+          }
+        );
+      });
     }
   );
 };
@@ -385,8 +393,8 @@ exports.deleteMember = (req, res) => {
 
       if (result[0].count > 0) {
         return res.writeHead(400, { 'Content-Type': 'application/json' })
-          && res.end(JSON.stringify({ 
-            error: 'Cannot delete member with active borrowed items. Please return all items first.' 
+          && res.end(JSON.stringify({
+            error: 'Cannot delete member with active borrowed items. Please return all items first.'
           }));
       }
 
@@ -405,8 +413,8 @@ exports.deleteMember = (req, res) => {
 
           if (fineResult[0].unpaid_fines > 0) {
             return res.writeHead(400, { 'Content-Type': 'application/json' })
-              && res.end(JSON.stringify({ 
-                error: `Cannot delete member with unpaid fines ($${fineResult[0].unpaid_fines}). Please clear fines first.` 
+              && res.end(JSON.stringify({
+                error: `Cannot delete member with unpaid fines ($${fineResult[0].unpaid_fines}). Please clear fines first.`
               }));
           }
 
