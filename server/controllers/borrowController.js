@@ -141,6 +141,11 @@ exports.holdAsset = async (req, res) => {
         );
         newHoldID = holdInsertQuery.insertId;
         console.log("Hold ID assigned:", newHoldID);
+        //Update availability
+        await connection.query(
+        `UPDATE rentable SET Availability = 3 WHERE Rentable_ID = ?`,
+        [selRentable]
+      );
       }
       catch(error){
         console.log("Insert failed:", error);
@@ -150,7 +155,7 @@ exports.holdAsset = async (req, res) => {
       await connection.commit();
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ 
-        message: 'Waitlist added successfully',
+        message: 'Hold added successfully',
         holdID: newHoldID,
       }));
     }
@@ -207,7 +212,7 @@ exports.userCancelHold = async (req, res) => {
     ...req,
     params: { id: borrowID }, 
   };
-  return returnAsset(newReq, res);
+  return cancelHold(newReq, res);
 }
 
 exports.waitlistAsset = async (req, res) => {
