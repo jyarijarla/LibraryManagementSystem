@@ -39,7 +39,11 @@ const getAssetImagePath = (assetType, assetId, extension = 'png') => {
 return `/assets/${assetType}/${assetId}.${extension}`
 }
 export function Assets(){
-    const [error, setError] = useState('')
+    const [error, setErrorState] = useState('')
+    const setError = (sendError) => {
+        setErrorState(sendError)
+        setTimeout(() => setError(''), 5000)
+    }
     const { setLoading } = useLoading();
     const { setOverlayContent, refreshOverlay } = useOverlay();
 
@@ -247,7 +251,8 @@ export function Assets(){
                     setOverlayContent(<AssetCard 
                         assetType={activeAssetTab} 
                         getAsset={()=> dataRef.current.find(asset => asset.Asset_ID === item.Asset_ID)}
-                        onAssetChange={refreshAssets}/>)
+                        onAssetChange={refreshAssets}
+                        setError={setError}/>)
                 }}>
                     <div className="card-header">
                     <span className="card-number">#{index + 1}</span>

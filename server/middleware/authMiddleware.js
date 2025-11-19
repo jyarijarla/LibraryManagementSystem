@@ -20,9 +20,9 @@ const SECRET_PEPPER = process.env.SECRET_PEPPER || crypto.randomBytes(32).toStri
 
 // Role-based rate limits (stricter for non-admin roles)
 const ROLE_RATE_LIMITS = {
-  'Student': 30,      // Students get 30 requests/min max
-  'Librarian': 100,   // Librarians get 100 requests/min
-  'Admin': 200        // Admins get full limit
+  'student': 30,      // Students get 30 requests/min max
+  'librarian': 100,   // Librarians get 100 requests/min
+  'admin': 200        // Admins get full limit
 };
 
 // Allowed roles in the system (any other role is instantly rejected)
