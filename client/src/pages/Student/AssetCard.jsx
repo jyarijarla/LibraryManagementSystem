@@ -97,15 +97,7 @@ async function waitlistAsset(assetID) {
     )
     return response.data;
 }
-async function returnAsset(borrowID) {
-    const response = await axios.post(`${API_URL}/`,
-        { userID: localStorage.getItem("userId"), assetID: assetID }, {
-        headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-    })
-    return response.data;
-}
+
 export function AssetCard({ assetType, getAsset, onAssetChange, setError }) {
     console.log("Re-rendered")
     const { closeOverlay } = useOverlay();
@@ -154,18 +146,7 @@ export function AssetCard({ assetType, getAsset, onAssetChange, setError }) {
             setLoading({ isLoading: false })
         }
     }
-    const handleReturn = async () => {
-        setLoading({ isLoading: true })
-        try {
-            await returnAsset(assetSelected.Asset_ID);
-            await onAssetChange();
-        } catch (error) {
-            console.error("Return failed", error)
-            setError('Hold failed')
-        } finally {
-            setLoading({ isLoading: false })
-        }
-    }
+
     const handleWaitlist = async () => {
         setLoading({ isLoading: true })
         try {
@@ -269,9 +250,7 @@ export function AssetCard({ assetType, getAsset, onAssetChange, setError }) {
                                 <button className='asset-btn asset-btn-secondary' onClick={handleWaitlist}>
                                     Join Waitlist
                                 </button>
-                                <button className='asset-btn asset-btn-danger' onClick={handleReturn}>
-                                    Return Asset
-                                </button>
+
                             </div>
                         </div>
                     </div>
