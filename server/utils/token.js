@@ -24,7 +24,16 @@ function generateToken(payload, options = {}) {
   const issuedAt = Math.floor(Date.now() / 1000);
   const expiresIn = options.expiresIn || TOKEN_TTL_SECONDS;
   const exp = issuedAt + expiresIn;
-  const tokenPayload = { ...payload, iat: issuedAt, exp };
+  
+  // Add security fingerprint to prevent token theft
+  const fingerprint = options.fingerprint || null;
+  const tokenPayload = { 
+    ...payload, 
+    iat: issuedAt, 
+    exp,
+    fp: fingerprint, // fingerprint hash
+    jti: crypto.randomBytes(16).toString('hex') // unique token ID for revocation
+  };
 
   const encodedHeader = base64UrlEncode(header);
   const encodedPayload = base64UrlEncode(tokenPayload);
@@ -42,7 +51,7 @@ function timingSafeEquals(a, b) {
   return crypto.timingSafeEqual(buffA, buffB);
 }
 
-function verifyToken(token) {
+function verifyToken(token, options = {}) {
   if (!token || typeof token !== 'string') {
     throw new Error('Token missing');
   }
@@ -66,10 +75,23 @@ function verifyToken(token) {
     throw new Error('Token expired');
   }
 
+  // Verify fingerprint if provided
+  if (options.fingerprint && payload.fp && payload.fp !== options.fingerprint) {
+    throw new Error('Token fingerprint mismatch - possible token theft');
+  }
+
   return payload;
 }
 
+function createFingerprint(ip, userAgent) {
+  const data = `${ip}:${userAgent}`;
+  return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+console.log(generateToken({ userId: 35, role: "librarian" }, { fingerprint: createFingerprint('unknown', 'unknown') }));
+
 module.exports = {
   generateToken,
-  verifyToken
+  verifyToken,
+  createFingerprint
 };

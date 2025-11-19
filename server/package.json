@@ -6,7 +6,6 @@
   "scripts": {
     "db:test": "node dbscripts.js test-connection",
     "db:run-cli": "node dbscripts.js mysql-cli",
-    "setup:users": "node create-test-users.js",
     "start": "node server.js"
   },
   "keywords": [],

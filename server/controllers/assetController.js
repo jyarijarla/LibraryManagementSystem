@@ -14,9 +14,9 @@ const getAllBooks = async (req, res) => {
       FROM book_inventory b
       ORDER BY b.Title
     `;
-    
+
     console.log('📚 getAllBooks - Executing query:', query);
-    
+
     db.query(query, (err, results) => {
       if (err) {
         console.error('❌ Error fetching books:');
@@ -46,7 +46,7 @@ const getAllCDs = async (req, res) => {
       FROM cd_inventory c
       ORDER BY c.Title
     `;
-    
+
     db.query(query, (err, results) => {
       if (err) {
         console.error('Error fetching CDs:', err);
@@ -71,7 +71,7 @@ const getAllAudiobooks = async (req, res) => {
       FROM audiobook_inventory ab
       ORDER BY ab.Title
     `;
-    
+
     db.query(query, (err, results) => {
       if (err) {
         console.error('Error fetching audiobooks:', err);
@@ -96,9 +96,9 @@ const getAllMovies = async (req, res) => {
       FROM movie_inventory m
       ORDER BY m.Title
     `;
-    
+
     console.log('🎬 getAllMovies - Executing query:', query);
-    
+
     db.query(query, (err, results) => {
       if (err) {
         console.error('Error fetching movies:', err);
@@ -131,9 +131,9 @@ const getAllTechnology = async (req, res) => {
       FROM technology_inventory t
       ORDER BY t.Type, t.Model_Num
     `;
-    
+
     console.log('🔧 getAllTechnology - Executing query');
-    
+
     db.query(query, (err, results) => {
       if (err) {
         console.error('❌ Error fetching technology:', err);
@@ -171,7 +171,7 @@ const getAllStudyRooms = async (req, res) => {
       FROM study_room sr
       ORDER BY sr.Room_Number
     `;
-    
+
     db.query(query, (err, results) => {
       if (err) {
         console.error('Error fetching study rooms:', err);
@@ -242,7 +242,7 @@ const updateStudyRoomStatus = async (req, res) => {
 const assetRentableCreate = async (connection, Asset_Type, Copies) => {
   //inserting into asset
   let newAssetId;
-  try{
+  try {
     const assetQuery = 'INSERT INTO asset (Asset_TypeID) VALUES (?)';
     const [assetResult] = await connection.query(assetQuery, [Asset_Type])
     newAssetId = assetResult.insertId;
@@ -254,7 +254,7 @@ const assetRentableCreate = async (connection, Asset_Type, Copies) => {
   //inserting rentables based on copies
   try {
     const rentableQuery = 'INSERT INTO rentable (Asset_ID, Availability, Fee) VALUES (?, ?, ?)';
-    for(let r = 0; r < Copies; r++){
+    for (let r = 0; r < Copies; r++) {
       await connection.query(rentableQuery, [newAssetId, 1, 0])
     }
     console.log(Copies, " insert(s) into rentable successful");
@@ -269,9 +269,9 @@ const addBook = async (req, res) => {
   const connection = await db.promise().getConnection();
   try {
     const { ISBN, Title, Author, Page_Count, Copies, Image_URL } = req.body;
-    
+
     console.log('📚 addBook - Received data:', { ISBN, Title, Author, Page_Count, Copies, Image_URL });
-    
+
     if (!ISBN || !Title || !Author || !Page_Count || !Copies) {
       console.log('❌ Missing required fields');
       return res.writeHead(400, { 'Content-Type': 'application/json' })
@@ -281,7 +281,7 @@ const addBook = async (req, res) => {
     // Image can be uploaded via req.file but we won't store it in database
     const imagePath = req.file ? `/assets/uploads/${req.file.filename}` : null;
     console.log('🖼️  Image path:', imagePath);
-    
+
     //start transaction
     await connection.beginTransaction();
 
@@ -297,12 +297,12 @@ const addBook = async (req, res) => {
       console.log(error)
       throw new Error('Book Creation failed')
     }
-    
+
     //end transaction
     await connection.commit();
 
     res.writeHead(201, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
+    res.end(JSON.stringify({
       message: 'Book added successfully',
       assetId: newAssetId,
       imageUrl: imagePath // Still return image path for frontend use
@@ -323,7 +323,7 @@ const addCD = async (req, res) => {
   const connection = await db.promise().getConnection();
   try {
     const { Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Copies, Image_URL } = req.body;
-    
+
     if (!Total_Tracks || !Total_Duration_In_Minutes || !Title || !Artist || !Copies) {
       return res.writeHead(400, { 'Content-Type': 'application/json' })
         .end(JSON.stringify({ error: 'Missing required fields' }));
@@ -332,7 +332,7 @@ const addCD = async (req, res) => {
     // Image can be uploaded via req.file but we won't store it in database
     const imagePath = req.file ? `/assets/uploads/${req.file.filename}` : null;
     console.log('🖼️  Image path:', imagePath);
-    
+
     //start transaction
     await connection.beginTransaction();
 
@@ -341,20 +341,20 @@ const addCD = async (req, res) => {
     console.log("NewAssetIDCD: ", newAssetId);
     //inserting into cd
     try {
-      const cdQuery = 'INSERT INTO cd (Asset_ID, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';            
+      const cdQuery = 'INSERT INTO cd (Asset_ID, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';
       const [cdResult] = await connection.query(cdQuery, [newAssetId, Total_Tracks, Total_Duration_In_Minutes, Title, Artist, Image_URL || null]);
       const newCDID = cdResult.insertId;
       console.log("CD ID Assigned:", newCDID);
-    } catch (error){
+    } catch (error) {
       console.log(error)
       throw new Error('CD Creation Failed')
     }
-    
+
     //end transaction
     await connection.commit();
 
     res.writeHead(201, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
+    res.end(JSON.stringify({
       message: 'CD added successfully',
       assetId: newAssetId,
       imageUrl: imagePath
@@ -364,7 +364,7 @@ const addCD = async (req, res) => {
     console.error('Error in addCD:', error);
     console.log("Rollback inserts");
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error' , details: error.message}));
+      .end(JSON.stringify({ error: 'Server error', details: error.message }));
   } finally {
     connection.release();
   }
@@ -375,7 +375,7 @@ const addAudiobook = async (req, res) => {
   const connection = await db.promise().getConnection();
   try {
     const { ISBN, Title, Author, length, Copies, Image_URL } = req.body;
-    
+
     if (!ISBN || !Title || !Author || !length || !Copies) {
       return res.writeHead(400, { 'Content-Type': 'application/json' })
         .end(JSON.stringify({ error: 'Missing required fields' }));
@@ -392,7 +392,7 @@ const addAudiobook = async (req, res) => {
     const newAssetId = await assetRentableCreate(connection, 5, Copies);
 
     //inserting into audiobook
-    try{
+    try {
       const audiobookQuery = 'INSERT INTO audiobook (Asset_ID, ISBN, Title, Author, length, Image_URL) VALUES (?, ?, ?, ?, ?, ?)';
       await connection.query(audiobookQuery, [newAssetId, ISBN, Title, Author, length, Image_URL || null]);
       console.log("Audiobook inserted")
@@ -404,7 +404,7 @@ const addAudiobook = async (req, res) => {
     await connection.commit();
 
     res.writeHead(201, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
+    res.end(JSON.stringify({
       message: 'Audiobook added successfully',
       assetId: newAssetId,
       imageUrl: imagePath
@@ -415,7 +415,7 @@ const addAudiobook = async (req, res) => {
     console.error('Error in addAudiobook:', error);
     console.log("Rollback inserts");
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error' , details: error.message}));
+      .end(JSON.stringify({ error: 'Server error', details: error.message }));
   } finally {
     connection.release();
   }
@@ -425,7 +425,7 @@ const addMovie = async (req, res) => {
   const connection = await db.promise().getConnection();
   try {
     const { Title, Release_Year, Age_Rating, Copies, Image_URL } = req.body;
-    
+
     if (!Title || !Release_Year || !Age_Rating || !Copies) {
       return res.writeHead(400, { 'Content-Type': 'application/json' })
         .end(JSON.stringify({ error: 'Missing required fields' }));
@@ -442,7 +442,7 @@ const addMovie = async (req, res) => {
     const newAssetId = await assetRentableCreate(connection, 3, Copies);
 
     //insert into movie
-    try{
+    try {
       const movieQuery = 'INSERT INTO movie (Asset_ID, Title, Release_Year, Age_Rating, Image_URL) VALUES (?, ?, ?, ?, ?)';
       const [movieResults] = await connection.query(movieQuery, [newAssetId, Title, Release_Year, Age_Rating, Image_URL || null]);
       const newMovieID = movieResults.insertId;
@@ -455,7 +455,7 @@ const addMovie = async (req, res) => {
     //end transaction
     await connection.commit();
     res.writeHead(201, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
+    res.end(JSON.stringify({
       message: 'Movie added successfully',
       assetId: newAssetId,
       imageUrl: imagePath
@@ -465,7 +465,7 @@ const addMovie = async (req, res) => {
     console.error('Error in addMovie:', error);
     console.log("Rollback inserts");
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error' , details: error.message}));
+      .end(JSON.stringify({ error: 'Server error', details: error.message }));
   } finally {
     connection.release();
   }
@@ -475,7 +475,7 @@ const addTechnology = async (req, res) => {
   const connection = await db.promise().getConnection();
   try {
     const { Model_Num, Type, Description, Copies, Image_URL } = req.body;
-    
+
     if (!Model_Num || !Type || !Description || !Copies) {
       return res.writeHead(400, { 'Content-Type': 'application/json' })
         .end(JSON.stringify({ error: 'Missing required fields' }));
@@ -492,7 +492,7 @@ const addTechnology = async (req, res) => {
     const newAssetId = await assetRentableCreate(connection, 6, Copies);
 
     //insert into technology
-    try{
+    try {
       const technologyQuery = 'INSERT INTO technology (Asset_ID, Model_Num, Type, Description, Image_URL) VALUES (?, ?, ?, ?, ?)';
       await connection.query(technologyQuery, [newAssetId, Model_Num, Type, Description, Image_URL || null]);
       console.log("✅ Technology inserted - Asset_ID:", newAssetId, "Quantity:", Copies);
@@ -505,7 +505,7 @@ const addTechnology = async (req, res) => {
     await connection.commit();
 
     res.writeHead(201, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
+    res.end(JSON.stringify({
       message: 'Technology added successfully',
       assetId: newAssetId,
       quantity: Copies
@@ -515,7 +515,7 @@ const addTechnology = async (req, res) => {
     console.error('Error in addTechnology:', error);
     console.log("Rollback insert");
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error' , details: error.message}));
+      .end(JSON.stringify({ error: 'Server error', details: error.message }));
   } finally {
     connection.release();
   }
@@ -525,7 +525,7 @@ const addStudyRoom = async (req, res) => {
   const connection = await db.promise().getConnection();
   try {
     const { Room_Number, Capacity, Image_URL } = req.body;
-    
+
     if (!Room_Number || !Capacity) {
       return res.writeHead(400, { 'Content-Type': 'application/json' })
         .end(JSON.stringify({ error: 'Missing required fields' }));
@@ -542,18 +542,18 @@ const addStudyRoom = async (req, res) => {
     const newAssetId = await assetRentableCreate(connection, 4, 1);
 
     //insert into study room
-    try{
+    try {
       const roomQuery = 'INSERT INTO study_room (Asset_ID, Room_Number, Capacity, Availability, Image_URL) VALUES (?, ?, ?, 1, ?)';
       await connection.query(roomQuery, [newAssetId, Room_Number, Capacity, Image_URL || null]);
       console.log('study room inserted')
-    } catch (error){
+    } catch (error) {
       console.log(error)
       throw new Error('Study Room Creation Failed')
     }
     //end transaction
     await connection.commit();
     res.writeHead(201, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
+    res.end(JSON.stringify({
       message: 'Study room added successfully',
       assetId: newAssetId
     }));
@@ -562,7 +562,7 @@ const addStudyRoom = async (req, res) => {
     console.error('Error in addStudyRoom:', error);
     console.log("rollback insert");
     res.writeHead(500, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ error: 'Server error' , details: error.message}));
+      .end(JSON.stringify({ error: 'Server error', details: error.message }));
   } finally {
     connection.release();
   }
@@ -572,7 +572,7 @@ const addStudyRoom = async (req, res) => {
 const deleteAsset = async (req, res) => {
   try {
     const assetId = req.params.id;
-    
+
     if (!assetId) {
       return res.writeHead(400, { 'Content-Type': 'application/json' })
         .end(JSON.stringify({ error: 'Asset ID is required' }));
@@ -585,7 +585,7 @@ const deleteAsset = async (req, res) => {
       JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
       WHERE r.Asset_ID = ? AND b.Return_Date IS NULL
     `;
-    
+
     db.query(checkActiveQuery, [assetId], (err, results) => {
       if (err) {
         console.error('Error checking active borrows:', err);
@@ -595,8 +595,8 @@ const deleteAsset = async (req, res) => {
 
       if (results[0].active_count > 0) {
         return res.writeHead(400, { 'Content-Type': 'application/json' })
-          .end(JSON.stringify({ 
-            error: 'Cannot delete asset with active borrows', 
+          .end(JSON.stringify({
+            error: 'Cannot delete asset with active borrows',
             message: `This asset has ${results[0].active_count} active borrow(s). Please return all copies before deleting.`
           }));
       }
@@ -607,7 +607,7 @@ const deleteAsset = async (req, res) => {
         JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
         WHERE r.Asset_ID = ?
       `;
-      
+
       db.query(deleteBorrowQuery, [assetId], (err) => {
         if (err) {
           console.error('Error deleting borrow records:', err);
@@ -617,7 +617,7 @@ const deleteAsset = async (req, res) => {
 
         // Then delete from rentable table
         const deleteRentableQuery = 'DELETE FROM rentable WHERE Asset_ID = ?';
-        
+
         db.query(deleteRentableQuery, [assetId], (err) => {
           if (err) {
             console.error('Error deleting rentable records:', err);
@@ -656,14 +656,14 @@ const deleteAsset = async (req, res) => {
                 return res.writeHead(500, { 'Content-Type': 'application/json' })
                   .end(JSON.stringify({ error: 'Failed to delete asset', details: err.message }));
               }
-              
+
               if (result.affectedRows === 0) {
                 return res.writeHead(404, { 'Content-Type': 'application/json' })
                   .end(JSON.stringify({ error: 'Asset not found' }));
               }
-              
+
               res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ 
+              res.end(JSON.stringify({
                 message: 'Asset deleted successfully',
                 assetId: assetId
               }));

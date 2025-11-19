@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   BookOpen,
@@ -8,74 +8,225 @@ import {
   AlertCircle,
   Search,
   Filter,
-  Download,
   FileText,
   FileSpreadsheet,
   Calendar,
-  User,
   Book,
   TrendingUp,
-  X
+  X,
+  Disc,
+  Headphones,
+  Film,
+  Laptop,
+  Building2,
+  Clock
 } from 'lucide-react'
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import './LibrarianReport.css'
 
-const API_URL = window.location.hostname === 'localhost' 
+const API_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3000/api'
   : 'https://librarymanagementsystem-z2yw.onrender.com/api'
 
+const DATE_PRESETS = [
+  { value: 'today', label: 'Today' },
+  { value: 'thisWeek', label: 'This Week' },
+  { value: 'thisMonth', label: 'This Month' },
+  { value: 'last30', label: 'Last 30 Days' },
+  { value: 'lastMonth', label: 'Last Month' }
+]
+
+const ASSET_TYPE_OPTIONS = [
+  { value: 'Book', label: 'Books', icon: Book },
+  { value: 'CD', label: 'CDs', icon: Disc },
+  { value: 'Audiobook', label: 'Audiobooks', icon: Headphones },
+  { value: 'Movie', label: 'Movies', icon: Film },
+  { value: 'Technology', label: 'Technology', icon: Laptop }
+]
+
+const TRANSACTION_STATUS_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'completed', label: 'Returned' },
+  { value: 'overdue', label: 'Overdue' }
+]
+
+const ACTION_OPTIONS = [
+  { value: 'issued', label: 'Issued / Borrowed' },
+  { value: 'returned', label: 'Returned' },
+  { value: 'renewed', label: 'Renewed' }
+]
+
+const OVERDUE_BUCKETS = [
+  { value: '', label: 'Any' },
+  { value: '1-7', label: '1-7 days' },
+  { value: '8-30', label: '8-30 days' },
+  { value: '30+', label: '30+ days' }
+]
+
+const FINE_STATUS_OPTIONS = [
+  { value: 'all', label: 'All' },
+  { value: 'hasFine', label: 'Has Fine' },
+  { value: 'noFine', label: 'No Fine' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'unpaid', label: 'Unpaid' }
+]
+
+const ROOM_STATUS_OPTIONS = [
+  { value: 'upcoming', label: 'Upcoming' },
+  { value: 'active', label: 'Active' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'overdue', label: 'Overdue' }
+]
+
+const ROOM_DURATION_OPTIONS = [
+  { value: '', label: 'Any' },
+  { value: 'short', label: '< 1 day' },
+  { value: 'standard', label: '1-7 days' },
+  { value: 'extended', label: '7+ days' }
+]
+
+const TIME_OF_DAY_OPTIONS = [
+  { value: '', label: 'Any' },
+  { value: 'morning', label: 'Morning' },
+  { value: 'afternoon', label: 'Afternoon' },
+  { value: 'evening', label: 'Evening' }
+]
+
+const initialSummaryState = {
+  assets_issued_total: 0,
+  assets_returned_total: 0,
+  active_loans: 0,
+  overdue_books: 0,
+  fines_unpaid: 0,
+  fines_collected: 0,
+  renewals: 0,
+  books_issued: 0,
+  cds_issued: 0,
+  audiobooks_issued: 0,
+  movies_issued: 0,
+  technology_issued: 0,
+  study_rooms_issued: 0
+}
+
+const getDateRangeForPreset = (preset) => {
+  const today = new Date()
+  const from = new Date(today)
+  const to = new Date(today)
+
+  switch (preset) {
+    case 'today':
+      break
+    case 'thisWeek': {
+      const dayOfWeek = today.getDay()
+      from.setDate(today.getDate() - dayOfWeek)
+      break
+    }
+    case 'thisMonth':
+      from.setDate(1)
+      break
+    case 'lastMonth':
+      from.setMonth(today.getMonth() - 1)
+      from.setDate(1)
+      to.setDate(0)
+      break
+    case 'last30':
+      from.setDate(today.getDate() - 30)
+      break
+    default:
+      break
+  }
+
+  return {
+    from: from.toISOString().split('T')[0],
+    to: to.toISOString().split('T')[0]
+  }
+}
+
+const buildDefaultAssetFilters = () => {
+  const range = getDateRangeForPreset('last30')
+  return {
+    from: range.from,
+    to: range.to,
+    preset: 'last30',
+    actions: [],
+    memberNames: [],
+    assetTitles: [],
+    assetTypes: [],
+    fineStatus: 'all',
+    status: [],
+    fineMin: '',
+    fineMax: '',
+    overdueBucket: ''
+  }
+}
+
+const buildDefaultRoomFilters = () => {
+  const range = getDateRangeForPreset('last30')
+  return {
+    from: range.from,
+    to: range.to,
+    preset: 'last30',
+    status: [],
+    rooms: [],
+    memberTypes: [],
+    memberName: '',
+    capacityMin: '',
+    capacityMax: '',
+    durationBucket: '',
+    timeOfDay: '',
+    staffId: ''
+  }
+}
+
 function LibrarianReport() {
-  const [summary, setSummary] = useState({
-    books_issued: 0,
-    books_returned: 0,
-    renewals: 0,
-    fines_collected: 0,
-    overdue_books: 0
-  })
-  const [transactions, setTransactions] = useState([])
+  const [assetFilters, setAssetFilters] = useState(buildDefaultAssetFilters)
+  const [appliedAssetFilters, setAppliedAssetFilters] = useState(assetFilters)
+  const [roomFilters, setRoomFilters] = useState(buildDefaultRoomFilters)
+  const [appliedRoomFilters, setAppliedRoomFilters] = useState(roomFilters)
+  const [assetSummary, setAssetSummary] = useState(initialSummaryState)
+  const [assetTransactions, setAssetTransactions] = useState([])
   const [dailyActivity, setDailyActivity] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [showFilters, setShowFilters] = useState(false)
-  const [viewMode, setViewMode] = useState('table') // 'table' or 'chart'
-  
-  // Autocomplete data
+  const [roomBookings, setRoomBookings] = useState([])
+  const [assetLoading, setAssetLoading] = useState(true)
+  const [roomLoading, setRoomLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState('assets')
+  const [filterVisibility, setFilterVisibility] = useState({ assets: false, rooms: false })
+  const [viewMode, setViewMode] = useState('table')
   const [membersList, setMembersList] = useState([])
   const [assetsList, setAssetsList] = useState([])
   const [showMemberDropdown, setShowMemberDropdown] = useState(false)
   const [showAssetDropdown, setShowAssetDropdown] = useState(false)
   const [memberSearchText, setMemberSearchText] = useState('')
   const [assetSearchText, setAssetSearchText] = useState('')
-  
-  // Get librarian ID from localStorage
+  const [roomMetadata, setRoomMetadata] = useState({ rooms: [], capacityRange: { min: 0, max: 0 }, memberRoles: [] })
+
   const user = JSON.parse(localStorage.getItem('user') || '{}')
-  const librarianId = user.id || user.User_ID // Support both formats
-  
-  console.log('LibrarianReport - User data:', user)
-  console.log('LibrarianReport - Librarian ID:', librarianId)
-
-  // Filter states
-  const [filters, setFilters] = useState({
-    from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Last 7 days
-    to: new Date().toISOString().split('T')[0],
-    actions: [], // Changed to array for multiple selections
-    memberNames: [], // Changed to array for multiple selections
-    assetTitles: [], // Changed to array for multiple selections
-    assetTypes: [], // Changed to array for multiple selections
-    hasFine: '' // 'all', 'with-fine', 'no-fine'
-  })
-
-  const [appliedFilters, setAppliedFilters] = useState(filters)
+  const librarianId = user.id || user.User_ID
 
   useEffect(() => {
-    if (librarianId) {
-      fetchData()
-      fetchAutocompleteData()
-    } else {
-      setLoading(false)
+    if (!librarianId) {
+      setAssetLoading(false)
+      setRoomLoading(false)
+      return
     }
-  }, [librarianId, appliedFilters])
+    fetchAssetData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [librarianId, appliedAssetFilters])
 
-  // Remove auto-apply - filters only apply when user clicks "Apply Filters" button
+  useEffect(() => {
+    if (!librarianId) {
+      return
+    }
+    fetchRoomBookings()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [librarianId, appliedRoomFilters])
+
+  useEffect(() => {
+    if (!librarianId) return
+    fetchAutocompleteData()
+    fetchRoomMetadata()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [librarianId])
 
   const fetchAutocompleteData = async () => {
     try {
@@ -86,188 +237,376 @@ function LibrarianReport() {
 
       if (membersRes.ok) {
         const membersData = await membersRes.json()
-        console.log('Members data:', membersData)
         setMembersList(membersData)
-      } else {
-        console.error('Failed to fetch members:', membersRes.status)
       }
 
       if (assetsRes.ok) {
         const assetsData = await assetsRes.json()
-        console.log('Assets data:', assetsData)
         setAssetsList(assetsData)
-      } else {
-        console.error('Failed to fetch assets:', assetsRes.status)
       }
     } catch (error) {
       console.error('Error fetching autocomplete data:', error)
     }
   }
 
-  const fetchData = async () => {
-    setLoading(true)
+  const fetchAssetData = async () => {
+    setAssetLoading(true)
     try {
-      const queryParams = new URLSearchParams({
-        from: appliedFilters.from,
-        to: appliedFilters.to,
-        actions: appliedFilters.actions.join(','),
-        memberNames: appliedFilters.memberNames.join(','),
-        assetTitles: appliedFilters.assetTitles.join(','),
-        assetTypes: appliedFilters.assetTypes.join(','),
-        hasFine: appliedFilters.hasFine
-      }).toString()
+      const params = new URLSearchParams({
+        from: appliedAssetFilters.from,
+        to: appliedAssetFilters.to,
+        actions: appliedAssetFilters.actions.join(','),
+        memberNames: appliedAssetFilters.memberNames.join(','),
+        assetTitles: appliedAssetFilters.assetTitles.join(','),
+        assetTypes: appliedAssetFilters.assetTypes.join(','),
+        status: appliedAssetFilters.status.join(','),
+        overdueBucket: appliedAssetFilters.overdueBucket
+      })
+
+      if (appliedAssetFilters.fineStatus && appliedAssetFilters.fineStatus !== 'all') {
+        params.set('fineStatus', appliedAssetFilters.fineStatus)
+      }
+
+      if (appliedAssetFilters.fineMin !== '') {
+        params.set('fineMin', appliedAssetFilters.fineMin)
+      }
+
+      if (appliedAssetFilters.fineMax !== '') {
+        params.set('fineMax', appliedAssetFilters.fineMax)
+      }
 
       const [summaryRes, transactionsRes, activityRes] = await Promise.all([
-        fetch(`${API_URL}/reports/librarian/${librarianId}/summary?${queryParams}`),
-        fetch(`${API_URL}/reports/librarian/${librarianId}/transactions?${queryParams}`),
-        fetch(`${API_URL}/reports/librarian/${librarianId}/daily-activity?${queryParams}`)
+        fetch(`${API_URL}/reports/librarian/${librarianId}/summary?${params.toString()}`),
+        fetch(`${API_URL}/reports/librarian/${librarianId}/transactions?${params.toString()}`),
+        fetch(`${API_URL}/reports/librarian/${librarianId}/daily-activity?${params.toString()}`)
       ])
 
       const summaryData = await summaryRes.json()
       const transactionsData = await transactionsRes.json()
       const activityData = await activityRes.json()
 
-      console.log('API Responses:', { summaryData, transactionsData, activityData })
-
-      // Handle error responses
-      if (!summaryRes.ok || summaryData.error) {
-        console.error('Summary API error:', summaryData)
-        setSummary({
-          books_issued: 0,
-          books_returned: 0,
-          renewals: 0,
-          fines_collected: 0,
-          overdue_books: 0
-        })
+      if (summaryRes.ok && !summaryData.error) {
+        setAssetSummary(summaryData)
       } else {
-        setSummary(summaryData)
+        setAssetSummary(initialSummaryState)
       }
 
-      if (!transactionsRes.ok || transactionsData.error) {
-        console.error('Transactions API error:', transactionsData)
-        setTransactions([])
+      if (transactionsRes.ok && !transactionsData.error) {
+        setAssetTransactions(Array.isArray(transactionsData) ? transactionsData : [])
       } else {
-        setTransactions(Array.isArray(transactionsData) ? transactionsData : [])
+        setAssetTransactions([])
       }
 
-      if (!activityRes.ok || activityData.error) {
-        console.error('Activity API error:', activityData)
-        setDailyActivity([])
-      } else {
+      if (activityRes.ok && !activityData.error) {
         setDailyActivity(Array.isArray(activityData) ? activityData : [])
+      } else {
+        setDailyActivity([])
       }
     } catch (error) {
       console.error('Error fetching librarian report data:', error)
-      setSummary({
-        books_issued: 0,
-        books_returned: 0,
-        renewals: 0,
-        fines_collected: 0,
-        overdue_books: 0
-      })
-      setTransactions([])
+      setAssetSummary(initialSummaryState)
+      setAssetTransactions([])
       setDailyActivity([])
     } finally {
-      setLoading(false)
+      setAssetLoading(false)
     }
   }
 
-  const handleApplyFilters = () => {
-    setAppliedFilters(filters)
-    // Keep filter panel open - don't close it
-  }
+  const fetchRoomBookings = async () => {
+    setRoomLoading(true)
+    try {
+      const params = new URLSearchParams({
+        from: appliedRoomFilters.from,
+        to: appliedRoomFilters.to
+      })
 
-  const handleClearFilters = () => {
-    const defaultFilters = {
-      from: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      to: new Date().toISOString().split('T')[0],
-      actions: [],
-      memberNames: [],
-      assetTitles: [],
-      assetTypes: []
+      if (appliedRoomFilters.status.length > 0) {
+        params.set('status', appliedRoomFilters.status.join(','))
+      }
+      if (appliedRoomFilters.rooms.length > 0) {
+        params.set('rooms', appliedRoomFilters.rooms.join(','))
+      }
+      if (appliedRoomFilters.memberTypes.length > 0) {
+        params.set('memberTypes', appliedRoomFilters.memberTypes.join(','))
+      }
+      if (appliedRoomFilters.memberName.trim()) {
+        params.set('memberSearch', appliedRoomFilters.memberName.trim())
+      }
+      if (appliedRoomFilters.capacityMin !== '') {
+        params.set('capacityMin', appliedRoomFilters.capacityMin)
+      }
+      if (appliedRoomFilters.capacityMax !== '') {
+        params.set('capacityMax', appliedRoomFilters.capacityMax)
+      }
+      if (appliedRoomFilters.durationBucket) {
+        params.set('durationBucket', appliedRoomFilters.durationBucket)
+      }
+      if (appliedRoomFilters.timeOfDay) {
+        params.set('timeOfDay', appliedRoomFilters.timeOfDay)
+      }
+      if (appliedRoomFilters.staffId) {
+        params.set('staffId', appliedRoomFilters.staffId)
+      }
+
+      const res = await fetch(`${API_URL}/reports/librarian/${librarianId}/room-bookings?${params.toString()}`)
+      const data = await res.json()
+      if (res.ok && !data.error) {
+        setRoomBookings(Array.isArray(data) ? data : [])
+      } else {
+        setRoomBookings([])
+      }
+    } catch (error) {
+      console.error('Error fetching room bookings:', error)
+      setRoomBookings([])
+    } finally {
+      setRoomLoading(false)
     }
-    setFilters(defaultFilters)
-    setAppliedFilters(defaultFilters)
   }
 
-  const exportToCSV = () => {
-    const headers = ['Date', 'Member', 'Book', 'Action', 'Status']
-    const rows = transactions.map(t => [
-      t.Borrow_Date?.split('T')[0] || '',
-      t.member_name,
-      t.book_title,
-      t.action,
-      t.status
-    ])
-    
-    const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv' })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `librarian-report-${appliedFilters.from}-to-${appliedFilters.to}.csv`
-    a.click()
+  const fetchRoomMetadata = async () => {
+    try {
+      const res = await fetch(`${API_URL}/reports/librarian/${librarianId}/room-bookings/meta`)
+      const data = await res.json()
+      if (res.ok && !data.error) {
+        setRoomMetadata({
+          rooms: data.rooms || [],
+          memberRoles: data.memberRoles || [],
+          capacityRange: data.capacityRange || { min: 0, max: 0 }
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching room metadata:', error)
+    }
   }
 
-  const exportToPDF = () => {
-    window.print()
+  const handleAssetPresetChange = (preset) => {
+    const range = getDateRangeForPreset(preset)
+    setAssetFilters(prev => ({
+      ...prev,
+      from: range.from,
+      to: range.to,
+      preset
+    }))
   }
 
-  const getSummaryText = () => {
-    const days = Math.ceil((new Date(appliedFilters.to) - new Date(appliedFilters.from)) / (1000 * 60 * 60 * 24))
-    return `Between ${new Date(appliedFilters.from).toLocaleDateString()} and ${new Date(appliedFilters.to).toLocaleDateString()} (${days} days), you issued ${summary.books_issued || 0} books and processed ${summary.renewals || 0} renewals.`
+  const handleRoomPresetChange = (preset) => {
+    const range = getDateRangeForPreset(preset)
+    setRoomFilters(prev => ({
+      ...prev,
+      from: range.from,
+      to: range.to,
+      preset
+    }))
   }
 
-  const summaryCards = [
+  const handleApplyAssetFilters = () => {
+    setAppliedAssetFilters(assetFilters)
+  }
+
+  const handleApplyRoomFilters = () => {
+    setAppliedRoomFilters(roomFilters)
+  }
+
+  const handleClearAssetFilters = () => {
+    const defaults = buildDefaultAssetFilters()
+    setAssetFilters(defaults)
+    setAppliedAssetFilters(defaults)
+  }
+
+  const handleClearRoomFilters = () => {
+    const defaults = buildDefaultRoomFilters()
+    setRoomFilters(defaults)
+    setAppliedRoomFilters(defaults)
+  }
+
+  const toggleAssetArrayValue = (field, value) => {
+    setAssetFilters(prev => {
+      const current = prev[field]
+      const exists = current.includes(value)
+      const next = exists ? current.filter(item => item !== value) : [...current, value]
+      return { ...prev, [field]: next }
+    })
+  }
+
+  const toggleRoomArrayValue = (field, value) => {
+    setRoomFilters(prev => {
+      const current = prev[field]
+      const exists = current.includes(value)
+      const next = exists ? current.filter(item => item !== value) : [...current, value]
+      return { ...prev, [field]: next }
+    })
+  }
+
+  const assetActiveLoans = Math.max(0, (assetSummary.assets_issued_total || 0) - (assetSummary.assets_returned_total || 0))
+
+  const assetSummaryCards = [
     {
-      title: 'Assets Issued',
-      value: summary.books_issued || 0,
+      title: 'Total Checkouts',
+      subtitle: 'Assets Issued',
+      value: assetSummary.assets_issued_total || 0,
       icon: BookOpen,
       color: 'from-green-500 to-emerald-600',
       bgColor: 'bg-green-50',
-      textColor: 'text-green-600'
+      textColor: 'text-green-600',
+      description: '#1 Activity Metric'
     },
     {
-      title: 'Assets Returned',
-      value: summary.books_returned || 0,
+      title: 'Total Returns',
+      subtitle: 'Assets Returned',
+      value: assetSummary.assets_returned_total || 0,
       icon: BookCheck,
       color: 'from-blue-500 to-blue-600',
       bgColor: 'bg-blue-50',
-      textColor: 'text-blue-600'
+      textColor: 'text-blue-600',
+      description: 'Shows how busy the library is'
     },
     {
-      title: 'Renewals',
-      value: summary.renewals || 0,
-      icon: RefreshCw,
-      color: 'from-purple-500 to-purple-600',
-      bgColor: 'bg-purple-50',
-      textColor: 'text-purple-600'
-    },
-    {
-      title: 'Fines Collected',
-      value: `$${(parseFloat(summary.fines_collected) || 0).toFixed(2)}`,
-      icon: DollarSign,
-      color: 'from-green-500 to-green-600',
-      bgColor: 'bg-green-50',
-      textColor: 'text-green-600'
+      title: 'Active Loans',
+      subtitle: 'Currently Out',
+      value: assetSummary.active_loans || assetActiveLoans,
+      icon: Book,
+      color: 'from-indigo-500 to-purple-600',
+      bgColor: 'bg-indigo-50',
+      textColor: 'text-indigo-600',
+      description: 'Total Issued − Returned'
     },
     {
       title: 'Overdue Items',
-      value: summary.overdue_books || 0,
+      subtitle: 'Needs Attention',
+      value: assetSummary.overdue_books || 0,
       icon: AlertCircle,
       color: 'from-red-500 to-red-600',
       bgColor: 'bg-red-50',
-      textColor: 'text-red-600'
+      textColor: 'text-red-600',
+      description: 'Critical metric for operations'
+    },
+    {
+      title: 'Unpaid Fines',
+      subtitle: 'Outstanding Balance',
+      value: `$${(parseFloat(assetSummary.fines_unpaid) || 0).toFixed(2)}`,
+      icon: DollarSign,
+      color: 'from-orange-500 to-orange-600',
+      bgColor: 'bg-orange-50',
+      textColor: 'text-orange-600',
+      description: 'Key for financial tracking'
+    },
+    {
+      title: 'Fines Collected',
+      subtitle: 'Revenue',
+      value: `$${(parseFloat(assetSummary.fines_collected) || 0).toFixed(2)}`,
+      icon: DollarSign,
+      color: 'from-green-500 to-green-600',
+      bgColor: 'bg-green-50',
+      textColor: 'text-green-600',
+      description: 'Money collected this period'
     }
   ]
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
-      </div>
-    )
+  const roomMetrics = useMemo(() => {
+    if (!roomBookings.length) {
+      return {
+        total: 0,
+        upcoming: 0,
+        active: 0,
+        completed: 0,
+        overdue: 0,
+        avgDuration: 0,
+        uniqueRooms: 0
+      }
+    }
+
+    const counts = roomBookings.reduce((acc, booking) => {
+      const status = (booking.Booking_Status || '').toLowerCase()
+      if (status === 'upcoming') acc.upcoming += 1
+      else if (status === 'active') acc.active += 1
+      else if (status === 'completed') acc.completed += 1
+      else if (status === 'overdue') acc.overdue += 1
+      return acc
+    }, { upcoming: 0, active: 0, completed: 0, overdue: 0 })
+
+    const totalDuration = roomBookings.reduce((sum, booking) => sum + (booking.Duration_Days || 0), 0)
+    const uniqueRooms = new Set(roomBookings.map(booking => booking.Room_Number)).size
+
+    return {
+      total: roomBookings.length,
+      avgDuration: roomBookings.length ? totalDuration / roomBookings.length : 0,
+      uniqueRooms,
+      ...counts
+    }
+  }, [roomBookings])
+
+  const roomSummaryCards = [
+    {
+      title: 'Total Bookings',
+      subtitle: 'Study room reservations',
+      value: roomMetrics.total,
+      icon: Building2,
+      color: 'from-emerald-500 to-green-600',
+      bgColor: 'bg-emerald-50',
+      textColor: 'text-emerald-600',
+      description: 'Rooms reserved in range'
+    },
+    {
+      title: 'Upcoming',
+      subtitle: 'Future bookings',
+      value: roomMetrics.upcoming,
+      icon: Calendar,
+      color: 'from-blue-500 to-indigo-500',
+      bgColor: 'bg-blue-50',
+      textColor: 'text-blue-600',
+      description: 'Start date after today'
+    },
+    {
+      title: 'Active Today',
+      subtitle: 'Currently in progress',
+      value: roomMetrics.active,
+      icon: Clock,
+      color: 'from-purple-500 to-violet-500',
+      bgColor: 'bg-purple-50',
+      textColor: 'text-purple-600',
+      description: 'Borrow window is open now'
+    },
+    {
+      title: 'Completed',
+      subtitle: 'Finished visits',
+      value: roomMetrics.completed,
+      icon: BookCheck,
+      color: 'from-slate-500 to-gray-600',
+      bgColor: 'bg-slate-50',
+      textColor: 'text-slate-600',
+      description: 'Returned / closed slots'
+    },
+    {
+      title: 'Overdue Rooms',
+      subtitle: 'Attention needed',
+      value: roomMetrics.overdue,
+      icon: AlertCircle,
+      color: 'from-rose-500 to-red-600',
+      bgColor: 'bg-rose-50',
+      textColor: 'text-rose-600',
+      description: 'Bookings past due'
+    },
+    {
+      title: 'Avg Duration',
+      subtitle: 'Days per booking',
+      value: `${roomMetrics.avgDuration.toFixed(1)} days`,
+      icon: RefreshCw,
+      color: 'from-teal-500 to-cyan-500',
+      bgColor: 'bg-teal-50',
+      textColor: 'text-teal-600',
+      description: 'Based on Borrow vs Due'
+    }
+  ]
+
+  const isFilterOpen = activeTab === 'assets' ? filterVisibility.assets : filterVisibility.rooms
+  const toggleFilters = () => {
+    setFilterVisibility(prev => ({
+      assets: activeTab === 'assets' ? !prev.assets : prev.assets,
+      rooms: activeTab === 'rooms' ? !prev.rooms : prev.rooms
+    }))
   }
+
+  const activeLoading = activeTab === 'assets' ? assetLoading : roomLoading
 
   if (!librarianId) {
     return (
@@ -287,21 +626,89 @@ function LibrarianReport() {
     )
   }
 
+  if (activeLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600"></div>
+      </div>
+    )
+  }
+
+  const exportToCSV = () => {
+    if (activeTab === 'assets') {
+      const headers = ['Date', 'Time', 'Member', 'Member ID', 'Item Title', 'Category', 'Action', 'Due Date', 'Return Date', 'Fine', 'Status']
+      const rows = assetTransactions.map(transaction => {
+        const transactionDate = new Date(transaction.Return_Date || transaction.Renew_Date || transaction.Borrow_Date)
+        let fineAmount = '$0.00'
+        if (transaction.Return_Date && transaction.Fee_Incurred && parseFloat(transaction.Fee_Incurred) > 0) {
+          fineAmount = `$${parseFloat(transaction.Fee_Incurred).toFixed(2)}`
+        } else if (transaction.status === 'Overdue' && transaction.Fine_Amount && parseFloat(transaction.Fine_Amount) > 0) {
+          fineAmount = `$${parseFloat(transaction.Fine_Amount).toFixed(2)} (calc)`
+        }
+        return [
+          transactionDate.toLocaleDateString(),
+          transactionDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          transaction.member_name,
+          transaction.member_identifier || transaction.member_id,
+          transaction.book_title,
+          transaction.asset_type,
+          transaction.action,
+          transaction.Due_Date ? new Date(transaction.Due_Date).toLocaleDateString() : '',
+          transaction.Return_Date ? new Date(transaction.Return_Date).toLocaleDateString() : '',
+          fineAmount,
+          transaction.status
+        ]
+      })
+
+      const csvContent = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n')
+      const blob = new Blob([csvContent], { type: 'text/csv' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `asset-transactions-${appliedAssetFilters.from}-to-${appliedAssetFilters.to}.csv`
+      a.click()
+      return
+    }
+
+    const headers = ['Booking ID', 'Member Name', 'Role', 'Room', 'Capacity', 'Date', 'Start Time', 'End Date', 'Status', 'Duration (days)', 'Approved By']
+    const rows = roomBookings.map(booking => [
+      booking.Booking_ID,
+      booking.Member_Name,
+      booking.Member_Role || '—',
+      booking.Room_Number,
+      booking.Capacity,
+      booking.Booking_Date ? new Date(booking.Booking_Date).toLocaleDateString() : '',
+      booking.Start_Time || '',
+      booking.Due_Date ? new Date(booking.Due_Date).toLocaleDateString() : '',
+      booking.Booking_Status,
+      booking.Duration_Days,
+      booking.Approved_By || '—'
+    ])
+    const csvContent = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `room-bookings-${appliedRoomFilters.from}-to-${appliedRoomFilters.to}.csv`
+    a.click()
+  }
+
+  const exportToPDF = () => {
+    window.print()
+  }
+
   return (
     <div className="librarian-report-page p-6 bg-gray-50 min-h-screen">
-      {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         className="mb-6"
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-800 mb-2">My Activity Report</h1>
-            <p className="text-gray-600">Track your daily library operations and performance</p>
+            <h1 className="text-3xl font-bold text-gray-800 mb-2">Library Reports</h1>
+            <p className="text-gray-600">Dive into asset transactions and dedicated study room bookings.</p>
           </div>
-          
-          {/* Export Buttons */}
           <div className="flex gap-3">
             <button
               onClick={exportToCSV}
@@ -309,7 +716,7 @@ function LibrarianReport() {
               title="Export as CSV"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              <span className="hidden md:inline">CSV</span>
+              CSV
             </button>
             <button
               onClick={exportToPDF}
@@ -317,37 +724,54 @@ function LibrarianReport() {
               title="Export as PDF"
             >
               <FileText className="w-4 h-4" />
-              <span className="hidden md:inline">PDF</span>
+              PDF
             </button>
           </div>
         </div>
+
+        <div className="flex gap-3 mt-4">
+          {['assets', 'rooms'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-2 rounded-full text-sm font-medium border transition-all ${activeTab === tab
+                ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white border-transparent shadow'
+                : 'bg-white text-gray-600 border-gray-200 hover:text-gray-800'
+                }`}
+            >
+              {tab === 'assets' ? 'Asset Transactions' : 'Room Bookings'}
+            </button>
+          ))}
+        </div>
       </motion.div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-        {summaryCards.map((card, index) => (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        {(activeTab === 'assets' ? assetSummaryCards : roomSummaryCards).map((card, index) => (
           <motion.div
-            key={card.title}
+            key={`${activeTab}-${card.title}`}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
+            transition={{ delay: index * 0.05 }}
             whileHover={{ y: -5 }}
             className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 hover:shadow-md transition-shadow"
           >
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-start justify-between mb-4">
               <div className={`${card.bgColor} p-3 rounded-lg`}>
                 <card.icon className={`w-6 h-6 ${card.textColor}`} />
               </div>
             </div>
             <div>
-              <p className="text-sm text-gray-600 mb-1">{card.title}</p>
-              <p className="text-2xl font-bold text-gray-800">{card.value}</p>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{card.subtitle || card.title}</p>
+              <p className="text-3xl font-bold text-gray-800 mb-1">{card.value}</p>
+              <p className="text-sm font-medium text-gray-700">{card.title}</p>
+              {card.description && (
+                <p className="text-xs text-gray-500 mt-2 italic">{card.description}</p>
+              )}
             </div>
           </motion.div>
         ))}
       </div>
 
-      {/* Filter Bar */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -355,494 +779,726 @@ function LibrarianReport() {
       >
         <div className="flex items-center justify-between mb-4">
           <button
-            onClick={() => setShowFilters(!showFilters)}
+            onClick={toggleFilters}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all"
           >
-            {showFilters ? <X className="w-4 h-4" /> : <Filter className="w-4 h-4" />}
-            {showFilters ? 'Hide Filters' : 'Show Filters'}
+            {isFilterOpen ? <X className="w-4 h-4" /> : <Filter className="w-4 h-4" />}
+            {isFilterOpen ? 'Hide Filters' : 'Show Filters'}
           </button>
-          
-          {(appliedFilters.actions.length > 0 || appliedFilters.memberNames.length > 0 || appliedFilters.assetTitles.length > 0 || appliedFilters.assetTypes.length > 0 || appliedFilters.hasFine) && (
-            <button
-              onClick={handleClearFilters}
-              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-            >
-              <X className="w-4 h-4" />
-              Clear All Filters
-            </button>
-          )}
+
+          <button
+            onClick={activeTab === 'assets' ? handleClearAssetFilters : handleClearRoomFilters}
+            className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+          >
+            <X className="w-4 h-4" />
+            Clear All Filters
+          </button>
         </div>
 
         <AnimatePresence>
-          {showFilters && (
+          {isFilterOpen && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: 'easeInOut' }}
-              className="overflow-visible"
+              animate={{ height: 'auto', opacity: 1, transitionEnd: { overflow: 'visible' } }}
+              exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
+              style={{ overflow: 'hidden' }}
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 overflow-visible"
-          >
-            {/* Date Range */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Calendar className="w-4 h-4 inline mr-1" />
-                From Date
-              </label>
-              <input
-                type="date"
-                value={filters.from}
-                onChange={(e) => setFilters({ ...filters, from: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Calendar className="w-4 h-4 inline mr-1" />
-                To Date
-              </label>
-              <input
-                type="date"
-                value={filters.to}
-                onChange={(e) => setFilters({ ...filters, to: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-            </div>
-
-            {/* Action Type - Multi-select */}
-            <div className="relative">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Action Type ({filters.actions.length} selected)
-              </label>
-              <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white min-h-[42px]">
-                <div className="space-y-2">
-                  {[
-                    { value: 'issued', label: 'Issued/Reserved' },
-                    { value: 'returned', label: 'Returned/Checked Out' },
-                    { value: 'renewed', label: 'Renewed/Extended' },
-                    { value: 'overdue', label: 'Overdue Items' }
-                  ].map(action => (
-                    <label key={action.value} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
-                      <input
-                        type="checkbox"
-                        checked={filters.actions.includes(action.value)}
-                        onChange={(e) => {
-                          const newActions = e.target.checked
-                            ? [...filters.actions, action.value]
-                            : filters.actions.filter(a => a !== action.value)
-                          setFilters({ ...filters, actions: newActions })
-                        }}
-                        className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500"
-                      />
-                      <span className="text-sm">{action.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Member Name - Multi-select */}
-            <div className="relative">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <User className="w-4 h-4 inline mr-1" />
-                Member Name ({filters.memberNames.length} selected)
-              </label>
-              <input
-                type="text"
-                placeholder="Search members..."
-                value={memberSearchText}
-                onChange={(e) => setMemberSearchText(e.target.value)}
-                onFocus={() => {
-                  console.log('Member dropdown opened. Members list:', membersList)
-                  setShowMemberDropdown(true)
-                }}
-                onBlur={() => setTimeout(() => setShowMemberDropdown(false), 300)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-              {/* Selected members badges */}
-              {filters.memberNames.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {filters.memberNames.map(name => (
-                    <span key={name} className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">
-                      {name}
-                      <button
-                        onClick={() => {
-                          setFilters({
-                            ...filters,
-                            memberNames: filters.memberNames.filter(n => n !== name)
-                          })
-                        }}
-                        className="hover:text-green-900"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              {showMemberDropdown && membersList.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-96 overflow-y-auto">
-                  {membersList
-                    .filter(member => 
-                      member.member_name.toLowerCase().includes(memberSearchText.toLowerCase())
-                    )
-                    .map((member) => (
-                      <label
-                        key={member.User_ID}
-                        className="flex items-center gap-2 px-3 py-2 hover:bg-green-50 cursor-pointer"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          const isSelected = filters.memberNames.includes(member.member_name)
-                          const newNames = isSelected
-                            ? filters.memberNames.filter(n => n !== member.member_name)
-                            : [...filters.memberNames, member.member_name]
-                          setFilters({ ...filters, memberNames: newNames })
-                        }}
-                      >
+              {activeTab === 'assets' ? (
+                <div className="space-y-6">
+                  <div className="border border-gray-100 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Section 1</p>
+                        <h3 className="text-lg font-semibold text-gray-800">Date Range</h3>
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
+                        {DATE_PRESETS.map(preset => (
+                          <button
+                            key={preset.value}
+                            onClick={() => handleAssetPresetChange(preset.value)}
+                            className={`px-3 py-1 rounded-full text-xs font-medium border ${assetFilters.preset === preset.value
+                              ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
+                              : 'border-gray-200 text-gray-600 hover:border-emerald-400'
+                              }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
                         <input
-                          type="checkbox"
-                          checked={filters.memberNames.includes(member.member_name)}
-                          onChange={() => {}}
-                          className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500"
+                          type="date"
+                          value={assetFilters.from}
+                          onChange={(e) => setAssetFilters(prev => ({ ...prev, from: e.target.value, preset: 'custom' }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                         />
-                        <span className="text-sm">{member.member_name}</span>
-                      </label>
-                    ))}
-                  {membersList.filter(member => 
-                    member.member_name.toLowerCase().includes(memberSearchText.toLowerCase())
-                  ).length === 0 && (
-                    <div className="px-3 py-2 text-sm text-gray-500">No members found</div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Asset Title - Multi-select */}
-            <div className="relative">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Book className="w-4 h-4 inline mr-1" />
-                Asset Title ({filters.assetTitles.length} selected)
-              </label>
-              <input
-                type="text"
-                placeholder="Search assets..."
-                value={assetSearchText}
-                onChange={(e) => setAssetSearchText(e.target.value)}
-                onFocus={() => {
-                  console.log('Asset dropdown opened. Assets list:', assetsList)
-                  setShowAssetDropdown(true)
-                }}
-                onBlur={() => setTimeout(() => setShowAssetDropdown(false), 300)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              />
-              {/* Selected assets badges */}
-              {filters.assetTitles.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-2">
-                  {filters.assetTitles.map(title => (
-                    <span key={title} className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">
-                      {title.substring(0, 20)}{title.length > 20 ? '...' : ''}
-                      <button
-                        onClick={() => {
-                          setFilters({
-                            ...filters,
-                            assetTitles: filters.assetTitles.filter(t => t !== title)
-                          })
-                        }}
-                        className="hover:text-green-900"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-              {showAssetDropdown && assetsList.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-96 overflow-y-auto">
-                  {assetsList
-                    .filter(asset => {
-                      // Filter by asset type if any selected
-                      const typeMatch = filters.assetTypes.length === 0 || filters.assetTypes.includes(asset.asset_type);
-                      // Filter by search text
-                      const textMatch = asset.book_title.toLowerCase().includes(assetSearchText.toLowerCase());
-                      return typeMatch && textMatch;
-                    })
-                    .map((asset) => (
-                      <label
-                        key={asset.Asset_ID}
-                        className="flex items-center gap-2 px-3 py-2 hover:bg-green-50 cursor-pointer"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => {
-                          const isSelected = filters.assetTitles.includes(asset.book_title)
-                          const newTitles = isSelected
-                            ? filters.assetTitles.filter(t => t !== asset.book_title)
-                            : [...filters.assetTitles, asset.book_title]
-                          setFilters({ ...filters, assetTitles: newTitles })
-                        }}
-                      >
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
                         <input
-                          type="checkbox"
-                          checked={filters.assetTitles.includes(asset.book_title)}
-                          onChange={() => {}}
-                          className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500"
+                          type="date"
+                          value={assetFilters.to}
+                          onChange={(e) => setAssetFilters(prev => ({ ...prev, to: e.target.value, preset: 'custom' }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                         />
-                        <div className="flex-1">
-                          <div className="text-sm font-medium">{asset.book_title}</div>
-                          <div className="text-xs text-gray-500">{asset.asset_type}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border border-gray-100 rounded-xl p-4">
+                    <div className="mb-4">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Section 2</p>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-2">Transaction Details</h3>
+                    </div>
+                    <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-700 mb-2">Status</p>
+                        <div className="flex flex-wrap gap-2">
+                          {TRANSACTION_STATUS_OPTIONS.map(option => (
+                            <button
+                              key={option.value}
+                              onClick={() => toggleAssetArrayValue('status', option.value)}
+                              className={`px-3 py-1 rounded-full text-xs border ${assetFilters.status.includes(option.value)
+                                ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                                : 'border-gray-200 text-gray-600 hover:border-gray-400'
+                                }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
                         </div>
-                      </label>
-                    ))}
-                  {assetsList.filter(asset => {
-                    const typeMatch = filters.assetTypes.length === 0 || filters.assetTypes.includes(asset.asset_type);
-                    const textMatch = asset.book_title.toLowerCase().includes(assetSearchText.toLowerCase());
-                    return typeMatch && textMatch;
-                  }).length === 0 && (
-                    <div className="px-3 py-2 text-sm text-gray-500">No assets found</div>
-                  )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-700 mb-2">Action Type</p>
+                        <div className="flex flex-wrap gap-2">
+                          {ACTION_OPTIONS.map(option => (
+                            <button
+                              key={option.value}
+                              onClick={() => toggleAssetArrayValue('actions', option.value)}
+                              className={`px-3 py-1 rounded-full text-xs border ${assetFilters.actions.includes(option.value)
+                                ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                                : 'border-gray-200 text-gray-600 hover:border-gray-400'
+                                }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Overdue Duration</label>
+                        <select
+                          value={assetFilters.overdueBucket}
+                          onChange={(e) => setAssetFilters(prev => ({ ...prev, overdueBucket: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        >
+                          {OVERDUE_BUCKETS.map(bucket => (
+                            <option key={bucket.value} value={bucket.value}>{bucket.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Fine Status</label>
+                        <select
+                          value={assetFilters.fineStatus}
+                          onChange={(e) => setAssetFilters(prev => ({ ...prev, fineStatus: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        >
+                          {FINE_STATUS_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border border-gray-100 rounded-xl p-4">
+                    <div className="mb-4">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Section 3</p>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-2">Asset Filters</h3>
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">Asset Type</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {ASSET_TYPE_OPTIONS.map(option => (
+                            <button
+                              key={option.value}
+                              onClick={() => toggleAssetArrayValue('assetTypes', option.value)}
+                              className={`flex items-center gap-2 px-3 py-2 border rounded-lg text-sm ${assetFilters.assetTypes.includes(option.value)
+                                ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                                : 'border-gray-200 text-gray-600 hover:border-gray-400'
+                                }`}
+                            >
+                              <option.icon className="w-4 h-4" />
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="relative">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Asset Title</label>
+                          <input
+                            type="text"
+                            placeholder="Search titles..."
+                            value={assetSearchText}
+                            onChange={(e) => setAssetSearchText(e.target.value)}
+                            onFocus={() => setShowAssetDropdown(true)}
+                            onBlur={() => setTimeout(() => setShowAssetDropdown(false), 200)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          />
+                          {assetFilters.assetTitles.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {assetFilters.assetTitles.map(title => (
+                                <span key={title} className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-700 text-xs rounded-full">
+                                  {title}
+                                  <button
+                                    onClick={() => setAssetFilters(prev => ({
+                                      ...prev,
+                                      assetTitles: prev.assetTitles.filter(t => t !== title)
+                                    }))}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {showAssetDropdown && assetsList.length > 0 && (
+                            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                              {assetsList
+                                .filter(asset => {
+                                  const matchesSearch = asset.book_title.toLowerCase().includes(assetSearchText.toLowerCase())
+                                  const matchesType = assetFilters.assetTypes.length === 0 || assetFilters.assetTypes.includes(asset.asset_type)
+                                  return matchesSearch && matchesType
+                                })
+                                .map(asset => (
+                                  <button
+                                    key={asset.Asset_ID}
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => {
+                                      setAssetFilters(prev => ({
+                                        ...prev,
+                                        assetTitles: prev.assetTitles.includes(asset.book_title)
+                                          ? prev.assetTitles
+                                          : [...prev.assetTitles, asset.book_title]
+                                      }))
+                                    }}
+                                    className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-emerald-50"
+                                  >
+                                    <span className="text-sm text-gray-700">{asset.book_title}</span>
+                                    <span className="text-xs text-gray-400">{asset.asset_type}</span>
+                                  </button>
+                                ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border border-gray-100 rounded-xl p-4">
+                    <div className="mb-4">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Section 4</p>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-2">Member Filters</h3>
+                    </div>
+                    <div className="relative">
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Member Name</label>
+                      <input
+                        type="text"
+                        placeholder="Search members..."
+                        value={memberSearchText}
+                        onChange={(e) => setMemberSearchText(e.target.value)}
+                        onFocus={() => setShowMemberDropdown(true)}
+                        onBlur={() => setTimeout(() => setShowMemberDropdown(false), 200)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      />
+                      {assetFilters.memberNames.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {assetFilters.memberNames.map(name => (
+                            <span key={name} className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full">
+                              {name}
+                              <button
+                                onClick={() => setAssetFilters(prev => ({
+                                  ...prev,
+                                  memberNames: prev.memberNames.filter(n => n !== name)
+                                }))}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {showMemberDropdown && membersList.length > 0 && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                          {membersList
+                            .filter(member => member.member_name.toLowerCase().includes(memberSearchText.toLowerCase()))
+                            .map(member => (
+                              <button
+                                key={member.User_ID}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => setAssetFilters(prev => ({
+                                  ...prev,
+                                  memberNames: prev.memberNames.includes(member.member_name)
+                                    ? prev.memberNames
+                                    : [...prev.memberNames, member.member_name]
+                                }))}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-emerald-50"
+                              >
+                                <span className="text-sm">{member.member_name}</span>
+                                <span className="text-xs text-gray-400">{member.role}</span>
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 justify-end pt-4 border-t border-gray-200 mt-2">
+                    <button
+                      onClick={activeTab === 'assets' ? handleClearAssetFilters : handleClearRoomFilters}
+                      className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={handleApplyAssetFilters}
+                      className="px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all shadow-sm"
+                    >
+                      Apply Filters
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div className="border border-gray-100 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Section 1</p>
+                        <h3 className="text-lg font-semibold text-gray-800">Date Range</h3>
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
+                        {DATE_PRESETS.map(preset => (
+                          <button
+                            key={preset.value}
+                            onClick={() => handleRoomPresetChange(preset.value)}
+                            className={`px-3 py-1 rounded-full text-xs font-medium border ${roomFilters.preset === preset.value
+                              ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
+                              : 'border-gray-200 text-gray-600 hover:border-emerald-400'
+                              }`}
+                          >
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
+                        <input
+                          type="date"
+                          value={roomFilters.from}
+                          onChange={(e) => setRoomFilters(prev => ({ ...prev, from: e.target.value, preset: 'custom' }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
+                        <input
+                          type="date"
+                          value={roomFilters.to}
+                          onChange={(e) => setRoomFilters(prev => ({ ...prev, to: e.target.value, preset: 'custom' }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="border border-gray-100 rounded-xl p-4">
+                    <div className="mb-4">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">Section 2</p>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-2">Booking Status</h3>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {ROOM_STATUS_OPTIONS.map(option => (
+                        <button
+                          key={option.value}
+                          onClick={() => toggleRoomArrayValue('status', option.value)}
+                          className={`px-3 py-1 rounded-full text-xs border ${roomFilters.status.includes(option.value)
+                            ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                            : 'border-gray-200 text-gray-600 hover:border-gray-400'
+                            }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="border border-gray-100 rounded-xl p-4">
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Section 3</p>
+                        <h3 className="text-lg font-semibold text-gray-800 mb-2">Room Filters</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {roomMetadata.rooms.map(room => (
+                            <button
+                              key={room.Room_Number}
+                              onClick={() => toggleRoomArrayValue('rooms', room.Room_Number)}
+                              className={`px-3 py-1 rounded-full text-xs border ${roomFilters.rooms.includes(room.Room_Number)
+                                ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                                : 'border-gray-200 text-gray-600 hover:border-gray-400'
+                                }`}
+                            >
+                              Room {room.Room_Number}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 mt-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Capacity Min</label>
+                            <input
+                              type="number"
+                              value={roomFilters.capacityMin}
+                              placeholder={roomMetadata.capacityRange.min?.toString() || '0'}
+                              onChange={(e) => setRoomFilters(prev => ({ ...prev, capacityMin: e.target.value }))}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Capacity Max</label>
+                            <input
+                              type="number"
+                              value={roomFilters.capacityMax}
+                              placeholder={roomMetadata.capacityRange.max?.toString() || '0'}
+                              onChange={(e) => setRoomFilters(prev => ({ ...prev, capacityMax: e.target.value }))}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Section 4</p>
+                        <h3 className="text-lg font-semibold text-gray-800 mb-2">Member Filters</h3>
+                        <div className="mb-4">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Member Name</label>
+                          <input
+                            type="text"
+                            value={roomFilters.memberName}
+                            onChange={(e) => setRoomFilters(prev => ({ ...prev, memberName: e.target.value }))}
+                            placeholder="Search borrower"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">Member Type</label>
+                          <div className="flex flex-wrap gap-2">
+                            {(roomMetadata.memberRoles || []).map(role => (
+                              <button
+                                key={role.role_id}
+                                onClick={() => toggleRoomArrayValue('memberTypes', role.role_name)}
+                                className={`px-3 py-1 rounded-full text-xs border ${roomFilters.memberTypes.includes(role.role_name)
+                                  ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                                  : 'border-gray-200 text-gray-600 hover:border-gray-400'
+                                  }`}
+                              >
+                                {role.role_name.charAt(0).toUpperCase() + role.role_name.slice(1)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 justify-end pt-4 border-t border-gray-200 mt-2">
+                    <button
+                      onClick={handleClearRoomFilters}
+                      className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={handleApplyRoomFilters}
+                      className="px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all shadow-sm"
+                    >
+                      Apply Filters
+                    </button>
+                  </div>
                 </div>
               )}
-            </div>
-
-            {/* Asset Type - Multi-select */}
-            <div className="relative">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Asset Type ({filters.assetTypes.length} selected)
-              </label>
-              <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white min-h-[42px]">
-                <div className="space-y-2">
-                  {[
-                    { value: 'Book', label: 'Books' },
-                    { value: 'CD', label: 'CDs' },
-                    { value: 'Audiobook', label: 'Audiobooks' },
-                    { value: 'Movie', label: 'Movies' },
-                    { value: 'Technology', label: 'Technology' },
-                    { value: 'Study Room', label: 'Study Rooms' }
-                  ].map(type => (
-                    <label key={type.value} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
-                      <input
-                        type="checkbox"
-                        checked={filters.assetTypes.includes(type.value)}
-                        onChange={(e) => {
-                          const newTypes = e.target.checked
-                            ? [...filters.assetTypes, type.value]
-                            : filters.assetTypes.filter(t => t !== type.value)
-                          setFilters({ ...filters, assetTypes: newTypes })
-                        }}
-                        className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500"
-                      />
-                      <span className="text-sm">{type.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Fine Status Filter */}
-            <div className="relative">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <DollarSign className="w-4 h-4 inline mr-1" />
-                Fine Status
-              </label>
-              <select
-                value={filters.hasFine}
-                onChange={(e) => setFilters({ ...filters, hasFine: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              >
-                <option value="">All Transactions</option>
-                <option value="with-fine">With Fines Only</option>
-                <option value="no-fine">No Fines</option>
-              </select>
-            </div>
-
-            {/* Apply Filters Button */}
-            <div className="col-span-full flex gap-3 justify-end pt-4 border-t border-gray-200">
-              <button
-                onClick={() => setShowFilters(false)}
-                className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleApplyFilters}
-                className="px-6 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all shadow-sm"
-              >
-                Apply Filters
-              </button>
-            </div>
-          </div>
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.div>
+      </motion.div >
 
-      {/* View Mode Toggle */}
-      <div className="flex justify-end mb-4">
-        <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
-          <button
-            onClick={() => setViewMode('table')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-              viewMode === 'table'
-                ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-sm'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            <FileText className="w-4 h-4 inline mr-2" />
-            Table View
-          </button>
-          <button
-            onClick={() => setViewMode('chart')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-              viewMode === 'chart'
-                ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-sm'
-                : 'text-gray-600 hover:text-gray-800'
-            }`}
-          >
-            <TrendingUp className="w-4 h-4 inline mr-2" />
-            Chart View
-          </button>
-        </div>
-      </div>
+      {activeTab === 'assets' ? (
+        <>
+          <div className="flex justify-end mb-4">
+            <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+              <button
+                onClick={() => setViewMode('table')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${viewMode === 'table'
+                  ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:text-gray-800'
+                  }`}
+              >
+                <FileText className="w-4 h-4 inline mr-2" />
+                Table View
+              </button>
+              <button
+                onClick={() => setViewMode('chart')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${viewMode === 'chart'
+                  ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-sm'
+                  : 'text-gray-600 hover:text-gray-800'
+                  }`}
+              >
+                <TrendingUp className="w-4 h-4 inline mr-2" />
+                Chart View
+              </button>
+            </div>
+          </div>
 
-      {/* Daily Activity Chart */}
-      {viewMode === 'chart' && dailyActivity.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-xl shadow-sm p-6 mb-6 border border-gray-100"
-        >
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Daily Activity</h2>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={dailyActivity}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis 
-                dataKey="date" 
-                tickFormatter={(date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                stroke="#6b7280"
-              />
-              <YAxis stroke="#6b7280" />
-              <Tooltip 
-                contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px' }}
-                labelFormatter={(date) => new Date(date).toLocaleDateString()}
-              />
-              <Legend />
-              {/* Dynamically show bars based on selected actions or show all if none selected */}
-              {(appliedFilters.actions.length === 0 || appliedFilters.actions.includes('issued')) && (
-                <Bar dataKey="issued" fill="#10b981" name="Issued/Reserved" radius={[8, 8, 0, 0]} />
-              )}
-              {(appliedFilters.actions.length === 0 || appliedFilters.actions.includes('returned')) && (
-                <Bar dataKey="returned" fill="#3b82f6" name="Returned/Checked Out" radius={[8, 8, 0, 0]} />
-              )}
-              {(appliedFilters.actions.length === 0 || appliedFilters.actions.includes('renewed')) && (
-                <Bar dataKey="renewed" fill="#8b5cf6" name="Renewed/Extended" radius={[8, 8, 0, 0]} />
-              )}
-            </BarChart>
-          </ResponsiveContainer>
-        </motion.div>
-      )}
+          {viewMode === 'chart' && dailyActivity.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white rounded-xl shadow-sm p-6 mb-6 border border-gray-100"
+            >
+              <h2 className="text-xl font-bold text-gray-800 mb-4">Daily Activity</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={dailyActivity}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={(date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    stroke="#6b7280"
+                  />
+                  <YAxis stroke="#6b7280" />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb', borderRadius: '8px' }}
+                    labelFormatter={(date) => new Date(date).toLocaleDateString()}
+                  />
+                  <Legend />
+                  {(appliedAssetFilters.actions.length === 0 || appliedAssetFilters.actions.includes('issued')) && (
+                    <Bar dataKey="issued" fill="#10b981" name="Issued/Reserved" radius={[8, 8, 0, 0]} />
+                  )}
+                  {(appliedAssetFilters.actions.length === 0 || appliedAssetFilters.actions.includes('returned')) && (
+                    <Bar dataKey="returned" fill="#3b82f6" name="Returned/Checked Out" radius={[8, 8, 0, 0]} />
+                  )}
+                  {(appliedAssetFilters.actions.length === 0 || appliedAssetFilters.actions.includes('renewed')) && (
+                    <Bar dataKey="renewed" fill="#8b5cf6" name="Renewed/Extended" radius={[8, 8, 0, 0]} />
+                  )}
+                </BarChart>
+              </ResponsiveContainer>
+            </motion.div>
+          )}
 
-      {/* Transactions Table */}
-      {viewMode === 'table' && (
+          {viewMode === 'table' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
+            >
+              <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-4">
+                <h2 className="text-xl font-bold text-white">Asset Transaction Details</h2>
+                <p className="text-green-50 text-sm mt-1">
+                  Showing {assetTransactions.length} transaction{assetTransactions.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Member</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Asset</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Due Date</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Return Date</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Fine Amount</th>
+                      <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {assetTransactions.length === 0 ? (
+                      <tr>
+                        <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
+                          <Search className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                          <p>No transactions found for the selected period</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      assetTransactions.map((transaction, index) => (
+                        <motion.tr
+                          key={transaction.Borrow_ID}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: index * 0.03 }}
+                          className="hover:bg-gray-50 transition-colors"
+                        >
+                          <td className="px-3 py-3 whitespace-nowrap text-sm text-gray-800">
+                            <div>
+                              <p className="font-medium">
+                                {new Date(transaction.Return_Date || transaction.Renew_Date || transaction.Borrow_Date).toLocaleDateString()}
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                {new Date(transaction.Return_Date || transaction.Renew_Date || transaction.Borrow_Date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 text-sm text-gray-800">
+                            <div>
+                              <p className="font-medium truncate" title={transaction.member_name}>{transaction.member_name}</p>
+                              <p className="text-xs text-gray-500 truncate">{transaction.member_identifier || `ID: ${transaction.member_id}`}</p>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 text-sm text-gray-800">
+                            <p
+                              className="font-semibold truncate cursor-pointer hover:text-emerald-600 transition-colors"
+                              title={`Filter by ${transaction.book_title}`}
+                              onClick={() => handleAssetClick(transaction.book_title)}
+                            >
+                              {transaction.book_title}
+                            </p>
+                            <p className="text-xs text-gray-500">{transaction.asset_type}</p>
+                          </td>
+                          <td className="px-3 py-3 text-sm font-medium text-gray-700">{transaction.action}</td>
+                          <td className="px-3 py-3 text-sm text-gray-800">
+                            {transaction.Due_Date ? new Date(transaction.Due_Date).toLocaleDateString() : <span className="text-gray-400">-</span>}
+                          </td>
+                          <td className="px-3 py-3 text-sm text-gray-800">
+                            {transaction.Return_Date ? (
+                              <div>
+                                <p className="font-medium">{new Date(transaction.Return_Date).toLocaleDateString()}</p>
+                                <p className="text-xs text-gray-500">{new Date(transaction.Return_Date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                              </div>
+                            ) : <span className="text-gray-400">-</span>}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm">
+                            {(() => {
+                              if (transaction.Return_Date && transaction.Fee_Incurred && parseFloat(transaction.Fee_Incurred) > 0) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700">
+                                    <DollarSign className="w-3 h-3" />
+                                    ${parseFloat(transaction.Fee_Incurred).toFixed(2)}
+                                  </span>
+                                )
+                              }
+                              if (transaction.status === 'Overdue' && transaction.Fine_Amount && parseFloat(transaction.Fine_Amount) > 0) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-orange-50 text-orange-700">
+                                    <DollarSign className="w-3 h-3" />
+                                    ${parseFloat(transaction.Fine_Amount).toFixed(2)}
+                                  </span>
+                                )
+                              }
+                              return <span className="text-gray-400">-</span>
+                            })()}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap text-sm">
+                            <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${transaction.status === 'Active Loan' ? 'bg-green-100 text-green-700'
+                              : transaction.status === 'Overdue' ? 'bg-red-100 text-red-700'
+                                : transaction.status === 'Completed' ? 'bg-gray-100 text-gray-700'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}>
+                              {transaction.status}
+                            </span>
+                          </td>
+                        </motion.tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </motion.div>
+          )}
+        </>
+      ) : (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden"
         >
-        <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-4">
-          <h2 className="text-xl font-bold text-white">Transaction Details</h2>
-          <p className="text-green-50 text-sm mt-1">
-            Showing {transactions.length} transaction{transactions.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Member</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Asset</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Fine</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {transactions.length === 0 ? (
+          <div className="bg-gradient-to-r from-emerald-500 to-green-600 px-6 py-4">
+            <h2 className="text-xl font-bold text-white">Room Booking Details</h2>
+            <p className="text-emerald-50 text-sm mt-1">Showing {roomBookings.length} booking{roomBookings.length !== 1 ? 's' : ''}</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-gray-500">
-                    <Search className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-                    <p>No transactions found for the selected period</p>
-                  </td>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Booking ID</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Member</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Room</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Start Time</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">End Date</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Duration</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Approved By</th>
                 </tr>
-              ) : (
-                transactions.map((transaction, index) => (
-                  <motion.tr
-                    key={transaction.Borrow_ID}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: index * 0.03 }}
-                    className="hover:bg-gray-50 transition-colors"
-                  >
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800">
-                      {new Date(transaction.Borrow_Date).toLocaleDateString()}
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {roomBookings.length === 0 ? (
+                  <tr>
+                    <td colSpan="9" className="px-6 py-12 text-center text-gray-500">
+                      <Search className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                      <p>No room bookings found for the selected period</p>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-800">
-                      <div>
-                        <p className="font-medium">{transaction.member_name}</p>
-                        <p className="text-xs text-gray-500">ID: M{String(transaction.member_id).padStart(3, '0')}</p>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-800">
-                      <div>
-                        <p className="font-medium">{transaction.book_title}</p>
-                        <span className={`inline-block px-2 py-1 text-xs rounded-full mt-1 ${
-                          transaction.asset_type === 'Book' ? 'bg-blue-100 text-blue-700' :
-                          transaction.asset_type === 'CD' ? 'bg-purple-100 text-purple-700' :
-                          transaction.asset_type === 'Movie' ? 'bg-red-100 text-red-700' :
-                          'bg-green-100 text-green-700'
-                        }`}>
-                          {transaction.asset_type}
+                  </tr>
+                ) : (
+                  roomBookings.map((booking, index) => (
+                    <motion.tr
+                      key={booking.Booking_ID}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: index * 0.03 }}
+                      className="hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="px-3 py-3 text-sm font-semibold text-gray-800">#{booking.Booking_ID}</td>
+                      <td className="px-3 py-3 text-sm text-gray-800">
+                        <p className="font-medium">{booking.Member_Name}</p>
+                        <p className="text-xs text-gray-500">{booking.Member_Role || 'Member'}</p>
+                      </td>
+                      <td className="px-3 py-3 text-sm text-gray-800">
+                        <p className="font-medium">Room {booking.Room_Number}</p>
+                        <p className="text-xs text-gray-500">Capacity: {booking.Capacity}</p>
+                      </td>
+                      <td className="px-3 py-3 text-sm text-gray-800">
+                        {booking.Booking_Date ? new Date(booking.Booking_Date).toLocaleDateString() : '—'}
+                      </td>
+                      <td className="px-3 py-3 text-sm text-gray-800">{booking.Start_Time || '—'}</td>
+                      <td className="px-3 py-3 text-sm text-gray-800">
+                        {booking.Due_Date ? new Date(booking.Due_Date).toLocaleDateString() : '—'}
+                      </td>
+                      <td className="px-3 py-3 text-sm text-gray-800">{booking.Duration_Days || 0} day(s)</td>
+                      <td className="px-3 py-3 text-sm">
+                        <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${booking.Booking_Status === 'Active' ? 'bg-green-100 text-green-700'
+                          : booking.Booking_Status === 'Upcoming' ? 'bg-blue-100 text-blue-700'
+                            : booking.Booking_Status === 'Completed' ? 'bg-gray-100 text-gray-700'
+                              : booking.Booking_Status === 'Overdue' ? 'bg-red-100 text-red-700'
+                                : 'bg-slate-100 text-slate-700'
+                          }`}>
+                          {booking.Booking_Status}
                         </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                        transaction.action === 'Issued' ? 'bg-green-100 text-green-700' :
-                        transaction.action === 'Returned' ? 'bg-blue-100 text-blue-700' :
-                        'bg-purple-100 text-purple-700'
-                      }`}>
-                        {transaction.action}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                        transaction.status === 'Active' ? 'bg-green-100 text-green-700' :
-                        transaction.status === 'Overdue' ? 'bg-red-100 text-red-700' :
-                        'bg-gray-100 text-gray-700'
-                      }`}>
-                        {transaction.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {transaction.Fee_Incurred && parseFloat(transaction.Fee_Incurred) > 0 ? (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-red-50 text-red-700">
-                          <DollarSign className="w-3 h-3" />
-                          ${parseFloat(transaction.Fee_Incurred).toFixed(2)}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
-                    </td>
-                  </motion.tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
-      )}
-    </div>
+                      </td>
+                      <td className="px-3 py-3 text-sm text-gray-800">{booking.Approved_By || '—'}</td>
+                    </motion.tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </motion.div>
+      )
+      }
+    </div >
   )
 }
 

@@ -200,6 +200,7 @@ function Login() {
   return (
     <div className="login-container">
       <div className={`login-card ${isSignUp ? 'signup-card' : ''} ${isSignUp && formData.role === 'admin' ? 'admin-signup' : ''}`}>
+        <div><a className='home-back-redirect' href='/'><small>{'← Back to Home'}</small></a></div>
         <div className="login-header">
           <h1>Welcome</h1>
           <h2>{isSignUp ? 'Create Account' : 'Login'}</h2>
@@ -214,7 +215,7 @@ function Login() {
               <small>Admin and Librarian accounts are provided by the library</small>
             </div>
           )}
-
+          
           {isSignUp && (
             <>
               <div className="form-group">

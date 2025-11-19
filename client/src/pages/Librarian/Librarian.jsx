@@ -1,24 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { 
-  Home, BookOpen, RefreshCw, Users, DollarSign, 
+import {
+  Home, BookOpen, RefreshCw, Users, DollarSign,
   FileText, LogOut, Search, Calendar, User,
   TrendingUp, TrendingDown, BookMarked, AlertCircle,
   Library, UserPlus, Clock, Menu, X, BarChart3,
   Package, CheckCircle, Plus, Edit2, Trash2,
   Barcode, Music, Shield, Hash, Tag, Info, MapPin,
   Disc, Headphones, Film, Laptop, Building2, BookOpenCheck,
-  Image, Upload, Save, XCircle
+  Image, Upload, Save, XCircle, ChevronDown, Bell
 } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import '../Admin/Admin.css'
 import './Librarian.css'
 import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
 import LibrarianReport from '../LibrarianReport/LibrarianReport'
+import { getConfigValue, getFineRate } from '../../utils/configService'
 
 // Use local server for development, production for deployed app
-const API_URL = location.hostname === 'localhost' 
+const API_URL = location.hostname === 'localhost'
   ? 'http://localhost:3000/api'
   : 'https://librarymanagementsystem-z2yw.onrender.com/api'
 
@@ -27,7 +28,8 @@ const getAssetImagePath = (assetType, assetId, extension = 'png') => {
   return `/assets/${assetType}/${assetId}.${extension}`
 }
 
-const LOW_STOCK_THRESHOLDS = {
+// Default low stock thresholds (will be overridden by database values if available)
+const DEFAULT_LOW_STOCK_THRESHOLDS = {
   books: 2,
   cds: 1,
   audiobooks: 1,
@@ -77,8 +79,8 @@ const NavItem = ({ icon: Icon, label, isActive, onClick }) => {
       onClick={onClick}
       className={`
         w-full flex items-center px-6 py-3 text-sm font-medium transition-all duration-200
-        ${isActive 
-          ? 'bg-indigo-600 text-white border-l-4 border-sky-400' 
+        ${isActive
+          ? 'bg-indigo-600 text-white border-l-4 border-sky-400'
           : 'text-gray-300 hover:bg-slate-700 hover:text-white'
         }
       `}
@@ -92,13 +94,14 @@ const NavItem = ({ icon: Icon, label, isActive, onClick }) => {
 // LibrarianSidebar Component
 const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOpen }) => {
   const navItems = [
-    { label: 'Dashboard', icon: Home, page: 'overview' },
-    { label: 'Manage Assets', icon: BookOpen, page: 'books' },
-    { label: 'Members', icon: Users, page: 'members' },
-    { label: 'Fines & Payments', icon: DollarSign, page: 'fines' },
-    { label: 'All Records', icon: FileText, page: 'records' },
-    { label: 'My Reports', icon: BarChart3, page: 'my-reports' },
-    { label: 'Events Calendar', icon: Calendar, page: 'calendar'}
+    { label: 'Dashboard', icon: Home, id: 'overview' },
+    { label: 'Catalog', icon: BookOpen, id: 'catalog' },
+    { label: 'Members', icon: Users, id: 'members' },
+    { label: 'Transactions', icon: FileText, id: 'transactions' },
+    { label: 'Fines & Payments', icon: DollarSign, id: 'fines' },
+    { label: 'Reservations', icon: Clock, id: 'reservations' },
+    { label: 'Reports', icon: BarChart3, id: 'reports' },
+    { label: 'Events', icon: Calendar, id: 'calendar' }
   ]
 
   return (
@@ -130,19 +133,24 @@ const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOp
         </div>
 
         {/* Navigation */}
-        <nav className="mt-6 space-y-1">
-          {navItems.map((item) => (
-            <NavItem
-              key={item.page}
-              icon={item.icon}
-              label={item.label}
-              isActive={activePage === item.page}
-              onClick={() => {
-                setActivePage(item.page)
-                setSidebarOpen(false)
-              }}
-            />
-          ))}
+        <nav className="mt-6 px-4 space-y-2 overflow-y-auto h-[calc(100vh-8rem)]">
+          {navItems.map((item) => {
+            const Icon = item.icon
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActivePage(item.id)
+                  if (window.innerWidth < 768) setSidebarOpen(false)
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${activePage === item.id ? 'bg-slate-700 text-white' : 'text-gray-400 hover:bg-slate-700 hover:text-white'
+                  }`}
+              >
+                <Icon className={`w-5 h-5 ${activePage === item.id ? 'text-sky-400' : 'text-gray-400'}`} />
+                {item.label}
+              </button>
+            )
+          })}
         </nav>
 
         {/* Logout button at bottom */}
@@ -167,9 +175,24 @@ const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOp
 }
 
 // TopNavbar Component
-const TopNavbar = ({ sidebarOpen, setSidebarOpen, onLogout }) => {
+const TopNavbar = ({ sidebarOpen, setSidebarOpen, onLogout, notifications = [] }) => {
   const [searchQuery, setSearchQuery] = useState('')
   const [dateRange, setDateRange] = useState('today')
+  const [showNotifications, setShowNotifications] = useState(false)
+  const notificationRef = useRef(null)
+
+  // Close notifications when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+        setShowNotifications(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const unreadCount = notifications.length
 
   return (
     <nav className="bg-white border-b border-gray-200 shadow-sm z-30">
@@ -204,6 +227,78 @@ const TopNavbar = ({ sidebarOpen, setSidebarOpen, onLogout }) => {
 
         {/* Right Section */}
         <div className="flex items-center gap-4">
+          {/* Notifications */}
+          <div className="relative" ref={notificationRef}>
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="p-2 text-gray-500 hover:bg-gray-100 rounded-full relative transition-colors"
+            >
+              <Bell className="w-6 h-6" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center border-2 border-white">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* Notification Dropdown */}
+            <AnimatePresence>
+              {showNotifications && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-50"
+                >
+                  <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+                    <h3 className="font-semibold text-gray-900">Notifications</h3>
+                    <span className="text-xs text-gray-500">{unreadCount} New</span>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className="p-8 text-center text-gray-500">
+                        <CheckCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                        <p className="text-sm">All caught up!</p>
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-gray-50">
+                        {notifications.map((notification, index) => (
+                          <div key={index} className="p-4 hover:bg-gray-50 transition-colors">
+                            <div className="flex items-start gap-3">
+                              <div className={`p-2 rounded-full shrink-0 ${notification.notification_type === 'low_stock' ? 'bg-orange-100 text-orange-600' :
+                                notification.notification_type === 'overdue' ? 'bg-red-100 text-red-600' :
+                                  'bg-blue-100 text-blue-600'
+                                }`}>
+                                {notification.notification_type === 'low_stock' ? <Package className="w-4 h-4" /> :
+                                  notification.notification_type === 'overdue' ? <AlertCircle className="w-4 h-4" /> :
+                                    <Info className="w-4 h-4" />}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">
+                                  {notification.notification_type === 'low_stock' ? 'Low Stock Alert' :
+                                    notification.notification_type === 'overdue' ? 'Overdue Item' :
+                                      'Notification'}
+                                </p>
+                                <p className="text-xs text-gray-600 mt-1">
+                                  {notification.item_title} ({notification.item_type})
+                                </p>
+                                {notification.notification_type === 'low_stock' && (
+                                  <p className="text-xs text-orange-600 mt-1 font-medium">
+                                    Restock needed
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           {/* Date Range Selector */}
           <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
             <Calendar className="w-5 h-5 text-gray-500" />
@@ -238,14 +333,14 @@ const TopNavbar = ({ sidebarOpen, setSidebarOpen, onLogout }) => {
 function Librarian() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  
+
   // Sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  
+
   // Get initial tab from URL or default to 'overview'
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'overview')
   const [activeAssetTab, setActiveAssetTab] = useState(searchParams.get('assetTab') || 'books')
-  
+
   // State for all asset types
   const [books, setBooks] = useState([])
   const [cds, setCds] = useState([])
@@ -254,7 +349,7 @@ function Librarian() {
   const [technology, setTechnology] = useState([])
   const [studyRooms, setStudyRooms] = useState([])
   const [roomStatusUpdating, setRoomStatusUpdating] = useState(null)
-  
+
   const [borrowRecords, setBorrowRecords] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -264,7 +359,7 @@ function Librarian() {
   const [itemToDelete, setItemToDelete] = useState(null)
   const [isEditMode, setIsEditMode] = useState(false)
   const [imageRefreshKey, setImageRefreshKey] = useState(Date.now())
-  
+
   // Dashboard Overview States
   const [dashboardStats, setDashboardStats] = useState({
     totalBooks: 0,
@@ -278,7 +373,38 @@ function Librarian() {
   const [recentTransactions, setRecentTransactions] = useState([])
   const [overdueItems, setOverdueItems] = useState([])
   const [popularBooks, setPopularBooks] = useState([])
-  
+
+  // Configuration values from database
+  const [fineRatePerDay, setFineRatePerDay] = useState(1.00)
+  const [defaultBorrowDays, setDefaultBorrowDays] = useState(14)
+  const [lowStockThresholds, setLowStockThresholds] = useState(DEFAULT_LOW_STOCK_THRESHOLDS)
+
+  // Notification State
+  const [notifications, setNotifications] = useState([])
+
+  const fetchNotifications = async () => {
+    try {
+      const response = await fetch(`${API_URL}/notifications`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setNotifications(data)
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error)
+    }
+  }
+
+  useEffect(() => {
+    fetchNotifications()
+    // Poll for notifications every 5 minutes
+    const interval = setInterval(fetchNotifications, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [])
+
   // Search States
   const [searchTerm, setSearchTerm] = useState('')
   const [assetAvailabilityFilter, setAssetAvailabilityFilter] = useState('all') // all, available, low, out
@@ -293,10 +419,11 @@ function Librarian() {
     assetTitle: '',
     assetType: 'books',
     issueDate: '',
-    dueDate: ''
+    dueDate: '',
+    quantity: 1
   }
   const [issueForm, setIssueForm] = useState(initialIssueForm)
-  
+
   // Fine Management States
   const [showFineModal, setShowFineModal] = useState(false)
   const [fineModalMode, setFineModalMode] = useState('details')
@@ -313,17 +440,17 @@ function Librarian() {
   const [paymentAmount, setPaymentAmount] = useState('')
   const [paymentMethod, setPaymentMethod] = useState('Cash')
   const [fineLoading, setFineLoading] = useState(false)
-  
+
   // Calendar States
- const [calendarDate, setCalendarDate] = useState(new Date())
- const [selectedDate, setSelectedDate] = useState(new Date())
- const [calendarOpenDayEvents, setCalendarOpenDayEvents] = useState([])
- const [events, setEvents] = useState([]) // events from server (Calendar table)
- 
- // Event entry states
- const [showEventModal, setShowEventModal] = useState(false)
- const [flaggedForDeletion, setFlaggedForDeletion] = useState(new Set())
- const [newEventForm, setNewEventForm] = useState({
+  const [calendarDate, setCalendarDate] = useState(new Date())
+  const [selectedDate, setSelectedDate] = useState(new Date())
+  const [calendarOpenDayEvents, setCalendarOpenDayEvents] = useState([])
+  const [events, setEvents] = useState([]) // events from server (Calendar table)
+
+  // Event entry states
+  const [showEventModal, setShowEventModal] = useState(false)
+  const [flaggedForDeletion, setFlaggedForDeletion] = useState(new Set())
+  const [newEventForm, setNewEventForm] = useState({
     Title: '',
     Event_Date: new Date().toISOString().slice(0, 10),
     Start_Time: '09:00', // default start time
@@ -331,32 +458,52 @@ function Librarian() {
     Details: '',
     Image_URL: '',
     recurring: 0
- })
+  })
 
 
- // Fetch calendar events when calendar tab opens 
- const fetchEvents = async () => {
-   try {
-     const res = await fetch(`${API_URL}/events`)
-     if (!res.ok) throw new Error('Failed to fetch events')
-     const data = await res.json()
-     setEvents(Array.isArray(data) ? data : [])
-   } catch (err) {
-     console.error('Error fetching events:', err)
-   }
- }
+  // Fetch calendar events when calendar tab opens 
+  const fetchEvents = async () => {
+    try {
+      const res = await fetch(`${API_URL}/events`)
+      if (!res.ok) throw new Error('Failed to fetch events')
+      const data = await res.json()
+      setEvents(Array.isArray(data) ? data : [])
+    } catch (err) {
+      console.error('Error fetching events:', err)
+    }
+  }
 
- useEffect(() => {
-   if (activeTab === 'calendar') {
-     // get server events + ensure borrow/overdue/recent are loaded
-     fetchEvents()
-     // optionally refresh borrow records so calendar has borrow/due/return items
-     fetchBorrowRecords().catch(() => {})
-     fetchOverdueItems().catch(() => {})
-     fetchRecentTransactions().catch(() => {})
-   }
-   // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [activeTab])
+  useEffect(() => {
+    if (activeTab === 'calendar') {
+      // get server events + ensure borrow/overdue/recent are loaded
+      fetchEvents()
+      // optionally refresh borrow records so calendar has borrow/due/return items
+      fetchBorrowRecords().catch(() => { })
+      fetchOverdueItems().catch(() => { })
+      fetchRecentTransactions().catch(() => { })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab])
+
+  // Fetch configuration values from database
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const fineRate = await getFineRate()
+        setFineRatePerDay(fineRate)
+
+        const borrowDays = await getConfigValue('DEFAULT_BORROW_DAYS')
+        setDefaultBorrowDays(borrowDays)
+
+        console.log('Loaded config from database:', { fineRate, borrowDays })
+      } catch (error) {
+        console.error('Error loading configuration:', error)
+        // Keep default values if fetch fails
+      }
+    }
+
+    fetchConfig()
+  }, [])
 
   // Form States
   const [assetForm, setAssetForm] = useState({})
@@ -385,7 +532,12 @@ function Librarian() {
   })
   const [memberPage, setMemberPage] = useState(1)
   const [memberTotalPages, setMemberTotalPages] = useState(1)
+
   const memberProfileCache = useRef(new Map())
+
+  // Holds State
+  const [holds, setHolds] = useState([])
+  const [holdLoading, setHoldLoading] = useState(false)
 
   // Function to change tab and update URL
   const changeTab = (tab) => {
@@ -552,7 +704,7 @@ function Librarian() {
       let url = `${API_URL}/fines?`
       if (fineFilter !== 'all') url += `status=${fineFilter}&`
       if (fineSeverityFilter !== 'all') url += `severity=${fineSeverityFilter}&`
-      
+
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -586,24 +738,77 @@ function Librarian() {
     }
   }
 
+  const fetchDashboardData = async () => {
+    try {
+      await Promise.all([
+        fetchDashboardStats(),
+        fetchRecentTransactions(),
+        fetchOverdueItems(),
+        fetchPopularBooks()
+      ])
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error)
+    }
+  }
+
+  const fetchHoldsData = async () => {
+    setHoldLoading(true)
+    try {
+      const response = await fetch(`${API_URL}/holds`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setHolds(data)
+      }
+    } catch (error) {
+      console.error('Error fetching holds:', error)
+      setError('Failed to load reservations')
+    } finally {
+      setHoldLoading(false)
+    }
+  }
+
+  const handleCancelHold = async (holdId) => {
+    if (!window.confirm('Are you sure you want to cancel this reservation?')) return
+
+    try {
+      const response = await fetch(`${API_URL}/holds/${holdId}/cancel`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+
+      if (response.ok) {
+        setSuccessMessage('Reservation cancelled successfully')
+        fetchHoldsData()
+      } else {
+        setError('Failed to cancel reservation')
+      }
+    } catch (error) {
+      console.error('Error cancelling hold:', error)
+      setError('Failed to cancel reservation')
+    }
+  }
+
   const fetchData = async () => {
     setLoading(true)
     setError('')
     try {
       if (activeTab === 'overview') {
-        await Promise.all([
-          fetchDashboardStats(),
-          fetchRecentTransactions(),
-          fetchOverdueItems(),
-          fetchPopularBooks()
-        ])
-      } else if (activeTab === 'books') {
+        await fetchDashboardData()
+      } else if (activeTab === 'catalog') {
         await fetchAssets(activeAssetTab)
       } else if (activeTab === 'members') {
         await fetchMembers()
       } else if (activeTab === 'fines') {
-        await fetchFines()
-      } else if (activeTab === 'records') {
+        fetchFinesData()
+      } else if (activeTab === 'reservations') {
+        fetchHoldsData()
+      } else if (activeTab === 'transactions') {
         await fetchBorrowRecords()
       }
     } catch (err) {
@@ -616,24 +821,28 @@ function Librarian() {
 
   const fetchDashboardStats = async () => {
     try {
-      const [booksRes, studentsRes, borrowRes, overdueRes] = await Promise.all([
+      const [booksRes, studentsRes, borrowRes, overdueRes, finesRes] = await Promise.all([
         fetch(`${API_URL}/assets/books`),
         fetch(`${API_URL}/students`),
         fetch(`${API_URL}/borrow-records`),
-        fetch(`${API_URL}/reports/overdue-items`)
+        fetch(`${API_URL}/reports/overdue-items`),
+        fetch(`${API_URL}/fines/stats`, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        })
       ])
 
       const booksData = await booksRes.json()
       const studentsData = await studentsRes.json()
       const borrowData = await borrowRes.json()
       const overdueData = await overdueRes.json()
+      const finesData = await finesRes.json()
 
       const totalBooks = booksData.reduce((sum, book) => sum + (parseInt(book.Copies) || 0), 0)
       const availableBooks = booksData.reduce((sum, book) => sum + (parseInt(book.Available_Copies) || 0), 0)
       const borrowedBooks = totalBooks - availableBooks
       const activeMembers = studentsData.filter(s => s.status === 'Active').length
       const overdueCount = Array.isArray(overdueData) ? overdueData.length : 0
-      const unpaidFines = studentsData.reduce((sum, s) => sum + (parseFloat(s.balance) || 0), 0)
+      const unpaidFines = parseFloat(finesData.totalUnpaidFines || 0)
 
       setDashboardStats({
         totalBooks,
@@ -708,10 +917,10 @@ function Librarian() {
       const response = await fetch(`${API_URL}/assets/${assetType}`)
       if (!response.ok) throw new Error(`Failed to fetch ${assetType}`)
       const data = await response.json()
-      
+
       const sortedData = data.sort((a, b) => a.Asset_ID - b.Asset_ID)
-      
-      switch(assetType) {
+
+      switch (assetType) {
         case 'books': setBooks(sortedData); break;
         case 'cds': setCds(sortedData); break;
         case 'audiobooks': setAudiobooks(sortedData); break;
@@ -785,11 +994,11 @@ function Librarian() {
         page: memberPage,
         limit: 20
       })
-      
+
       const response = await fetch(`${API_URL}/members?${params}`)
       if (!response.ok) throw new Error('Failed to fetch members')
       const data = await response.json()
-      
+
       setMembers(data.members)
       setMemberTotalPages(data.pagination.totalPages)
     } catch (error) {
@@ -1008,82 +1217,82 @@ function Librarian() {
     setLoading(true)
     setError('')
     setSuccessMessage('')
-    
+
     try {
       let imageUrl = assetForm.Image_URL || ''
-      
+
       if (isEditMode && !imageFile && assetForm.Image_URL) {
         imageUrl = assetForm.Image_URL
       }
-      
+
       if (imageFile) {
         const assetId = isEditMode ? assetForm.Asset_ID : null
         const formData = new FormData()
         formData.append('image', imageFile)
         formData.append('assetType', activeAssetTab)
-        
+
         if (assetId) {
           formData.append('assetId', assetId)
           setSuccessMessage('Uploading image...')
-          
+
           const uploadResponse = await fetch(`${API_URL}/upload`, {
             method: 'POST',
             body: formData
           })
-          
+
           if (uploadResponse.ok) {
             const uploadData = await uploadResponse.json()
             imageUrl = uploadData.imageUrl
           }
         }
       }
-      
-      const url = isEditMode 
+
+      const url = isEditMode
         ? `${API_URL}/assets/${activeAssetTab}/${assetForm.Asset_ID}`
         : `${API_URL}/assets/${activeAssetTab}`
-      
+
       const method = isEditMode ? 'PUT' : 'POST'
-      
+
       let assetData = { ...assetForm, Image_URL: imageUrl }
-      
+
       if (activeAssetTab === 'movies' && isEditMode) {
         delete assetData.Copies
         delete assetData.Available_Copies
       }
-      
+
       const response = await fetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(assetData)
       })
-      
+
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.details || `Failed to ${isEditMode ? 'update' : 'add'} asset`)
       }
-      
+
       const result = await response.json()
       const newAssetId = result.assetId
-      
+
       if (!isEditMode && imageFile && newAssetId) {
         const formData = new FormData()
         formData.append('image', imageFile)
         formData.append('assetType', activeAssetTab)
         formData.append('assetId', newAssetId)
-        
+
         await fetch(`${API_URL}/upload`, {
           method: 'POST',
           body: formData
         })
       }
-      
+
       await fetchAssets(activeAssetTab)
       setImageRefreshKey(Date.now())
       setShowAssetModal(false)
       setAssetForm({})
       setImageFile(null)
       setImagePreview(null)
-      
+
       setSuccessMessage('Update completed successfully!')
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (error) {
@@ -1095,19 +1304,19 @@ function Librarian() {
 
   const handleDeleteAsset = async () => {
     if (!itemToDelete) return
-    
+
     setLoading(true)
     setError('')
     try {
       const response = await fetch(`${API_URL}/assets/${activeAssetTab}/${itemToDelete.Asset_ID}`, {
         method: 'DELETE'
       })
-      
+
       if (!response.ok) {
         const errorData = await response.json()
         throw new Error(errorData.error || 'Failed to delete asset')
       }
-      
+
       await fetchAssets(activeAssetTab)
       setShowDeleteModal(false)
       setItemToDelete(null)
@@ -1173,53 +1382,53 @@ function Librarian() {
   // Helper function to get asset theme (used in both renderAssets and modals)
   const getAssetTheme = (assetType = activeAssetTab) => {
     const themes = {
-      'books': { 
-        Icon: BookOpen, 
-        color: 'blue', 
-        gradient: 'from-blue-500 to-cyan-600', 
-        bg: 'bg-blue-50', 
-        text: 'text-blue-700', 
-        border: 'border-blue-500' 
+      'books': {
+        Icon: BookOpen,
+        color: 'blue',
+        gradient: 'from-blue-500 to-cyan-600',
+        bg: 'bg-blue-50',
+        text: 'text-blue-700',
+        border: 'border-blue-500'
       },
-      'cds': { 
-        Icon: Disc, 
-        color: 'purple', 
-        gradient: 'from-purple-500 to-pink-600', 
-        bg: 'bg-purple-50', 
-        text: 'text-purple-700', 
-        border: 'border-purple-500' 
+      'cds': {
+        Icon: Disc,
+        color: 'purple',
+        gradient: 'from-purple-500 to-pink-600',
+        bg: 'bg-purple-50',
+        text: 'text-purple-700',
+        border: 'border-purple-500'
       },
-      'audiobooks': { 
-        Icon: Headphones, 
-        color: 'green', 
-        gradient: 'from-green-500 to-emerald-600', 
-        bg: 'bg-green-50', 
-        text: 'text-green-700', 
-        border: 'border-green-500' 
+      'audiobooks': {
+        Icon: Headphones,
+        color: 'green',
+        gradient: 'from-green-500 to-emerald-600',
+        bg: 'bg-green-50',
+        text: 'text-green-700',
+        border: 'border-green-500'
       },
-      'movies': { 
-        Icon: Film, 
-        color: 'red', 
-        gradient: 'from-red-500 to-rose-600', 
-        bg: 'bg-red-50', 
-        text: 'text-red-700', 
-        border: 'border-red-500' 
+      'movies': {
+        Icon: Film,
+        color: 'red',
+        gradient: 'from-red-500 to-rose-600',
+        bg: 'bg-red-50',
+        text: 'text-red-700',
+        border: 'border-red-500'
       },
-      'technology': { 
-        Icon: Laptop, 
-        color: 'indigo', 
-        gradient: 'from-indigo-500 to-violet-600', 
-        bg: 'bg-indigo-50', 
-        text: 'text-indigo-700', 
-        border: 'border-indigo-500' 
+      'technology': {
+        Icon: Laptop,
+        color: 'indigo',
+        gradient: 'from-indigo-500 to-violet-600',
+        bg: 'bg-indigo-50',
+        text: 'text-indigo-700',
+        border: 'border-indigo-500'
       },
-      'study-rooms': { 
-        Icon: Building2, 
-        color: 'amber', 
-        gradient: 'from-amber-500 to-orange-600', 
-        bg: 'bg-amber-50', 
-        text: 'text-amber-700', 
-        border: 'border-amber-500' 
+      'study-rooms': {
+        Icon: Building2,
+        color: 'amber',
+        gradient: 'from-amber-500 to-orange-600',
+        bg: 'bg-amber-50',
+        text: 'text-amber-700',
+        border: 'border-amber-500'
       }
     }
     return themes[assetType] || themes.books
@@ -1293,7 +1502,7 @@ function Librarian() {
     }
     if (available <= 0) return 'out'
 
-    const threshold = LOW_STOCK_THRESHOLDS[assetType] ?? 1
+    const threshold = lowStockThresholds[assetType] ?? 1
     if (available <= threshold) return 'low'
     return 'available'
   }
@@ -1308,7 +1517,7 @@ function Librarian() {
   }
 
   const getAssetFormFields = () => {
-    switch(activeAssetTab) {
+    switch (activeAssetTab) {
       case 'books':
         return [
           { name: 'ISBN', type: 'text', label: 'ISBN', required: true },
@@ -1358,7 +1567,7 @@ function Librarian() {
   }
 
   const getAssetTableColumns = () => {
-    switch(activeAssetTab) {
+    switch (activeAssetTab) {
       case 'books':
         return [
           { key: 'rowNum', label: '#' },
@@ -1419,7 +1628,7 @@ function Librarian() {
   }
 
   const getCurrentAssetData = () => {
-    switch(activeAssetTab) {
+    switch (activeAssetTab) {
       case 'books': return books
       case 'cds': return cds
       case 'audiobooks': return audiobooks
@@ -1431,7 +1640,7 @@ function Librarian() {
   }
 
   const getIssueAssetData = () => {
-    switch(selectedAssetType) {
+    switch (selectedAssetType) {
       case 'books': return books
       case 'cds': return cds
       case 'audiobooks': return audiobooks
@@ -1446,7 +1655,7 @@ function Librarian() {
     if (col.key === 'rowNum') {
       return rowIndex + 1
     }
-    
+
     if (col.key === 'Availability') {
       return (
         <span className={`status-badge ${item[col.key] === 'Available' ? 'available' : 'unavailable'}`}>
@@ -1454,7 +1663,7 @@ function Librarian() {
         </span>
       )
     }
-    
+
     if (col.key === 'Available_Copies') {
       return (
         <span className={`availability-indicator ${item[col.key] > 0 ? 'in-stock' : 'out-of-stock'}`}>
@@ -1462,7 +1671,7 @@ function Librarian() {
         </span>
       )
     }
-    
+
     return item[col.key]
   }
 
@@ -1486,26 +1695,30 @@ function Librarian() {
           issueDate: form.issueDate || new Date().toISOString().split('T')[0],
           dueDate: form.dueDate || (() => {
             const date = new Date()
-            date.setDate(date.getDate() + 14)
+            date.setDate(date.getDate() + defaultBorrowDays)
             return date.toISOString().split('T')[0]
-          })()
+          })(),
+          quantity: form.quantity || 1
         })
       })
-      
+
       const data = await response.json()
-      
+
       if (!response.ok) {
         throw new Error(data.message || 'Failed to issue asset')
       }
-      
+
       setSuccessMessage('Issuance completed successfully!')
       setTimeout(() => setSuccessMessage(''), 3000)
 
       await fetchAssets(form.assetType)
+      await fetchAssets(form.assetType)
+      await fetchNotifications()
+      fetchDashboardStats()
 
       if (options.refreshMemberId) {
-        const fallbackMember = memberProfile?.member?.User_ID === options.refreshMemberId 
-          ? memberProfile.member 
+        const fallbackMember = memberProfile?.member?.User_ID === options.refreshMemberId
+          ? memberProfile.member
           : null
         await fetchMemberProfile(options.refreshMemberId, fallbackMember)
       } else {
@@ -1536,12 +1749,12 @@ function Librarian() {
     const { silent = false } = options
     const confirmReturn = silent
       ? true
-      : (fineAmount > 0 
-          ? window.confirm(`This asset has a fine of $${fineAmount.toFixed(2)}.\n\nProceed with return?`)
-          : window.confirm('Confirm asset return?'))
-    
+      : (fineAmount > 0
+        ? window.confirm(`This asset has a fine of $${fineAmount.toFixed(2)}.\n\nProceed with return?`)
+        : window.confirm('Confirm asset return?'))
+
     if (!confirmReturn) return false
-    
+
     if (!silent) {
       setLoading(true)
     }
@@ -1551,17 +1764,20 @@ function Librarian() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fineAmount: fineAmount || 0 })
       })
-      
+
       const data = await response.json()
-      
+
       if (!response.ok) {
         throw new Error(data.message || 'Failed to return book')
       }
-      
+
       if (!silent) {
         setSuccessMessage(`Return completed successfully! ${fineAmount > 0 ? `Fine recorded: $${fineAmount.toFixed(2)}` : ''}`)
         setTimeout(() => setSuccessMessage(''), 3000)
         await fetchData()
+        await fetchData()
+        await fetchNotifications()
+        fetchDashboardStats()
       }
 
       return true
@@ -1572,6 +1788,7 @@ function Librarian() {
       }
       throw error
     } finally {
+      console.log("Returned ")
       if (!silent) {
         setLoading(false)
       }
@@ -1580,9 +1797,9 @@ function Librarian() {
 
   const handleRenewBook = async (borrowId, newDueDate) => {
     const confirmRenew = window.confirm(`Renew this book?\n\nNew due date: ${newDueDate}`)
-    
+
     if (!confirmRenew) return
-    
+
     setLoading(true)
     try {
       const response = await fetch(`${API_URL}/borrow-records/${borrowId}/renew`, {
@@ -1590,17 +1807,19 @@ function Librarian() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newDueDate })
       })
-      
+
       const data = await response.json()
-      
+
       if (!response.ok) {
         throw new Error(data.message || 'Failed to renew book')
       }
-      
+
       setSuccessMessage('Renewal completed successfully!')
       setTimeout(() => setSuccessMessage(''), 3000)
-      
+
       await fetchData()
+      await fetchNotifications()
+      fetchDashboardStats()
     } catch (error) {
       setError(error.message)
       setTimeout(() => setError(''), 5000)
@@ -1611,16 +1830,16 @@ function Librarian() {
 
   // Dashboard Overview
   const renderDashboardOverview = () => {
-    // Calculate unpaid fines from overdue books
-    const unpaidFines = overdueItems.reduce((sum, item) => sum + (parseFloat(item.fine_amount) || 0), 0)
-    
+    // Use unpaid fines from dashboardStats (calculated by backend with database-driven fine rate)
+    const unpaidFines = dashboardStats.unpaidFines || 0;
+
     return (
       <div className="p-6">
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-gray-900 mb-2">Dashboard Overview</h2>
           <p className="text-gray-600">Track library performance and manage operations at a glance</p>
         </div>
-        
+
         {/* Stats Cards Grid with Animations */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatCard
@@ -1632,7 +1851,7 @@ function Librarian() {
             gradient="bg-gradient-to-br from-cyan-500 to-blue-600"
             delay={0}
           />
-          
+
           <StatCard
             title="Active Members"
             value={loading ? '...' : dashboardStats.activeMembers}
@@ -1642,7 +1861,7 @@ function Librarian() {
             gradient="bg-gradient-to-br from-green-500 to-emerald-600"
             delay={0.1}
           />
-          
+
           <StatCard
             title="Overdue Items"
             value={loading ? '...' : overdueItems.length}
@@ -1652,7 +1871,7 @@ function Librarian() {
             gradient="bg-gradient-to-br from-amber-500 to-orange-600"
             delay={0.2}
           />
-          
+
           <StatCard
             title="Unpaid Fines"
             value={loading ? '...' : `$${unpaidFines.toFixed(2)}`}
@@ -1675,7 +1894,7 @@ function Librarian() {
             gradient="bg-gradient-to-br from-purple-500 to-indigo-600"
             delay={0.4}
           />
-          
+
           <StatCard
             title="Returned Today"
             value={loading ? '...' : recentTransactions.filter(t => t.Return_Date !== null).length}
@@ -1685,7 +1904,7 @@ function Librarian() {
             gradient="bg-gradient-to-br from-teal-500 to-cyan-600"
             delay={0.5}
           />
-          
+
           <StatCard
             title="Reserved Items"
             value={loading ? '...' : dashboardStats.reservedBooks}
@@ -1695,7 +1914,7 @@ function Librarian() {
             gradient="bg-gradient-to-br from-blue-500 to-violet-600"
             delay={0.6}
           />
-          
+
           <StatCard
             title="New Members"
             value={loading ? '...' : '5'}
@@ -1753,11 +1972,11 @@ function Librarian() {
                 if (loading) {
                   return <div className="text-center text-gray-500 py-4">Loading...</div>
                 }
-                
+
                 if (popularBooks.length === 0) {
                   return <div className="text-center text-gray-500 py-4">No data available</div>
                 }
-                
+
                 return popularBooks.map((book, index) => (
                   <div key={`popular-book-${book.Asset_ID || index}`} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -1811,7 +2030,7 @@ function Librarian() {
                         </tr>
                       )
                     }
-                    
+
                     if (recentTransactions.length === 0) {
                       return (
                         <tr>
@@ -1819,7 +2038,7 @@ function Librarian() {
                         </tr>
                       )
                     }
-                    
+
                     return recentTransactions.slice(0, 10).map((transaction, index) => (
                       <tr key={transaction.Borrow_ID || index} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100 transition-colors`}>
                         <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -2065,11 +2284,10 @@ function Librarian() {
         <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
 
         {/* Summary Analytics Cards */}
-        <div className={`grid gap-4 mb-6 ${
-          isStudyRoomTab
-            ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4'
-            : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6'
-        }`}>
+        <div className={`grid gap-4 mb-6 ${isStudyRoomTab
+          ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-4'
+          : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6'
+          }`}>
           {summaryCards.map((card, index) => (
             <motion.div
               key={card.id}
@@ -2092,67 +2310,61 @@ function Librarian() {
         <div className="bg-white rounded-xl shadow-md mb-6 overflow-hidden border border-gray-200">
           {/* Tabs */}
           <div className="flex flex-wrap border-b border-gray-200">
-            <button 
-              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
-                activeAssetTab === 'books' 
-                  ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' 
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`} 
+            <button
+              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${activeAssetTab === 'books'
+                ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500'
+                : 'text-gray-600 hover:bg-gray-50'
+                }`}
               onClick={() => changeAssetTab('books')}
             >
               <BookOpen className="w-5 h-5" />
               <span>Books</span>
             </button>
-            <button 
-              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
-                activeAssetTab === 'cds' 
-                  ? 'bg-purple-50 text-purple-700 border-b-2 border-purple-500' 
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`} 
+            <button
+              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${activeAssetTab === 'cds'
+                ? 'bg-purple-50 text-purple-700 border-b-2 border-purple-500'
+                : 'text-gray-600 hover:bg-gray-50'
+                }`}
               onClick={() => changeAssetTab('cds')}
             >
               <Disc className="w-5 h-5" />
               <span>CDs</span>
             </button>
-            <button 
-              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
-                activeAssetTab === 'audiobooks' 
-                  ? 'bg-green-50 text-green-700 border-b-2 border-green-500' 
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`} 
+            <button
+              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${activeAssetTab === 'audiobooks'
+                ? 'bg-green-50 text-green-700 border-b-2 border-green-500'
+                : 'text-gray-600 hover:bg-gray-50'
+                }`}
               onClick={() => changeAssetTab('audiobooks')}
             >
               <Headphones className="w-5 h-5" />
               <span>Audiobooks</span>
             </button>
-            <button 
-              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
-                activeAssetTab === 'movies' 
-                  ? 'bg-red-50 text-red-700 border-b-2 border-red-500' 
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`} 
+            <button
+              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${activeAssetTab === 'movies'
+                ? 'bg-red-50 text-red-700 border-b-2 border-red-500'
+                : 'text-gray-600 hover:bg-gray-50'
+                }`}
               onClick={() => changeAssetTab('movies')}
             >
               <Film className="w-5 h-5" />
               <span>Movies</span>
             </button>
-            <button 
-              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
-                activeAssetTab === 'technology' 
-                  ? 'bg-indigo-50 text-indigo-700 border-b-2 border-indigo-500' 
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`} 
+            <button
+              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${activeAssetTab === 'technology'
+                ? 'bg-indigo-50 text-indigo-700 border-b-2 border-indigo-500'
+                : 'text-gray-600 hover:bg-gray-50'
+                }`}
               onClick={() => changeAssetTab('technology')}
             >
               <Laptop className="w-5 h-5" />
               <span>Technology</span>
             </button>
-            <button 
-              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${
-                activeAssetTab === 'study-rooms' 
-                  ? 'bg-amber-50 text-amber-700 border-b-2 border-amber-500' 
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`} 
+            <button
+              className={`flex items-center gap-2 flex-1 min-w-[120px] px-4 py-3 text-sm font-medium transition-all duration-200 ${activeAssetTab === 'study-rooms'
+                ? 'bg-amber-50 text-amber-700 border-b-2 border-amber-500'
+                : 'text-gray-600 hover:bg-gray-50'
+                }`}
               onClick={() => changeAssetTab('study-rooms')}
             >
               <Building2 className="w-5 h-5" />
@@ -2271,224 +2483,223 @@ function Librarian() {
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ duration: 0.3, delay: Math.min(index * 0.03, 0.5) }}
-                  className="bg-white rounded-xl shadow-md hover:shadow-2xl transition-all duration-300 overflow-hidden group border border-gray-200 flex flex-col"
-                >
-                  {/* Card Header */}
-                  <div className={`p-3 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200 flex items-center justify-between`}>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-bold ${theme.text} ${theme.bg} px-3 py-1 rounded-full`}>
-                        #{index + 1}
-                      </span>
-                      <span className={`text-sm font-medium ${availabilityBadgeClass} px-2 py-1 rounded-full text-xs`}>
-                        {availabilityLabel}
-                      </span>
+                    className="bg-white rounded-xl shadow-md hover:shadow-2xl transition-all duration-300 overflow-hidden group border border-gray-200 flex flex-col"
+                  >
+                    {/* Card Header */}
+                    <div className={`p-3 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200 flex items-center justify-between`}>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-bold ${theme.text} ${theme.bg} px-3 py-1 rounded-full`}>
+                          #{index + 1}
+                        </span>
+                        <span className={`text-sm font-medium ${availabilityBadgeClass} px-2 py-1 rounded-full text-xs`}>
+                          {availabilityLabel}
+                        </span>
+                      </div>
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        <button
+                          className="p-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                          onClick={() => openEditAssetModal(item)}
+                          title="Edit"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          className="p-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                          onClick={() => openDeleteModal(item)}
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                      <button 
-                        className="p-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-                        onClick={() => openEditAssetModal(item)} 
-                        title="Edit"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button 
-                        className="p-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-                        onClick={() => openDeleteModal(item)} 
-                        title="Delete"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  
-                  {/* Image/Thumbnail */}
-                  <div className="relative w-full bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden" style={{ height: '420px' }}>
-                    <img 
-                      src={item.Image_URL ? `${item.Image_URL}?t=${imageRefreshKey}` : `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'png')}?t=${imageRefreshKey}`}
-                      alt={item.Title || item.Room_Number || 'Asset'}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      onLoad={(e) => {
-                        e.target.style.display = 'block'
-                        const placeholder = e.target.nextElementSibling
-                        if (placeholder) placeholder.style.display = 'none'
-                      }}
-                      onError={(e) => {
-                        const currentSrc = e.target.src
-                        if (currentSrc.includes('.png')) {
-                          e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'jpg')}?t=${imageRefreshKey}`
-                        } else {
-                          e.target.style.display = 'none'
+
+                    {/* Image/Thumbnail */}
+                    <div className="relative w-full bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden" style={{ height: '420px' }}>
+                      <img
+                        src={item.Image_URL ? `${item.Image_URL}?t=${imageRefreshKey}` : `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'png')}?t=${imageRefreshKey}`}
+                        alt={item.Title || item.Room_Number || 'Asset'}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        onLoad={(e) => {
+                          e.target.style.display = 'block'
                           const placeholder = e.target.nextElementSibling
-                          if (placeholder) placeholder.style.display = 'flex'
-                        }
-                      }}
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-200 to-gray-300" style={{ display: 'none' }}>
-                      <div className="text-center">
-                        <span className="text-5xl mb-2 block">{theme.icon}</span>
-                        <span className="text-gray-500 text-sm font-medium">No Image</span>
-                      </div>
-                    </div>
-                    {/* Gradient Overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  </div>
-                  
-                  {/* Card Content */}
-                  <div className="p-4 space-y-3 flex-1 flex flex-col">
-                    {/* Title */}
-                    <h3 className="text-base font-bold text-gray-900 line-clamp-2 min-h-[3rem]">
-                      {item.Title || item.Description || item.Room_Number || 'Untitled'}
-                    </h3>
-                    
-                    {/* Key Info */}
-                    <div className="space-y-2 flex-1">
-                      {activeAssetTab === 'books' && (
-                        <>
-                          <div className="flex items-center gap-2 text-sm">
-                            <User className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-700 font-medium">{item.Author}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Barcode className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-600">{item.ISBN}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <FileText className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-600">{item.Page_Count} pages</span>
-                          </div>
-                        </>
-                      )}
-                      
-                      {activeAssetTab === 'cds' && (
-                        <>
-                          <div className="flex items-center gap-2 text-sm">
-                            <User className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-700 font-medium">{item.Artist}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Music className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-600">{item.Total_Tracks} tracks</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Clock className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-600">{item.Total_Duration_In_Minutes} min</span>
-                          </div>
-                        </>
-                      )}
-                      
-                      {activeAssetTab === 'audiobooks' && (
-                        <>
-                          <div className="flex items-center gap-2 text-sm">
-                            <User className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-700 font-medium">{item.Author}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Barcode className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-600">{item.ISBN}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Clock className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-600">{item.length} min</span>
-                          </div>
-                        </>
-                      )}
-                      
-                      {activeAssetTab === 'movies' && (
-                        <>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-600">Released: {item.Release_Year}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Shield className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-600">Rating: {item.Age_Rating}</span>
-                          </div>
-                        </>
-                      )}
-                      
-                      {activeAssetTab === 'technology' && (
-                        <>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Hash className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-600">Model: {item.Model_Num}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Tag className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-600">Type: {item.Type}</span>
-                          </div>
-                        </>
-                      )}
-                      
-                      {activeAssetTab === 'study-rooms' && (
-                        <>
-                          <div className="flex items-center gap-2 text-sm">
-                            <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-700 font-medium">Room {item.Room_Number}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Users className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-600">Capacity: {item.Capacity}</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                    
-                    {/* Copies Info */}
-                    {showCopiesInfo && (
-                      <div className="pt-3 border-t border-gray-100">
-                        <div className="flex items-center justify-between text-sm">
-                          <div className="flex items-center gap-2">
-                            <Package className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-gray-600">
-                              {activeAssetTab === 'technology' ? 'Quantity:' : 'Copies:'}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-gray-900">{Number.isNaN(copiesTotal) ? 0 : copiesTotal}</span>
-                            <span className="text-gray-400">•</span>
-                            <span className={`font-semibold ${
-                              status === 'available' ? 'text-green-600' : 'text-red-600'
-                            }`}>
-                              {Number.isNaN(availableCount) ? 0 : Math.max(availableCount, 0)} available
-                            </span>
-                          </div>
-                        </div>
-                        {/* Progress Bar */}
-                        <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full bg-gradient-to-r ${theme.gradient} transition-all duration-300`}
-                            style={{ width: `${progressPercent}%` }}
-                          ></div>
+                          if (placeholder) placeholder.style.display = 'none'
+                        }}
+                        onError={(e) => {
+                          const currentSrc = e.target.src
+                          if (currentSrc.includes('.png')) {
+                            e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'jpg')}?t=${imageRefreshKey}`
+                          } else {
+                            e.target.style.display = 'none'
+                            const placeholder = e.target.nextElementSibling
+                            if (placeholder) placeholder.style.display = 'flex'
+                          }
+                        }}
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-200 to-gray-300" style={{ display: 'none' }}>
+                        <div className="text-center">
+                          <span className="text-5xl mb-2 block">{theme.icon}</span>
+                          <span className="text-gray-500 text-sm font-medium">No Image</span>
                         </div>
                       </div>
-                    )}
-                    {activeAssetTab === 'study-rooms' && (
-                      <div className="pt-3 border-t border-gray-100 mt-3">
-                        <div className="flex items-center justify-between text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                          <span>Room Status</span>
-                          {roomStatusUpdating === item.Asset_ID && (
-                            <span className="text-indigo-500">Updating…</span>
-                          )}
-                        </div>
-                        {status === 'reserved' ? (
-                          <p className="text-sm text-gray-500 mt-2">
-                            Status is controlled by active reservations.
-                          </p>
-                        ) : (
-                          <select
-                            value={status === 'maintenance' ? 'maintenance' : 'available'}
-                            onChange={(e) => handleStudyRoomStatusChange(item.Asset_ID, e.target.value)}
-                            disabled={roomStatusUpdating === item.Asset_ID}
-                            className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                          >
-                            <option value="available">Available</option>
-                            <option value="maintenance">Maintenance</option>
-                          </select>
+                      {/* Gradient Overlay */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    </div>
+
+                    {/* Card Content */}
+                    <div className="p-4 space-y-3 flex-1 flex flex-col">
+                      {/* Title */}
+                      <h3 className="text-base font-bold text-gray-900 line-clamp-2 min-h-[3rem]">
+                        {item.Title || item.Description || item.Room_Number || 'Untitled'}
+                      </h3>
+
+                      {/* Key Info */}
+                      <div className="space-y-2 flex-1">
+                        {activeAssetTab === 'books' && (
+                          <>
+                            <div className="flex items-center gap-2 text-sm">
+                              <User className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-700 font-medium">{item.Author}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Barcode className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-600">{item.ISBN}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                              <FileText className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-600">{item.Page_Count} pages</span>
+                            </div>
+                          </>
+                        )}
+
+                        {activeAssetTab === 'cds' && (
+                          <>
+                            <div className="flex items-center gap-2 text-sm">
+                              <User className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-700 font-medium">{item.Artist}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Music className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-600">{item.Total_Tracks} tracks</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Clock className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-600">{item.Total_Duration_In_Minutes} min</span>
+                            </div>
+                          </>
+                        )}
+
+                        {activeAssetTab === 'audiobooks' && (
+                          <>
+                            <div className="flex items-center gap-2 text-sm">
+                              <User className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-700 font-medium">{item.Author}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Barcode className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-600">{item.ISBN}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Clock className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-600">{item.length} min</span>
+                            </div>
+                          </>
+                        )}
+
+                        {activeAssetTab === 'movies' && (
+                          <>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-600">Released: {item.Release_Year}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Shield className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-600">Rating: {item.Age_Rating}</span>
+                            </div>
+                          </>
+                        )}
+
+                        {activeAssetTab === 'technology' && (
+                          <>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Hash className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-600">Model: {item.Model_Num}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Tag className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-600">Type: {item.Type}</span>
+                            </div>
+                          </>
+                        )}
+
+                        {activeAssetTab === 'study-rooms' && (
+                          <>
+                            <div className="flex items-center gap-2 text-sm">
+                              <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-700 font-medium">Room {item.Room_Number}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Users className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-600">Capacity: {item.Capacity}</span>
+                            </div>
+                          </>
                         )}
                       </div>
-                    )}
-                  </div>
-                </motion.div>
+
+                      {/* Copies Info */}
+                      {showCopiesInfo && (
+                        <div className="pt-3 border-t border-gray-100">
+                          <div className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2">
+                              <Package className="w-3.5 h-3.5 text-gray-400" />
+                              <span className="text-gray-600">
+                                {activeAssetTab === 'technology' ? 'Quantity:' : 'Copies:'}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-gray-900">{Number.isNaN(copiesTotal) ? 0 : copiesTotal}</span>
+                              <span className="text-gray-400">•</span>
+                              <span className={`font-semibold ${status === 'available' ? 'text-green-600' : 'text-red-600'
+                                }`}>
+                                {Number.isNaN(availableCount) ? 0 : Math.max(availableCount, 0)} available
+                              </span>
+                            </div>
+                          </div>
+                          {/* Progress Bar */}
+                          <div className="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full bg-gradient-to-r ${theme.gradient} transition-all duration-300`}
+                              style={{ width: `${progressPercent}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      )}
+                      {activeAssetTab === 'study-rooms' && (
+                        <div className="pt-3 border-t border-gray-100 mt-3">
+                          <div className="flex items-center justify-between text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            <span>Room Status</span>
+                            {roomStatusUpdating === item.Asset_ID && (
+                              <span className="text-indigo-500">Updating…</span>
+                            )}
+                          </div>
+                          {status === 'reserved' ? (
+                            <p className="text-sm text-gray-500 mt-2">
+                              Status is controlled by active reservations.
+                            </p>
+                          ) : (
+                            <select
+                              value={status === 'maintenance' ? 'maintenance' : 'available'}
+                              onChange={(e) => handleStudyRoomStatusChange(item.Asset_ID, e.target.value)}
+                              disabled={roomStatusUpdating === item.Asset_ID}
+                              className="mt-2 w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            >
+                              <option value="available">Available</option>
+                              <option value="maintenance">Maintenance</option>
+                            </select>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
                 )
               })
             )}
@@ -2498,7 +2709,7 @@ function Librarian() {
     )
   }
 
-   // Calendar Helpers
+  // Calendar Helpers
   const getMonthMatrix = (date) => {
 
     // making all these variables
@@ -2507,16 +2718,16 @@ function Librarian() {
     const matrix = []
     const firstCell = new Date(start)
     firstCell.setDate(start.getDate() - startDay)
-    
+
     // setting lengths for rows and columns
     for (let week = 0; week < 6; week++) {
 
       const row = []
       for (let day = 0; day < 7; day++) {
 
-          const cell = new Date(firstCell)
-          cell.setDate(firstCell.getDate() + week * 7 + day)
-          row.push(cell)
+        const cell = new Date(firstCell)
+        cell.setDate(firstCell.getDate() + week * 7 + day)
+        row.push(cell)
       }
 
       matrix.push(row)
@@ -2525,579 +2736,576 @@ function Librarian() {
 
   }
 
-const isoDate = (d) => d.toISOString().slice(0,10)
+  const isoDate = (d) => d.toISOString().slice(0, 10)
 
-// Merge server events and internal records for a given date
+  // Merge server events and internal records for a given date
 
-// Map numeric recurring codes to meanings (adjust to match your DB mapping)
-const RECUR_MAP = {
-  0: 'none',
-  1: 'weekly',
-  2: 'daily',
-  3: 'monthly',
-  4: 'yearly',
-  5: 'weekdays', // Mon-Fri
-  6: 'weekends'  // Sat-Sun
-}
-
-// determine if recurring event applies to the given date
-const isRecurringMatch = (ev, date) => {
-  if (!ev) return false
-  const recRaw = ev.recurring
-  const code = Number.isFinite(Number(recRaw)) ? parseInt(recRaw, 10) : null
-  const kind = code !== null && code in RECUR_MAP ? RECUR_MAP[code] : String(ev.recurring || '').toLowerCase().trim()
-
-  if (kind === 'none' || !kind) return false
-
-  const start = ev.Event_Date ? new Date(ev.Event_Date) : null
-  if (!start || isNaN(start.getTime())) return false
-
-  const target = new Date(date.getFullYear(), date.getMonth(), date.getDate())
-  const startMid = new Date(start.getFullYear(), start.getMonth(), start.getDate())
-
-  if (target < startMid) return false // don't occur before start
-
-  const dow = target.getDay() // 0 Sun .. 6 Sat
-  switch (kind) {
-    case 'daily':
-      return true
-    case 'weekly':
-      return startMid.getDay() === dow
-    case 'monthly':
-      return startMid.getDate() === target.getDate()
-    case 'yearly':
-      return startMid.getDate() === target.getDate() && startMid.getMonth() === target.getMonth()
-    case 'weekdays':
-      return dow >= 1 && dow <= 5
-    case 'weekends':
-      return dow === 0 || dow === 6
-    default:
-      // fallback: support comma-separated day names like "mon,wed,fri"
-      if (typeof kind === 'string' && /[a-z]/.test(kind)) {
-        const dayNameMap = { sun:0, sunday:0, mon:1, monday:1, tue:2, tues:2, tuesday:2, wed:3, wednesday:3, thu:4, thur:4, thursday:4, fri:5, friday:5, sat:6, saturday:6 }
-        const tokens = kind.split(',').map(t => t.trim()).filter(Boolean)
-        return tokens.some(t => dayNameMap[t] === dow)
-      }
-      return false
-  }
-}
-
-
-const collectEventsForDay = (d) => {
-  const dayKey = isoDate(d)
-  const out = []
-  const seen = new Set() // avoid duplicates when an event matches multiple rules
-
-  // Only include server calendar rows (Calendar table). Expect Event_Date in ISO/YYYY-MM-DD format.
-  if (Array.isArray(events)) {
-    events.forEach((ev) => {
-      const evDate = ev.Event_Date ? String(ev.Event_Date).slice(0, 10) : null
-      const id = ev.Event_ID ?? ev.id ?? ev.EventId ?? null
-
-      // If exact date matches, add once and skip recurring logic for this event
-      if (evDate === dayKey) {
-        if (!id || !seen.has(id)) {
-          out.push({
-            type: 'event',
-            label: ev.Title || ev.Title?.toString?.() || 'Event',
-            raw: ev,
-            recurring: false
-          })
-          if (id) seen.add(id)
-        }
-        return
-      }
-
-      // Otherwise check recurring rules (only if not already added)
-      if (ev.recurring && isRecurringMatch(ev, d)) {
-        if (!id || !seen.has(id)) {
-          out.push({
-            type: 'event',
-            label: ev.Title || ev.Title?.toString?.() || 'Event',
-            raw: ev,
-            recurring: true
-          })
-          if (id) seen.add(id)
-        }
-      }
-    })
+  // Map numeric recurring codes to meanings (adjust to match your DB mapping)
+  const RECUR_MAP = {
+    0: 'none',
+    1: 'weekly',
+    2: 'daily',
+    3: 'monthly',
+    4: 'yearly',
+    5: 'weekdays', // Mon-Fri
+    6: 'weekends'  // Sat-Sun
   }
 
-  return out
-}
+  // determine if recurring event applies to the given date
+  const isRecurringMatch = (ev, date) => {
+    if (!ev) return false
+    const recRaw = ev.recurring
+    const code = Number.isFinite(Number(recRaw)) ? parseInt(recRaw, 10) : null
+    const kind = code !== null && code in RECUR_MAP ? RECUR_MAP[code] : String(ev.recurring || '').toLowerCase().trim()
 
-// Event Handler
-const handleAddEvent = async (e) => {
+    if (kind === 'none' || !kind) return false
 
-  e.preventDefault()
+    const start = ev.Event_Date ? new Date(ev.Event_Date) : null
+    if (!start || isNaN(start.getTime())) return false
 
-  // Validation
-  if (!newEventForm.Title || !newEventForm.Event_Date || !newEventForm.Start_Time || !newEventForm.End_Time) {
-    setError('Please fill in all required fields (Title, Date, Start Time, End Time)')
-    setTimeout(() => setError(''), 4000)
-    return
-  } 
+    const target = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    const startMid = new Date(start.getFullYear(), start.getMonth(), start.getDate())
 
+    if (target < startMid) return false // don't occur before start
 
-// Validate times
-if (newEventForm.Start_Time >= newEventForm.End_Time) {
-  setError('Start Time must be before End Time')
-  setTimeout(() => setError(''), 4000)
-  return
-}
-
-setLoading(true)
-  try {
-    const payload = {
-      Title: newEventForm.Title,
-      Event_Date: newEventForm.Event_Date,
-      Start_Time: newEventForm.Start_Time,
-      End_Time: newEventForm.End_Time,
-      Details: newEventForm.Details || null,
-      Image_URL: newEventForm.Image_URL || null,
-      recurring: parseInt(newEventForm.recurring, 10) || 0
+    const dow = target.getDay() // 0 Sun .. 6 Sat
+    switch (kind) {
+      case 'daily':
+        return true
+      case 'weekly':
+        return startMid.getDay() === dow
+      case 'monthly':
+        return startMid.getDate() === target.getDate()
+      case 'yearly':
+        return startMid.getDate() === target.getDate() && startMid.getMonth() === target.getMonth()
+      case 'weekdays':
+        return dow >= 1 && dow <= 5
+      case 'weekends':
+        return dow === 0 || dow === 6
+      default:
+        // fallback: support comma-separated day names like "mon,wed,fri"
+        if (typeof kind === 'string' && /[a-z]/.test(kind)) {
+          const dayNameMap = { sun: 0, sunday: 0, mon: 1, monday: 1, tue: 2, tues: 2, tuesday: 2, wed: 3, wednesday: 3, thu: 4, thur: 4, thursday: 4, fri: 5, friday: 5, sat: 6, saturday: 6 }
+          const tokens = kind.split(',').map(t => t.trim()).filter(Boolean)
+          return tokens.some(t => dayNameMap[t] === dow)
+        }
+        return false
     }
-  
-    const res = await fetch(`${API_URL}/events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    })
+  }
 
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({ error: 'Failed to create event' }))
-      throw new Error(errData.error || 'Failed to create event')
+
+  const collectEventsForDay = (d) => {
+    const dayKey = isoDate(d)
+    const out = []
+    const seen = new Set() // avoid duplicates when an event matches multiple rules
+
+    // Only include server calendar rows (Calendar table). Expect Event_Date in ISO/YYYY-MM-DD format.
+    if (Array.isArray(events)) {
+      events.forEach((ev) => {
+        const evDate = ev.Event_Date ? String(ev.Event_Date).slice(0, 10) : null
+        const id = ev.Event_ID ?? ev.id ?? ev.EventId ?? null
+
+        // If exact date matches, add once and skip recurring logic for this event
+        if (evDate === dayKey) {
+          if (!id || !seen.has(id)) {
+            out.push({
+              type: 'event',
+              label: ev.Title || ev.Title?.toString?.() || 'Event',
+              raw: ev,
+              recurring: false
+            })
+            if (id) seen.add(id)
+          }
+          return
+        }
+
+        // Otherwise check recurring rules (only if not already added)
+        if (ev.recurring && isRecurringMatch(ev, d)) {
+          if (!id || !seen.has(id)) {
+            out.push({
+              type: 'event',
+              label: ev.Title || ev.Title?.toString?.() || 'Event',
+              raw: ev,
+              recurring: true
+            })
+            if (id) seen.add(id)
+          }
+        }
+      })
     }
 
-    // Success: refresh events and close modal
-    await fetchEvents()
-    setSuccessMessage('Event added successfully!')
-    setTimeout(() => setSuccessMessage(''), 3000)
-    
-    setShowEventModal(false)
-    setNewEventForm({
-      Title: '',
-      Event_Date: new Date().toISOString().slice(0, 10),
-      Start_Time: '09:00',
-      End_Time: '10:00',
-      Details: '',
-      Image_URL: '',
-      recurring: 0
-    })
-    setFlaggedForDeletion(new Set())
-  } catch (err) {
-    console.error('Add event error:', err)
-    setError(err.message || 'Failed to add event')
-    setTimeout(() => setError(''), 4000)
-  } finally {
-    setLoading(false)
-  }
-}
-
-
-// Toggle flag for deletion
-const toggleFlagEvent = (eventId) => {
-  const newFlagged = new Set(flaggedForDeletion)
-  if (newFlagged.has(eventId)) {
-    newFlagged.delete(eventId)
-  } else {
-    newFlagged.add(eventId)
-  }
-  setFlaggedForDeletion(newFlagged)
-}
-
-// Delete flagged events
-const deleteFlaggedEvents = async () => {
-  if (flaggedForDeletion.size === 0) {
-    setError('No events flagged for deletion')
-    setTimeout(() => setError(''), 3000)
-    return
+    return out
   }
 
-  const confirm = window.confirm(
-    `Are you sure you want to delete ${flaggedForDeletion.size} event(s)? This action cannot be undone.`
-  )
-  if (!confirm) return
+  // Event Handler
+  const handleAddEvent = async (e) => {
 
-  setLoading(true)
-  const flaggedIds = Array.from(flaggedForDeletion)
-  
-  try {
-    const deletePromises = flaggedIds.map(id =>
-      fetch(`${API_URL}/events/${id}`, { method: 'DELETE' })
-    )
-    
-    const results = await Promise.all(deletePromises)
-    const failed = results.filter(r => !r.ok)
+    e.preventDefault()
 
-    if (failed.length > 0) {
-      setError(`Failed to delete ${failed.length} event(s)`)
+    // Validation
+    if (!newEventForm.Title || !newEventForm.Event_Date || !newEventForm.Start_Time || !newEventForm.End_Time) {
+      setError('Please fill in all required fields (Title, Date, Start Time, End Time)')
       setTimeout(() => setError(''), 4000)
-    } else {
-      setSuccessMessage(`${flaggedIds.length} event(s) deleted successfully!`)
-      setTimeout(() => setSuccessMessage(''), 3000)
+      return
     }
 
-    setFlaggedForDeletion(new Set())
-    await fetchEvents()
-  } catch (err) {
-    console.error('Error deleting events:', err)
-    setError('Failed to delete events')
-    setTimeout(() => setError(''), 4000)
-  } finally {
-    setLoading(false)
+
+    // Validate times
+    if (newEventForm.Start_Time >= newEventForm.End_Time) {
+      setError('Start Time must be before End Time')
+      setTimeout(() => setError(''), 4000)
+      return
+    }
+
+    setLoading(true)
+    try {
+      const payload = {
+        Title: newEventForm.Title,
+        Event_Date: newEventForm.Event_Date,
+        Start_Time: newEventForm.Start_Time,
+        End_Time: newEventForm.End_Time,
+        Details: newEventForm.Details || null,
+        Image_URL: newEventForm.Image_URL || null,
+        recurring: parseInt(newEventForm.recurring, 10) || 0
+      }
+
+      const res = await fetch(`${API_URL}/events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: 'Failed to create event' }))
+        throw new Error(errData.error || 'Failed to create event')
+      }
+
+      // Success: refresh events and close modal
+      await fetchEvents()
+      setSuccessMessage('Event added successfully!')
+      setTimeout(() => setSuccessMessage(''), 3000)
+
+      setShowEventModal(false)
+      setNewEventForm({
+        Title: '',
+        Event_Date: new Date().toISOString().slice(0, 10),
+        Start_Time: '09:00',
+        End_Time: '10:00',
+        Details: '',
+        Image_URL: '',
+        recurring: 0
+      })
+      setFlaggedForDeletion(new Set())
+    } catch (err) {
+      console.error('Add event error:', err)
+      setError(err.message || 'Failed to add event')
+      setTimeout(() => setError(''), 4000)
+    } finally {
+      setLoading(false)
+    }
   }
-}
 
-const renderCalendar = () => {
-  const matrix = getMonthMatrix(calendarDate)
-  const monthLabel = calendarDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
 
-  return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="p-6">
-      {/* Header Section */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Events Calendar</h2>
-          <p className="text-sm text-gray-600 mt-1">View, add, and manage library events</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Previous Month Button */}
-          <button 
-            onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))} 
-            className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            title="Previous month"
-          >
-            ◀
-          </button>
-          
-          {/* Month/Year Display */}
-          <div className="px-4 py-2 bg-white border border-gray-300 rounded-lg font-medium text-gray-900 min-w-[180px] text-center">
-            {monthLabel}
+  // Toggle flag for deletion
+  const toggleFlagEvent = (eventId) => {
+    const newFlagged = new Set(flaggedForDeletion)
+    if (newFlagged.has(eventId)) {
+      newFlagged.delete(eventId)
+    } else {
+      newFlagged.add(eventId)
+    }
+    setFlaggedForDeletion(newFlagged)
+  }
+
+  // Delete flagged events
+  const deleteFlaggedEvents = async () => {
+    if (flaggedForDeletion.size === 0) {
+      setError('No events flagged for deletion')
+      setTimeout(() => setError(''), 3000)
+      return
+    }
+
+    const confirm = window.confirm(
+      `Are you sure you want to delete ${flaggedForDeletion.size} event(s)? This action cannot be undone.`
+    )
+    if (!confirm) return
+
+    setLoading(true)
+    const flaggedIds = Array.from(flaggedForDeletion)
+
+    try {
+      const deletePromises = flaggedIds.map(id =>
+        fetch(`${API_URL}/events/${id}`, { method: 'DELETE' })
+      )
+
+      const results = await Promise.all(deletePromises)
+      const failed = results.filter(r => !r.ok)
+
+      if (failed.length > 0) {
+        setError(`Failed to delete ${failed.length} event(s)`)
+        setTimeout(() => setError(''), 4000)
+      } else {
+        setSuccessMessage(`${flaggedIds.length} event(s) deleted successfully!`)
+        setTimeout(() => setSuccessMessage(''), 3000)
+      }
+
+      setFlaggedForDeletion(new Set())
+      await fetchEvents()
+    } catch (err) {
+      console.error('Error deleting events:', err)
+      setError('Failed to delete events')
+      setTimeout(() => setError(''), 4000)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const renderCalendar = () => {
+    const matrix = getMonthMatrix(calendarDate)
+    const monthLabel = calendarDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+
+    return (
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="p-6">
+        {/* Header Section */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">Events Calendar</h2>
+            <p className="text-sm text-gray-600 mt-1">View, add, and manage library events</p>
           </div>
-          
-          {/* Next Month Button */}
-          <button 
-            onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))} 
-            className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            title="Next month"
-          >
-            ▶
-          </button>
-
-          {/* Add Event Button */}
-          <button 
-            onClick={() => setShowEventModal(true)}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center gap-2 shadow-md"
-            title="Add new event"
-          >
-            <Plus className="w-4 h-4" />
-            Add Event
-          </button>
-
-          {/* Delete Flagged Button */}
-          <button
-            onClick={deleteFlaggedEvents}
-            disabled={flaggedForDeletion.size === 0}
-            className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-all ${
-              flaggedForDeletion.size === 0 
-                ? 'bg-gray-200 text-gray-500 cursor-not-allowed' 
-                : 'bg-red-600 text-white hover:bg-red-700 shadow-md'
-            }`}
-            title={flaggedForDeletion.size === 0 ? 'No events flagged' : `Delete ${flaggedForDeletion.size} event(s)`}
-          >
-            <Trash2 className="w-4 h-4" />
-            Delete ({flaggedForDeletion.size})
-          </button>
-        </div>
-      </div>
-
-      {/* Error/Success Messages */}
-      {error && (
-        <div className="mb-4 p-3 bg-red-100 border border-red-300 rounded-lg text-red-700 text-sm">
-          {error}
-        </div>
-      )}
-      {successMessage && (
-        <div className="mb-4 p-3 bg-green-100 border border-green-300 rounded-lg text-green-700 text-sm">
-          {successMessage}
-        </div>
-      )}
-
-      {/* Day Headers */}
-      <div className="grid grid-cols-7 gap-2 mb-2">
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-          <div key={d} className="text-xs text-center font-semibold text-gray-500 py-2">
-            {d}
-          </div>
-        ))}
-      </div>
-
-      {/* Calendar Grid */}
-      <div className="grid grid-cols-7 gap-2 mb-4">
-        {matrix.flat().map((day) => {
-          const inMonth = day.getMonth() === calendarDate.getMonth()
-          const isToday = isoDate(day) === isoDate(new Date())
-          const isSelected = isoDate(day) === isoDate(selectedDate)
-          const evs = collectEventsForDay(day)
-          
-          return (
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Previous Month Button */}
             <button
-              key={day.toString()}
-              onClick={() => {
-                setSelectedDate(day)
-                setCalendarOpenDayEvents(collectEventsForDay(day))
-              }}
-              className={`p-2 h-28 text-left rounded-lg border-2 transition-all ${
-                inMonth ? 'bg-white hover:border-indigo-400' : 'bg-gray-50 text-gray-400'
-              } ${isSelected ? 'ring-2 ring-indigo-300 border-indigo-500' : 'border-gray-200'}`}
+              onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1))}
+              className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              title="Previous month"
             >
-              <div className="flex items-center justify-between mb-1">
-                <span className={`text-sm font-bold ${inMonth ? 'text-gray-900' : 'text-gray-400'}`}>
-                  {day.getDate()}
-                </span>
-                {evs.length > 0 && (
-                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-semibold">
-                    {evs.length}
-                  </span>
-                )}
-              </div>
-              <div className="text-xs space-y-1">
-                {evs.slice(0, 2).map((e, i) => (
-                  <div 
-                    key={i} 
-                    className={`truncate font-medium ${
-                      e.type === 'overdue' ? 'text-red-600' : 'text-indigo-600'
-                    }`}
-                    title={e.label}
-                  >
-                    {e.label}
-                  </div>
-                ))}
-                {evs.length > 2 && (
-                  <div className="text-xs text-gray-500 italic">
-                    +{evs.length - 2} more
-                  </div>
-                )}
-              </div>
+              ◀
             </button>
-          )
-        })}
-      </div>
 
-      {/* Event Detail Panel */}
-      <div className="bg-white rounded-xl shadow-md p-4 border border-gray-200">
-        <h3 className="text-sm font-bold text-gray-900 mb-3">
-          Events on {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}
-        </h3>
-        {calendarOpenDayEvents.length === 0 ? (
-          <p className="text-sm text-gray-500 text-center py-4">No events for this day</p>
-        ) : (
-          <ul className="space-y-2 max-h-80 overflow-y-auto">
-            {calendarOpenDayEvents.map((ev, idx) => (
-              <li 
-                key={idx} 
-                className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg flex items-start justify-between hover:bg-indigo-100 transition-colors"
-              >
-                <div className="flex-1">
-                  <div className="text-sm font-bold text-gray-900">{ev.label}</div>
-                  {ev.raw?.Details && (
-                    <div className="text-xs text-gray-600 mt-1">{ev.raw.Details}</div>
-                  )}
-                  <div className="text-xs text-gray-500 mt-1">
-                    {ev.raw?.Start_Time && `${ev.raw.Start_Time.slice(0, 5)}`}
-                    {ev.raw?.Start_Time && ev.raw?.End_Time && ' - '}
-                    {ev.raw?.End_Time && `${ev.raw.End_Time.slice(0, 5)}`}
-                  </div>
-                </div>
-                {ev.raw?.Event_ID && (
-                   <label className="ml-2 flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={flaggedForDeletion.has(ev.raw.Event_ID)}
-                      onChange={() => toggleFlagEvent(ev.raw.Event_ID)}
-                      className="w-5 h-5 md:w-6 md:h-6 rounded border-gray-300 text-red-600 focus:ring-2 focus:ring-red-500 transform transition-transform duration-150"
-                      aria-label={flaggedForDeletion.has(ev.raw.Event_ID) ? 'Unflag for deletion' : 'Flag for deletion'}
-                    />
-                    <span className={`text-xs font-medium ${flaggedForDeletion.has(ev.raw.Event_ID) ? 'text-red-700' : 'text-gray-700'}`}>
-                      {flaggedForDeletion.has(ev.raw.Event_ID)}
-                    </span>
-                  </label>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* Add Event Modal */}
-      {showEventModal && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 overflow-y-auto"
-          onClick={() => setShowEventModal(false)}
-        >
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.2 }}
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-4 rounded-t-2xl flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Calendar className="w-6 h-6 text-white" />
-                <h3 className="text-xl font-bold text-white">Add Event</h3>
-              </div>
-              <button 
-                onClick={() => setShowEventModal(false)}
-                className="text-white hover:bg-white/20 rounded-full p-1 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            {/* Month/Year Display */}
+            <div className="px-4 py-2 bg-white border border-gray-300 rounded-lg font-medium text-gray-900 min-w-[180px] text-center">
+              {monthLabel}
             </div>
 
-            {/* Modal Content */}
-            <form onSubmit={handleAddEvent} className="p-6 space-y-4">
-              {/* Title */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Event Title *
-                </label>
-                <input 
-                  type="text"
-                  required
-                  placeholder="e.g., Book Reading Session"
-                  value={newEventForm.Title}
-                  onChange={(e) => setNewEventForm({...newEventForm, Title: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                />
-              </div>
+            {/* Next Month Button */}
+            <button
+              onClick={() => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1))}
+              className="px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              title="Next month"
+            >
+              ▶
+            </button>
 
-              {/* Date */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Event Date *
-                </label>
-                <input 
-                  type="date"
-                  required
-                  value={newEventForm.Event_Date}
-                  onChange={(e) => setNewEventForm({...newEventForm, Event_Date: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                />
-              </div>
+            {/* Add Event Button */}
+            <button
+              onClick={() => setShowEventModal(true)}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center gap-2 shadow-md"
+              title="Add new event"
+            >
+              <Plus className="w-4 h-4" />
+              Add Event
+            </button>
 
-              {/* Time Range */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Start Time *
-                  </label>
-                  <input 
-                    type="time"
-                    required
-                    value={newEventForm.Start_Time}
-                    onChange={(e) => setNewEventForm({...newEventForm, Start_Time: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    End Time *
-                  </label>
-                  <input 
-                    type="time"
-                    required
-                    value={newEventForm.End_Time}
-                    onChange={(e) => setNewEventForm({...newEventForm, End_Time: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-
-              {/* Recurrence */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Recurrence
-                </label>
-                <select
-                  value={newEventForm.recurring}
-                  onChange={(e) => setNewEventForm({...newEventForm, recurring: parseInt(e.target.value, 10)})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                >
-                  <option value={0}>No Recurrence</option>
-                  <option value={1}>Weekly (Same day each week)</option>
-                  <option value={2}>Daily</option>
-                  <option value={3}>Monthly (Same date each month)</option>
-                  <option value={4}>Yearly</option>
-                  <option value={5}>Weekdays (Mon-Fri)</option>
-                  <option value={6}>Weekends (Sat-Sun)</option>
-                </select>
-              </div>
-
-              {/* Details */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Details (Optional)
-                </label>
-                <textarea
-                  placeholder="e.g., Location, description, or notes..."
-                  value={newEventForm.Details}
-                  onChange={(e) => setNewEventForm({...newEventForm, Details: e.target.value})}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
-                />
-              </div>
-
-              {/* Image URL */}
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Image URL (Optional)
-                </label>
-                <input 
-                  type="url"
-                  placeholder="https://example.com/image.jpg"
-                  value={newEventForm.Image_URL}
-                  onChange={(e) => setNewEventForm({...newEventForm, Image_URL: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                />
-              </div>
-
-              {/* Modal Actions */}
-              <div className="flex gap-3 pt-4 border-t border-gray-200">
-                <button 
-                  type="button"
-                  onClick={() => setShowEventModal(false)}
-                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {loading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Adding...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-4 h-4" />
-                      <span>Add Event</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </motion.div>
+            {/* Delete Flagged Button */}
+            <button
+              onClick={deleteFlaggedEvents}
+              disabled={flaggedForDeletion.size === 0}
+              className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-all ${flaggedForDeletion.size === 0
+                ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                : 'bg-red-600 text-white hover:bg-red-700 shadow-md'
+                }`}
+              title={flaggedForDeletion.size === 0 ? 'No events flagged' : `Delete ${flaggedForDeletion.size} event(s)`}
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete ({flaggedForDeletion.size})
+            </button>
+          </div>
         </div>
-      )}
-    </motion.div>
-  )
-}
+
+        {/* Error/Success Messages */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-100 border border-red-300 rounded-lg text-red-700 text-sm">
+            {error}
+          </div>
+        )}
+        {successMessage && (
+          <div className="mb-4 p-3 bg-green-100 border border-green-300 rounded-lg text-green-700 text-sm">
+            {successMessage}
+          </div>
+        )}
+
+        {/* Day Headers */}
+        <div className="grid grid-cols-7 gap-2 mb-2">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+            <div key={d} className="text-xs text-center font-semibold text-gray-500 py-2">
+              {d}
+            </div>
+          ))}
+        </div>
+
+        {/* Calendar Grid */}
+        <div className="grid grid-cols-7 gap-2 mb-4">
+          {matrix.flat().map((day) => {
+            const inMonth = day.getMonth() === calendarDate.getMonth()
+            const isToday = isoDate(day) === isoDate(new Date())
+            const isSelected = isoDate(day) === isoDate(selectedDate)
+            const evs = collectEventsForDay(day)
+
+            return (
+              <button
+                key={day.toString()}
+                onClick={() => {
+                  setSelectedDate(day)
+                  setCalendarOpenDayEvents(collectEventsForDay(day))
+                }}
+                className={`p-2 h-28 text-left rounded-lg border-2 transition-all ${inMonth ? 'bg-white hover:border-indigo-400' : 'bg-gray-50 text-gray-400'
+                  } ${isSelected ? 'ring-2 ring-indigo-300 border-indigo-500' : 'border-gray-200'}`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-sm font-bold ${inMonth ? 'text-gray-900' : 'text-gray-400'}`}>
+                    {day.getDate()}
+                  </span>
+                  {evs.length > 0 && (
+                    <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-semibold">
+                      {evs.length}
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs space-y-1">
+                  {evs.slice(0, 2).map((e, i) => (
+                    <div
+                      key={i}
+                      className={`truncate font-medium ${e.type === 'overdue' ? 'text-red-600' : 'text-indigo-600'
+                        }`}
+                      title={e.label}
+                    >
+                      {e.label}
+                    </div>
+                  ))}
+                  {evs.length > 2 && (
+                    <div className="text-xs text-gray-500 italic">
+                      +{evs.length - 2} more
+                    </div>
+                  )}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Event Detail Panel */}
+        <div className="bg-white rounded-xl shadow-md p-4 border border-gray-200">
+          <h3 className="text-sm font-bold text-gray-900 mb-3">
+            Events on {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' })}
+          </h3>
+          {calendarOpenDayEvents.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-4">No events for this day</p>
+          ) : (
+            <ul className="space-y-2 max-h-80 overflow-y-auto">
+              {calendarOpenDayEvents.map((ev, idx) => (
+                <li
+                  key={idx}
+                  className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg flex items-start justify-between hover:bg-indigo-100 transition-colors"
+                >
+                  <div className="flex-1">
+                    <div className="text-sm font-bold text-gray-900">{ev.label}</div>
+                    {ev.raw?.Details && (
+                      <div className="text-xs text-gray-600 mt-1">{ev.raw.Details}</div>
+                    )}
+                    <div className="text-xs text-gray-500 mt-1">
+                      {ev.raw?.Start_Time && `${ev.raw.Start_Time.slice(0, 5)}`}
+                      {ev.raw?.Start_Time && ev.raw?.End_Time && ' - '}
+                      {ev.raw?.End_Time && `${ev.raw.End_Time.slice(0, 5)}`}
+                    </div>
+                  </div>
+                  {ev.raw?.Event_ID && (
+                    <label className="ml-2 flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={flaggedForDeletion.has(ev.raw.Event_ID)}
+                        onChange={() => toggleFlagEvent(ev.raw.Event_ID)}
+                        className="w-5 h-5 md:w-6 md:h-6 rounded border-gray-300 text-red-600 focus:ring-2 focus:ring-red-500 transform transition-transform duration-150"
+                        aria-label={flaggedForDeletion.has(ev.raw.Event_ID) ? 'Unflag for deletion' : 'Flag for deletion'}
+                      />
+                      <span className={`text-xs font-medium ${flaggedForDeletion.has(ev.raw.Event_ID) ? 'text-red-700' : 'text-gray-700'}`}>
+                        {flaggedForDeletion.has(ev.raw.Event_ID)}
+                      </span>
+                    </label>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Add Event Modal */}
+        {showEventModal && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 overflow-y-auto"
+            onClick={() => setShowEventModal(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.2 }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-lg"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-6 py-4 rounded-t-2xl flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Calendar className="w-6 h-6 text-white" />
+                  <h3 className="text-xl font-bold text-white">Add Event</h3>
+                </div>
+                <button
+                  onClick={() => setShowEventModal(false)}
+                  className="text-white hover:bg-white/20 rounded-full p-1 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <form onSubmit={handleAddEvent} className="p-6 space-y-4">
+                {/* Title */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Event Title *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g., Book Reading Session"
+                    value={newEventForm.Title}
+                    onChange={(e) => setNewEventForm({ ...newEventForm, Title: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+
+                {/* Date */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Event Date *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={newEventForm.Event_Date}
+                    onChange={(e) => setNewEventForm({ ...newEventForm, Event_Date: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+
+                {/* Time Range */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Start Time *
+                    </label>
+                    <input
+                      type="time"
+                      required
+                      value={newEventForm.Start_Time}
+                      onChange={(e) => setNewEventForm({ ...newEventForm, Start_Time: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      End Time *
+                    </label>
+                    <input
+                      type="time"
+                      required
+                      value={newEventForm.End_Time}
+                      onChange={(e) => setNewEventForm({ ...newEventForm, End_Time: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                {/* Recurrence */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Recurrence
+                  </label>
+                  <select
+                    value={newEventForm.recurring}
+                    onChange={(e) => setNewEventForm({ ...newEventForm, recurring: parseInt(e.target.value, 10) })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  >
+                    <option value={0}>No Recurrence</option>
+                    <option value={1}>Weekly (Same day each week)</option>
+                    <option value={2}>Daily</option>
+                    <option value={3}>Monthly (Same date each month)</option>
+                    <option value={4}>Yearly</option>
+                    <option value={5}>Weekdays (Mon-Fri)</option>
+                    <option value={6}>Weekends (Sat-Sun)</option>
+                  </select>
+                </div>
+
+                {/* Details */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Details (Optional)
+                  </label>
+                  <textarea
+                    placeholder="e.g., Location, description, or notes..."
+                    value={newEventForm.Details}
+                    onChange={(e) => setNewEventForm({ ...newEventForm, Details: e.target.value })}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none"
+                  />
+                </div>
+
+                {/* Image URL */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Image URL (Optional)
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://example.com/image.jpg"
+                    value={newEventForm.Image_URL}
+                    onChange={(e) => setNewEventForm({ ...newEventForm, Image_URL: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  />
+                </div>
+
+                {/* Modal Actions */}
+                <div className="flex gap-3 pt-4 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => setShowEventModal(false)}
+                    className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="flex-1 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {loading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Adding...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        <span>Add Event</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </motion.div>
+    )
+  }
   const renderMembers = () => (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -3111,7 +3319,7 @@ const renderCalendar = () => {
           <h2 className="text-2xl font-bold text-gray-900">Manage Members</h2>
           <p className="text-sm text-gray-600 mt-1">View and manage library member accounts</p>
         </div>
-        <button 
+        <button
           className="flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-3 rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all duration-200 shadow-md hover:shadow-lg"
           onClick={openAddMemberModal}
         >
@@ -3140,7 +3348,7 @@ const renderCalendar = () => {
             />
           </div>
         </div>
-        
+
         <select
           value={memberStatusFilter}
           onChange={(e) => {
@@ -3160,7 +3368,7 @@ const renderCalendar = () => {
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-4 border-b border-gray-200">
           <h3 className="text-lg font-semibold text-gray-800">Member Directory</h3>
         </div>
-        
+
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
@@ -3181,8 +3389,8 @@ const renderCalendar = () => {
                   <td colSpan="8" className="px-6 py-12 text-center">
                     <Users className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                     <p className="text-gray-500 font-medium">
-                      {memberSearch || memberStatusFilter !== 'all' 
-                        ? 'No members found matching your criteria' 
+                      {memberSearch || memberStatusFilter !== 'all'
+                        ? 'No members found matching your criteria'
                         : 'No members registered yet'}
                     </p>
                   </td>
@@ -3213,27 +3421,24 @@ const renderCalendar = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{member.User_Email}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{member.Phone_Number || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                        member.Borrowed_Count > 0 
-                          ? 'bg-blue-100 text-blue-800' 
-                          : 'bg-gray-100 text-gray-600'
-                      }`}>
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${member.Borrowed_Count > 0
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-gray-100 text-gray-600'
+                        }`}>
                         {member.Borrowed_Count} {member.Borrowed_Count === 1 ? 'book' : 'books'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`text-sm font-semibold ${
-                        parseFloat(member.Outstanding_Fines) > 0 ? 'text-red-600' : 'text-gray-400'
-                      }`}>
+                      <span className={`text-sm font-semibold ${parseFloat(member.Outstanding_Fines) > 0 ? 'text-red-600' : 'text-gray-400'
+                        }`}>
                         ${parseFloat(member.Outstanding_Fines).toFixed(2)}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                        member.Account_Status === 'active' 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${member.Account_Status === 'active'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-red-100 text-red-800'
+                        }`}>
                         ✓ {member.Account_Status}
                       </span>
                     </td>
@@ -3277,11 +3482,10 @@ const renderCalendar = () => {
           <button
             onClick={() => setMemberPage(Math.max(1, memberPage - 1))}
             disabled={memberPage === 1}
-            className={`px-4 py-2 rounded-lg font-medium transition-all ${
-              memberPage === 1
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 shadow-sm'
-            }`}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${memberPage === 1
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 shadow-sm'
+              }`}
           >
             ← Previous
           </button>
@@ -3291,11 +3495,10 @@ const renderCalendar = () => {
           <button
             onClick={() => setMemberPage(Math.min(memberTotalPages, memberPage + 1))}
             disabled={memberPage === memberTotalPages}
-            className={`px-4 py-2 rounded-lg font-medium transition-all ${
-              memberPage === memberTotalPages
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 shadow-sm'
-            }`}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${memberPage === memberTotalPages
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 shadow-sm'
+              }`}
           >
             Next →
           </button>
@@ -3308,7 +3511,7 @@ const renderCalendar = () => {
     <>
       {/* Modern Add/Edit Member Modal */}
       {showMemberModal && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
           onClick={() => setShowMemberModal(false)}
         >
@@ -3335,7 +3538,7 @@ const renderCalendar = () => {
                     </p>
                   </div>
                 </div>
-                <button 
+                <button
                   onClick={() => setShowMemberModal(false)}
                   className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition-all"
                 >
@@ -3357,12 +3560,11 @@ const renderCalendar = () => {
                     <input
                       type="text"
                       value={memberForm.username}
-                      onChange={(e) => setMemberForm({...memberForm, username: e.target.value})}
+                      onChange={(e) => setMemberForm({ ...memberForm, username: e.target.value })}
                       required
                       disabled={memberModalMode === 'edit'}
-                      className={`w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${
-                        memberModalMode === 'edit' ? 'bg-gray-100 cursor-not-allowed' : ''
-                      }`}
+                      className={`w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all ${memberModalMode === 'edit' ? 'bg-gray-100 cursor-not-allowed' : ''
+                        }`}
                       placeholder="johndoe123"
                     />
                   </div>
@@ -3370,7 +3572,7 @@ const renderCalendar = () => {
                     <p className="text-xs text-gray-500 mt-1">Username cannot be changed</p>
                   )}
                 </div>
-                
+
                 {/* First Name */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -3379,13 +3581,13 @@ const renderCalendar = () => {
                   <input
                     type="text"
                     value={memberForm.firstName}
-                    onChange={(e) => setMemberForm({...memberForm, firstName: e.target.value})}
+                    onChange={(e) => setMemberForm({ ...memberForm, firstName: e.target.value })}
                     required
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                     placeholder="John"
                   />
                 </div>
-                
+
                 {/* Last Name */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -3394,13 +3596,13 @@ const renderCalendar = () => {
                   <input
                     type="text"
                     value={memberForm.lastName}
-                    onChange={(e) => setMemberForm({...memberForm, lastName: e.target.value})}
+                    onChange={(e) => setMemberForm({ ...memberForm, lastName: e.target.value })}
                     required
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                     placeholder="Doe"
                   />
                 </div>
-                
+
                 {/* Email */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -3413,14 +3615,14 @@ const renderCalendar = () => {
                     <input
                       type="email"
                       value={memberForm.email}
-                      onChange={(e) => setMemberForm({...memberForm, email: e.target.value})}
+                      onChange={(e) => setMemberForm({ ...memberForm, email: e.target.value })}
                       required
                       className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                       placeholder="john@university.edu"
                     />
                   </div>
                 </div>
-                
+
                 {/* Phone */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -3433,7 +3635,7 @@ const renderCalendar = () => {
                     <input
                       type="tel"
                       value={memberForm.phone}
-                      onChange={(e) => setMemberForm({...memberForm, phone: e.target.value})}
+                      onChange={(e) => setMemberForm({ ...memberForm, phone: e.target.value })}
                       className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                       placeholder="+1 (555) 123-4567"
                     />
@@ -3450,7 +3652,7 @@ const renderCalendar = () => {
                     <input
                       type="date"
                       value={memberForm.dateOfBirth}
-                      onChange={(e) => setMemberForm({...memberForm, dateOfBirth: e.target.value})}
+                      onChange={(e) => setMemberForm({ ...memberForm, dateOfBirth: e.target.value })}
                       required
                       className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                       max={new Date().toISOString().split('T')[0]}
@@ -3506,18 +3708,18 @@ const renderCalendar = () => {
                   </div>
                 )}
               </div>
-              
+
               {/* Footer Actions */}
               <div className="flex gap-3 mt-8 pt-6 border-t border-gray-200">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => setShowMemberModal(false)}
                   className="flex-1 px-6 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-all font-semibold"
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   disabled={loading}
                   className="flex-1 px-6 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all font-semibold shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -3541,7 +3743,7 @@ const renderCalendar = () => {
 
       {/* Modern Member Detail Modal */}
       {showMemberProfileModal && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 overflow-y-auto"
           onClick={closeMemberProfileModal}
         >
@@ -3559,551 +3761,586 @@ const renderCalendar = () => {
               </div>
             ) : (
               <>
-            {/* Header */}
-            <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-8 py-6 rounded-t-2xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center text-green-600 font-bold text-2xl shadow-lg">
-                    {memberProfile.member.First_Name.charAt(0)}{memberProfile.member.Last_Name.charAt(0)}
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-bold text-white">
-                      {memberProfile.member.First_Name} {memberProfile.member.Last_Name}
-                    </h3>
-                    <p className="text-green-100">Member ID: M{String(memberProfile.member.User_ID).padStart(3, '0')}</p>
-                  </div>
-                </div>
-                <button 
-                  onClick={closeMemberProfileModal}
-                  className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition-all"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-            </div>
-
-            {memberProfileLoading && (
-              <div className="bg-amber-50 text-amber-700 px-8 py-3 flex items-center gap-2 text-sm font-medium">
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Refreshing latest account data...
-              </div>
-            )}
-
-            <div className="p-8 max-h-[calc(100vh-200px)] overflow-y-auto">
-              {/* Member Info Card */}
-              <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 mb-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <User className="w-5 h-5 text-gray-600" />
-                  <h4 className="text-lg font-semibold text-gray-900">Personal Information</h4>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-medium text-gray-500 uppercase">Username</span>
-                    <span className="text-sm font-medium text-gray-900 mt-1">@{memberProfile.member.Username}</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-medium text-gray-500 uppercase">Email</span>
-                    <span className="text-sm font-medium text-gray-900 mt-1">{memberProfile.member.User_Email}</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-medium text-gray-500 uppercase">Phone</span>
-                    <span className="text-sm font-medium text-gray-900 mt-1">{memberProfile.member.Phone_Number || 'N/A'}</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-medium text-gray-500 uppercase">Membership Type</span>
-                    <span className="text-sm font-medium text-gray-900 mt-1">Student</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-medium text-gray-500 uppercase">Account Status</span>
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1 w-fit">
-                      ✓ {memberProfile.member.Account_Status}
-                    </span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-medium text-gray-500 uppercase">Registered On</span>
-                    <span className="text-sm font-medium text-gray-900 mt-1">Jan 10, 2025</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Actions Panel */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-6">
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    onClick={async () => {
-                      if (memberProfile.currentBorrows.length === 0) {
-                        alert('No books to renew')
-                        return
-                      }
-                      const confirm = window.confirm(`Renew all ${memberProfile.currentBorrows.length} borrowed books?`)
-                      if (!confirm) return
-                      
-                      setLoading(true)
-                      try {
-                        for (const borrow of memberProfile.currentBorrows) {
-                          const newDueDate = new Date()
-                          newDueDate.setDate(newDueDate.getDate() + 14)
-                          const formattedDate = newDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                          await handleRenewBook(borrow.Borrow_ID, formattedDate)
-                        }
-                        await fetchMemberProfile(memberProfile.member.User_ID, memberProfile.member)
-                        setSuccessMessage('Renewal completed successfully!')
-                        setTimeout(() => setSuccessMessage(''), 3000)
-                      } catch (error) {
-                        setError('Failed to renew all books')
-                        setTimeout(() => setError(''), 5000)
-                      } finally {
-                        setLoading(false)
-                      }
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all shadow-sm"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Renew All
-                  </button>
-                  <button
-                    onClick={() => {
-                      closeMemberProfileModal()
-                      changeTab('fines')
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all shadow-sm"
-                  >
-                    <DollarSign className="w-4 h-4" />
-                    View Fines
-                  </button>
-                  <button
-                    onClick={() => {
-                      const action = memberProfile.member.Account_Status === 'active' ? 'suspend' : 'activate'
-                      const confirm = window.confirm(`Are you sure you want to ${action} this member?`)
-                      if (!confirm) return
-                      
-                      alert('Member status update functionality will be implemented in the backend')
-                      // TODO: Implement backend API for member status update
-                    }}
-                    className={`inline-flex items-center gap-2 px-4 py-2 text-white rounded-lg transition-all ${
-                      memberProfile.member.Account_Status === 'active' 
-                        ? 'bg-yellow-500 hover:bg-yellow-600' 
-                        : 'bg-green-500 hover:bg-green-600'
-                    }`}
-                  >
-                    <AlertCircle className="w-4 h-4" />
-                    {memberProfile.member.Account_Status === 'active' ? 'Suspend' : 'Activate'} Member
-                  </button>
-                </div>
-              </div>
-
-              {/* Issue or Reserve Assets */}
-              <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 mb-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <BookOpen className="w-5 h-5 text-gray-600" />
-                    <h4 className="text-lg font-semibold text-gray-900">
-                      Issue {selectedAssetType === 'study-rooms' ? 'or Reserve Room' : 'Asset'}
-                    </h4>
-                  </div>
-                  <span className="text-sm text-gray-500">
-                    Member ID: M{String(memberProfile.member.User_ID).padStart(3, '0')}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Asset Type</label>
-                    <select
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      value={selectedAssetType}
-                      onChange={(e) => {
-                        setSelectedAssetType(e.target.value)
-                        setIssueForm(prev => ({
-                          ...prev,
-                          assetType: e.target.value,
-                          assetId: '',
-                          assetTitle: ''
-                        }))
-                        setAssetSearch('')
-                      }}
+                {/* Header */}
+                <div className="bg-gradient-to-r from-green-500 to-emerald-600 px-8 py-6 rounded-t-2xl">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-16 h-16 rounded-full bg-white flex items-center justify-center text-green-600 font-bold text-2xl shadow-lg">
+                        {memberProfile.member.First_Name.charAt(0)}{memberProfile.member.Last_Name.charAt(0)}
+                      </div>
+                      <div>
+                        <h3 className="text-2xl font-bold text-white">
+                          {memberProfile.member.First_Name} {memberProfile.member.Last_Name}
+                        </h3>
+                        <p className="text-green-100">Member ID: M{String(memberProfile.member.User_ID).padStart(3, '0')}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={closeMemberProfileModal}
+                      className="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition-all"
                     >
-                      <option value="books">Books</option>
-                      <option value="cds">CDs</option>
-                      <option value="audiobooks">Audiobooks</option>
-                      <option value="movies">Movies</option>
-                      <option value="technology">Technology</option>
-                      <option value="study-rooms">Study Rooms</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Issue Date</label>
-                    <input
-                      type="date"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      value={issueForm.issueDate || new Date().toISOString().split('T')[0]}
-                      onChange={(e) => setIssueForm(prev => ({ ...prev, issueDate: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {selectedAssetType === 'study-rooms' ? 'Reservation Ends' : 'Due Date'}
-                    </label>
-                    <input
-                      type="date"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      value={issueForm.dueDate || (() => {
-                        const date = new Date()
-                        date.setDate(date.getDate() + (selectedAssetType === 'study-rooms' ? 1 : 14))
-                        return date.toISOString().split('T')[0]
-                      })()}
-                      onChange={(e) => setIssueForm(prev => ({ ...prev, dueDate: e.target.value }))}
-                    />
+                      <X className="w-6 h-6" />
+                    </button>
                   </div>
                 </div>
 
-                <div className="mt-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Search {selectedAssetType === 'study-rooms' ? 'Rooms' : 'Assets'}
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      placeholder={`Type to search ${selectedAssetType}...`}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      value={assetSearch}
-                      onChange={(e) => {
-                        setAssetSearch(e.target.value)
-                        setShowAssetDropdown(true)
-                      }}
-                      onFocus={() => setShowAssetDropdown(true)}
-                      onBlur={() => setTimeout(() => setShowAssetDropdown(false), 200)}
-                    />
-                    {showAssetDropdown && (
-                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-                        {getIssueAssetData()
-                          .filter(item => item.Available_Copies > 0 || selectedAssetType === 'study-rooms')
-                          .filter(item => {
-                            if (!assetSearch) return true
-                            const searchLower = assetSearch.toLowerCase()
-                            const title = item.Title || item.Room_Number || item.Model_Num || ''
-                            const author = item.Author || item.Artist || ''
-                            return (
-                              title.toString().toLowerCase().includes(searchLower) ||
-                              author.toString().toLowerCase().includes(searchLower)
-                            )
-                          })
-                          .map(item => (
-                            <div
-                              key={item.Asset_ID}
-                              className="px-4 py-3 hover:bg-green-50 cursor-pointer border-b border-gray-100 last:border-b-0"
-                              onMouseDown={() => {
-                                setIssueForm(prev => ({
-                                  ...prev,
-                                  assetId: item.Asset_ID,
-                                  assetTitle: item.Title || item.Room_Number || `Tech-${item.Model_Num}`,
-                                  assetType: selectedAssetType
-                                }))
-                                setAssetSearch(item.Title || item.Room_Number || `Tech-${item.Model_Num}`)
-                                setShowAssetDropdown(false)
-                              }}
-                            >
-                              <div className="font-medium text-gray-900">
-                                {item.Title || item.Room_Number || `Tech-${item.Model_Num}`}
-                              </div>
-                              {item.Author && <div className="text-sm text-gray-600">by {item.Author}</div>}
-                              {item.Artist && <div className="text-sm text-gray-600">by {item.Artist}</div>}
-                              <div className="text-xs text-gray-500">
-                                Available:{' '}
-                                <span className="text-green-600 font-semibold">
-                                  {item.Available_Copies ?? (item.Availability === 'Available' ? '1' : '0')}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        {getIssueAssetData()
-                          .filter(item => item.Available_Copies > 0 || selectedAssetType === 'study-rooms')
-                          .filter(item => {
-                            if (!assetSearch) return true
-                            const searchLower = assetSearch.toLowerCase()
-                            const title = item.Title || item.Room_Number || item.Model_Num || ''
-                            const author = item.Author || item.Artist || ''
-                            return (
-                              title.toString().toLowerCase().includes(searchLower) ||
-                              author.toString().toLowerCase().includes(searchLower)
-                            )
-                          }).length === 0 && (
-                          <div className="px-4 py-3 text-gray-500 text-center">
-                            No available items found
+                {memberProfileLoading && (
+                  <div className="bg-amber-50 text-amber-700 px-8 py-3 flex items-center gap-2 text-sm font-medium">
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Refreshing latest account data...
+                  </div>
+                )}
+
+                <div className="p-8 max-h-[calc(100vh-200px)] overflow-y-auto">
+                  {/* Member Info Card */}
+                  <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 mb-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <User className="w-5 h-5 text-gray-600" />
+                      <h4 className="text-lg font-semibold text-gray-900">Personal Information</h4>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium text-gray-500 uppercase">Username</span>
+                        <span className="text-sm font-medium text-gray-900 mt-1">@{memberProfile.member.Username}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium text-gray-500 uppercase">Email</span>
+                        <span className="text-sm font-medium text-gray-900 mt-1">{memberProfile.member.User_Email}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium text-gray-500 uppercase">Phone</span>
+                        <span className="text-sm font-medium text-gray-900 mt-1">{memberProfile.member.Phone_Number || 'N/A'}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium text-gray-500 uppercase">Membership Type</span>
+                        <span className="text-sm font-medium text-gray-900 mt-1">Student</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium text-gray-500 uppercase">Account Status</span>
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 mt-1 w-fit">
+                          ✓ {memberProfile.member.Account_Status}
+                        </span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium text-gray-500 uppercase">Registered On</span>
+                        <span className="text-sm font-medium text-gray-900 mt-1">Jan 10, 2025</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions Panel */}
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-6">
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={async () => {
+                          if (memberProfile.currentBorrows.length === 0) {
+                            alert('No books to renew')
+                            return
+                          }
+                          const confirm = window.confirm(`Renew all ${memberProfile.currentBorrows.length} borrowed books?`)
+                          if (!confirm) return
+
+                          setLoading(true)
+                          try {
+                            for (const borrow of memberProfile.currentBorrows) {
+                              const newDueDate = new Date()
+                              newDueDate.setDate(newDueDate.getDate() + defaultBorrowDays)
+                              const formattedDate = newDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                              await handleRenewBook(borrow.Borrow_ID, formattedDate)
+                            }
+                            await fetchMemberProfile(memberProfile.member.User_ID, memberProfile.member)
+                            setSuccessMessage('Renewal completed successfully!')
+                            setTimeout(() => setSuccessMessage(''), 3000)
+                          } catch (error) {
+                            setError('Failed to renew all books')
+                            setTimeout(() => setError(''), 5000)
+                          } finally {
+                            setLoading(false)
+                          }
+                        }}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all shadow-sm"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        Renew All
+                      </button>
+                      <button
+                        onClick={() => {
+                          closeMemberProfileModal()
+                          changeTab('fines')
+                        }}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-all shadow-sm"
+                      >
+                        <DollarSign className="w-4 h-4" />
+                        View Fines
+                      </button>
+                      <button
+                        onClick={() => {
+                          const action = memberProfile.member.Account_Status === 'active' ? 'suspend' : 'activate'
+                          const confirm = window.confirm(`Are you sure you want to ${action} this member?`)
+                          if (!confirm) return
+
+                          alert('Member status update functionality will be implemented in the backend')
+                          // TODO: Implement backend API for member status update
+                        }}
+                        className={`inline-flex items-center gap-2 px-4 py-2 text-white rounded-lg transition-all ${memberProfile.member.Account_Status === 'active'
+                          ? 'bg-yellow-500 hover:bg-yellow-600'
+                          : 'bg-green-500 hover:bg-green-600'
+                          }`}
+                      >
+                        <AlertCircle className="w-4 h-4" />
+                        {memberProfile.member.Account_Status === 'active' ? 'Suspend' : 'Activate'} Member
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Issue or Reserve Assets */}
+                  <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 mb-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <BookOpen className="w-5 h-5 text-gray-600" />
+                        <h4 className="text-lg font-semibold text-gray-900">
+                          Issue {selectedAssetType === 'study-rooms' ? 'or Reserve Room' : 'Asset'}
+                        </h4>
+                      </div>
+                      <span className="text-sm text-gray-500">
+                        Member ID: M{String(memberProfile.member.User_ID).padStart(3, '0')}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Asset Type</label>
+                        <select
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          value={selectedAssetType}
+                          onChange={(e) => {
+                            setSelectedAssetType(e.target.value)
+                            setIssueForm(prev => ({
+                              ...prev,
+                              assetType: e.target.value,
+                              assetId: '',
+                              assetTitle: ''
+                            }))
+                            setAssetSearch('')
+                          }}
+                        >
+                          <option value="books">Books</option>
+                          <option value="cds">CDs</option>
+                          <option value="audiobooks">Audiobooks</option>
+                          <option value="movies">Movies</option>
+                          <option value="technology">Technology</option>
+                          <option value="study-rooms">Study Rooms</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Issue Date</label>
+                        <input
+                          type="date"
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          value={issueForm.issueDate || new Date().toISOString().split('T')[0]}
+                          onChange={(e) => setIssueForm(prev => ({ ...prev, issueDate: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          {selectedAssetType === 'study-rooms' ? 'Reservation Ends' : 'Due Date'}
+                        </label>
+                        <input
+                          type="date"
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          value={issueForm.dueDate || (() => {
+                            const date = new Date()
+                            date.setDate(date.getDate() + (selectedAssetType === 'study-rooms' ? 1 : 14))
+                            return date.toISOString().split('T')[0]
+                          })()}
+                          onChange={(e) => setIssueForm(prev => ({ ...prev, dueDate: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Search {selectedAssetType === 'study-rooms' ? 'Rooms' : 'Assets'}
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder={`Type to search ${selectedAssetType}...`}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          value={assetSearch}
+                          onChange={(e) => {
+                            setAssetSearch(e.target.value)
+                            setShowAssetDropdown(true)
+                          }}
+                          onFocus={() => setShowAssetDropdown(true)}
+                          onBlur={() => setTimeout(() => setShowAssetDropdown(false), 200)}
+                        />
+                        {showAssetDropdown && (
+                          <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                            {getIssueAssetData()
+                              .filter(item => item.Available_Copies > 0 || selectedAssetType === 'study-rooms')
+                              .filter(item => {
+                                if (!assetSearch) return true
+                                const searchLower = assetSearch.toLowerCase()
+                                const title = item.Title || item.Room_Number || item.Model_Num || ''
+                                const author = item.Author || item.Artist || ''
+                                return (
+                                  title.toString().toLowerCase().includes(searchLower) ||
+                                  author.toString().toLowerCase().includes(searchLower)
+                                )
+                              })
+                              .map(item => (
+                                <div
+                                  key={item.Asset_ID}
+                                  className="px-4 py-3 hover:bg-green-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                                  onMouseDown={() => {
+                                    setIssueForm(prev => ({
+                                      ...prev,
+                                      assetId: item.Asset_ID,
+                                      assetTitle: item.Title || item.Room_Number || `Tech-${item.Model_Num}`,
+                                      assetType: selectedAssetType
+                                    }))
+                                    setAssetSearch(item.Title || item.Room_Number || `Tech-${item.Model_Num}`)
+                                    setShowAssetDropdown(false)
+                                  }}
+                                >
+                                  <div className="font-medium text-gray-900">
+                                    {item.Title || item.Room_Number || `Tech-${item.Model_Num}`}
+                                  </div>
+                                  {item.Author && <div className="text-sm text-gray-600">by {item.Author}</div>}
+                                  {item.Artist && <div className="text-sm text-gray-600">by {item.Artist}</div>}
+                                  <div className="text-xs text-gray-500">
+                                    Available:{' '}
+                                    <span className="text-green-600 font-semibold">
+                                      {item.Available_Copies ?? (item.Availability === 'Available' ? '1' : '0')}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            {getIssueAssetData()
+                              .filter(item => item.Available_Copies > 0 || selectedAssetType === 'study-rooms')
+                              .filter(item => {
+                                if (!assetSearch) return true
+                                const searchLower = assetSearch.toLowerCase()
+                                const title = item.Title || item.Room_Number || item.Model_Num || ''
+                                const author = item.Author || item.Artist || ''
+                                return (
+                                  title.toString().toLowerCase().includes(searchLower) ||
+                                  author.toString().toLowerCase().includes(searchLower)
+                                )
+                              }).length === 0 && (
+                                <div className="px-4 py-3 text-gray-500 text-center">
+                                  No available items found
+                                </div>
+                              )}
                           </div>
                         )}
                       </div>
+                      {issueForm.assetId && (
+                        <div className="mt-3 p-3 bg-gray-50 rounded border border-gray-200 text-sm">
+                          <div className="font-semibold text-gray-800">
+                            Selected: {issueForm.assetTitle}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {selectedAssetType === 'study-rooms'
+                              ? 'The reservation will mark this room as reserved until the selected end date.'
+                              : 'Asset will be issued immediately to this member.'}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Quantity Input */}
+                      {issueForm.assetId && selectedAssetType !== 'study-rooms' && (
+                        <div className="mt-4">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Quantity to Issue
+                          </label>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="number"
+                              min="1"
+                              max={
+                                // Find the selected asset to check available copies
+                                (() => {
+                                  const asset = getIssueAssetData().find(a => a.Asset_ID === issueForm.assetId)
+                                  return asset ? getAvailableCountForAsset(asset, selectedAssetType) : 1
+                                })()
+                              }
+                              value={issueForm.quantity}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || 1
+                                const asset = getIssueAssetData().find(a => a.Asset_ID === issueForm.assetId)
+                                const max = asset ? getAvailableCountForAsset(asset, selectedAssetType) : 1
+                                setIssueForm(prev => ({ ...prev, quantity: Math.min(Math.max(1, val), max) }))
+                              }}
+                              className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                            <span className="text-sm text-gray-500">
+                              (Max: {
+                                (() => {
+                                  const asset = getIssueAssetData().find(a => a.Asset_ID === issueForm.assetId)
+                                  return asset ? getAvailableCountForAsset(asset, selectedAssetType) : 1
+                                })()
+                              })
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-end gap-3 mt-6">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIssueForm(prev => ({ ...prev, assetId: '', assetTitle: '', issueDate: '', dueDate: '' }))
+                          setAssetSearch('')
+                        }}
+                        className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-all"
+                      >
+                        Clear
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleMemberIssue}
+                        disabled={!issueForm.assetId || roomStatusUpdating !== null || loading}
+                        className={`px-6 py-2 text-sm font-semibold text-white rounded-lg transition-all ${selectedAssetType === 'study-rooms'
+                          ? 'bg-amber-500 hover:bg-amber-600'
+                          : 'bg-green-500 hover:bg-green-600'
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        {selectedAssetType === 'study-rooms' ? 'Reserve Room' : 'Issue Asset'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Currently Borrowed Books */}
+                  <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 mb-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <BookMarked className="w-5 h-5 text-gray-600" />
+                        <h4 className="text-lg font-semibold text-gray-900">Currently Borrowed Books</h4>
+                      </div>
+                      <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                        {memberProfile.currentBorrows.length} active
+                      </span>
+                    </div>
+
+                    {memberProfile.currentBorrows.length === 0 ? (
+                      <div className="text-center py-8">
+                        <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-500">No active borrows</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead className="bg-gray-50 border-b border-gray-200">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Book ID</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Title</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Type</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Issue Date</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Due Date</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Days Left</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Fine</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {memberProfile.currentBorrows.map((borrow, idx) => {
+                              const dueDate = new Date(borrow.Due_Date)
+                              const today = new Date()
+                              const daysLeft = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
+                              const isOverdue = daysLeft < 0
+                              const fineAmount = parseFloat(borrow.Fine_Amount) || 0
+
+                              return (
+                                <tr key={idx} className="hover:bg-gray-50">
+                                  <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                                    B{String(borrow.Borrow_ID).padStart(3, '0')}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                                    {borrow.Asset_Title}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${borrow.Asset_Type === 'Book' ? 'bg-blue-100 text-blue-800' :
+                                      borrow.Asset_Type === 'CD' ? 'bg-purple-100 text-purple-800' :
+                                        borrow.Asset_Type === 'Movie' ? 'bg-red-100 text-red-800' :
+                                          'bg-green-100 text-green-800'
+                                      }`}>
+                                      {borrow.Asset_Type}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-600">
+                                    {new Date(borrow.Borrow_Date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-gray-600">
+                                    {dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {isOverdue ? (
+                                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600">
+                                        <AlertCircle className="w-3.5 h-3.5" />
+                                        Overdue ({Math.abs(daysLeft)} days)
+                                      </span>
+                                    ) : (
+                                      <span className={`text-xs font-medium ${daysLeft <= 3 ? 'text-orange-600' : 'text-gray-600'}`}>
+                                        {daysLeft} days
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className={`text-sm font-bold ${fineAmount > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                                      ${fineAmount.toFixed(2)}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={async () => {
+                                          const newDueDate = new Date()
+                                          newDueDate.setDate(newDueDate.getDate() + defaultBorrowDays)
+                                          const formattedDate = newDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                          await handleRenewBook(borrow.Borrow_ID, formattedDate)
+                                          // Refresh member profile after renewal
+                                          await fetchMemberProfile(memberProfile.member.User_ID, memberProfile.member)
+                                        }}
+                                        className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded hover:bg-blue-200 transition-colors"
+                                      >
+                                        <Clock className="w-3 h-3" />
+                                        Renew
+                                      </button>
+                                      <button
+                                        onClick={async () => {
+                                          await handleReturnBook(borrow.Borrow_ID, fineAmount)
+                                          // Refresh member profile after return
+                                          await fetchMemberProfile(memberProfile.member.User_ID, memberProfile.member)
+                                        }}
+                                        className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded hover:bg-green-200 transition-colors"
+                                      >
+                                        <BookOpen className="w-3 h-3" />
+                                        Return
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     )}
                   </div>
-                  {issueForm.assetId && (
-                    <div className="mt-3 p-3 bg-gray-50 rounded border border-gray-200 text-sm">
-                      <div className="font-semibold text-gray-800">
-                        Selected: {issueForm.assetTitle}
+
+                  {/* Borrowing History */}
+                  <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 mb-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <FileText className="w-5 h-5 text-gray-600" />
+                      <h4 className="text-lg font-semibold text-gray-900">Borrowing History (Past Transactions)</h4>
+                    </div>
+
+                    {memberProfile.borrowingHistory.length === 0 ? (
+                      <div className="text-center py-8">
+                        <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-500">No borrowing history</p>
                       </div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {selectedAssetType === 'study-rooms'
-                          ? 'The reservation will mark this room as reserved until the selected end date.'
-                          : 'Asset will be issued immediately to this member.'}
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead className="bg-gray-50 border-b border-gray-200">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Book ID</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Title</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Issue Date</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Return Date</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Fine Paid</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {memberProfile.borrowingHistory.map((borrow, idx) => (
+                              <tr key={idx} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                                  B{String(borrow.Borrow_ID).padStart(3, '0')}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-900">{borrow.Asset_Title}</td>
+                                <td className="px-4 py-3 text-sm text-gray-600">
+                                  {new Date(borrow.Borrow_Date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-600">
+                                  {borrow.Return_Date
+                                    ? new Date(borrow.Return_Date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                                    : <span className="text-orange-600 font-medium">Not returned</span>
+                                  }
+                                </td>
+                                <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                                  {borrow.Fee_Incurred ? `$${parseFloat(borrow.Fee_Incurred).toFixed(2)}` : '$0.00'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Fine Summary */}
+                  <div className="bg-gradient-to-r from-orange-50 to-red-50 rounded-xl shadow-md border border-orange-200 p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="w-5 h-5 text-orange-600" />
+                        <h4 className="text-lg font-semibold text-gray-900">Fine Summary</h4>
+                      </div>
+                      {memberProfile.finesSummary.unpaidFines > 0 && (
+                        <button
+                          onClick={async () => {
+                            const fineItems = memberProfile.currentBorrows
+                              .filter(borrow => Number.parseFloat(borrow.Fine_Amount) > 0)
+                              .map(borrow => ({
+                                borrowId: borrow.Borrow_ID,
+                                fineAmount: Number.parseFloat(borrow.Fine_Amount) || 0
+                              }))
+                            const settled = await settleFineItems(
+                              fineItems,
+                              `${memberProfile.member.First_Name} ${memberProfile.member.Last_Name}`.trim()
+                            )
+                            if (settled) {
+                              await fetchMemberProfile(memberProfile.member.User_ID, memberProfile.member)
+                              setSuccessMessage('Fine settlement completed successfully!')
+                              setTimeout(() => setSuccessMessage(''), 3000)
+                            }
+                          }}
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all shadow-sm"
+                        >
+                          <DollarSign className="w-4 h-4" />
+                          Mark as Paid
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-white rounded-lg p-4 shadow-sm">
+                        <p className="text-sm text-gray-600 mb-1">Total Outstanding Fine</p>
+                        <p className="text-3xl font-bold text-red-600">
+                          ${parseFloat(memberProfile.finesSummary.unpaidFines || 0).toFixed(2)}
+                        </p>
+                      </div>
+                      <div className="bg-white rounded-lg p-4 shadow-sm">
+                        <p className="text-sm text-gray-600 mb-1">Total Fines (All Time)</p>
+                        <p className="text-3xl font-bold text-gray-900">
+                          ${parseFloat(memberProfile.finesSummary.totalFines || 0).toFixed(2)}
+                        </p>
                       </div>
                     </div>
-                  )}
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-3 mt-6">
+                {/* Footer */}
+                <div className="bg-gray-50 px-8 py-4 rounded-b-2xl flex justify-end gap-3">
                   <button
-                    type="button"
-                    onClick={() => {
-                      setIssueForm(prev => ({ ...prev, assetId: '', assetTitle: '', issueDate: '', dueDate: '' }))
-                      setAssetSearch('')
-                    }}
-                    className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-all"
+                    onClick={closeMemberProfileModal}
+                    className="px-6 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all font-medium"
                   >
-                    Clear
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleMemberIssue}
-                    disabled={!issueForm.assetId || roomStatusUpdating !== null || loading}
-                    className={`px-6 py-2 text-sm font-semibold text-white rounded-lg transition-all ${
-                      selectedAssetType === 'study-rooms'
-                        ? 'bg-amber-500 hover:bg-amber-600'
-                        : 'bg-green-500 hover:bg-green-600'
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    {selectedAssetType === 'study-rooms' ? 'Reserve Room' : 'Issue Asset'}
+                    Close
                   </button>
                 </div>
-              </div>
-
-              {/* Currently Borrowed Books */}
-              <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 mb-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <BookMarked className="w-5 h-5 text-gray-600" />
-                    <h4 className="text-lg font-semibold text-gray-900">Currently Borrowed Books</h4>
-                  </div>
-                  <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                    {memberProfile.currentBorrows.length} active
-                  </span>
-                </div>
-                
-                {memberProfile.currentBorrows.length === 0 ? (
-                  <div className="text-center py-8">
-                    <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500">No active borrows</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-50 border-b border-gray-200">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Book ID</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Title</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Type</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Issue Date</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Due Date</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Days Left</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Fine</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {memberProfile.currentBorrows.map((borrow, idx) => {
-                          const dueDate = new Date(borrow.Due_Date)
-                          const today = new Date()
-                          const daysLeft = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24))
-                          const isOverdue = daysLeft < 0
-                          const fineAmount = parseFloat(borrow.Fine_Amount) || 0
-
-                          return (
-                            <tr key={idx} className="hover:bg-gray-50">
-                              <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                                B{String(borrow.Borrow_ID).padStart(3, '0')}
-                              </td>
-                              <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                                {borrow.Asset_Title}
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className={`inline-flex px-2 py-1 rounded-full text-xs font-medium ${
-                                  borrow.Asset_Type === 'Book' ? 'bg-blue-100 text-blue-800' :
-                                  borrow.Asset_Type === 'CD' ? 'bg-purple-100 text-purple-800' :
-                                  borrow.Asset_Type === 'Movie' ? 'bg-red-100 text-red-800' :
-                                  'bg-green-100 text-green-800'
-                                }`}>
-                                  {borrow.Asset_Type}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-600">
-                                {new Date(borrow.Borrow_Date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-600">
-                                {dueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              </td>
-                              <td className="px-4 py-3">
-                                {isOverdue ? (
-                                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600">
-                                    <AlertCircle className="w-3.5 h-3.5" />
-                                    Overdue ({Math.abs(daysLeft)} days)
-                                  </span>
-                                ) : (
-                                  <span className={`text-xs font-medium ${daysLeft <= 3 ? 'text-orange-600' : 'text-gray-600'}`}>
-                                    {daysLeft} days
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className={`text-sm font-bold ${fineAmount > 0 ? 'text-red-600' : 'text-gray-400'}`}>
-                                  ${fineAmount.toFixed(2)}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex gap-2">
-                                  <button 
-                                    onClick={async () => {
-                                      const newDueDate = new Date()
-                                      newDueDate.setDate(newDueDate.getDate() + 14)
-                                      const formattedDate = newDueDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                                      await handleRenewBook(borrow.Borrow_ID, formattedDate)
-                                      // Refresh member profile after renewal
-                                      await fetchMemberProfile(memberProfile.member.User_ID, memberProfile.member)
-                                    }}
-                                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded hover:bg-blue-200 transition-colors"
-                                  >
-                                    <Clock className="w-3 h-3" />
-                                    Renew
-                                  </button>
-                                  <button 
-                                    onClick={async () => {
-                                      await handleReturnBook(borrow.Borrow_ID, fineAmount)
-                                      // Refresh member profile after return
-                                      await fetchMemberProfile(memberProfile.member.User_ID, memberProfile.member)
-                                    }}
-                                    className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded hover:bg-green-200 transition-colors"
-                                  >
-                                    <BookOpen className="w-3 h-3" />
-                                    Return
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* Borrowing History */}
-              <div className="bg-white rounded-xl shadow-md border border-gray-200 p-6 mb-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <FileText className="w-5 h-5 text-gray-600" />
-                  <h4 className="text-lg font-semibold text-gray-900">Borrowing History (Past Transactions)</h4>
-                </div>
-                
-                {memberProfile.borrowingHistory.length === 0 ? (
-                  <div className="text-center py-8">
-                    <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500">No borrowing history</p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-50 border-b border-gray-200">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Book ID</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Title</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Issue Date</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Return Date</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Fine Paid</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {memberProfile.borrowingHistory.map((borrow, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                              B{String(borrow.Borrow_ID).padStart(3, '0')}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-900">{borrow.Asset_Title}</td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
-                              {new Date(borrow.Borrow_Date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-600">
-                              {borrow.Return_Date 
-                                ? new Date(borrow.Return_Date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                                : <span className="text-orange-600 font-medium">Not returned</span>
-                              }
-                            </td>
-                            <td className="px-4 py-3 text-sm font-semibold text-gray-900">
-                              {borrow.Fee_Incurred ? `$${parseFloat(borrow.Fee_Incurred).toFixed(2)}` : '$0.00'}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* Fine Summary */}
-              <div className="bg-gradient-to-r from-orange-50 to-red-50 rounded-xl shadow-md border border-orange-200 p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <DollarSign className="w-5 h-5 text-orange-600" />
-                    <h4 className="text-lg font-semibold text-gray-900">Fine Summary</h4>
-                  </div>
-                  {memberProfile.finesSummary.unpaidFines > 0 && (
-                    <button 
-                      onClick={async () => {
-                        const fineItems = memberProfile.currentBorrows
-                          .filter(borrow => Number.parseFloat(borrow.Fine_Amount) > 0)
-                          .map(borrow => ({
-                            borrowId: borrow.Borrow_ID,
-                            fineAmount: Number.parseFloat(borrow.Fine_Amount) || 0
-                          }))
-                        const settled = await settleFineItems(
-                          fineItems,
-                          `${memberProfile.member.First_Name} ${memberProfile.member.Last_Name}`.trim()
-                        )
-                        if (settled) {
-                          await fetchMemberProfile(memberProfile.member.User_ID, memberProfile.member)
-                          setSuccessMessage('Fine settlement completed successfully!')
-                          setTimeout(() => setSuccessMessage(''), 3000)
-                        }
-                      }}
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all shadow-sm"
-                    >
-                      <DollarSign className="w-4 h-4" />
-                      Mark as Paid
-                    </button>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-white rounded-lg p-4 shadow-sm">
-                    <p className="text-sm text-gray-600 mb-1">Total Outstanding Fine</p>
-                    <p className="text-3xl font-bold text-red-600">
-                      ${parseFloat(memberProfile.finesSummary.unpaidFines || 0).toFixed(2)}
-                    </p>
-                  </div>
-                  <div className="bg-white rounded-lg p-4 shadow-sm">
-                    <p className="text-sm text-gray-600 mb-1">Total Fines (All Time)</p>
-                    <p className="text-3xl font-bold text-gray-900">
-                      ${parseFloat(memberProfile.finesSummary.totalFines || 0).toFixed(2)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* Footer */}
-            <div className="bg-gray-50 px-8 py-4 rounded-b-2xl flex justify-end gap-3">
-              <button 
-                onClick={closeMemberProfileModal}
-                className="px-6 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all font-medium"
-              >
-                Close
-              </button>
-            </div>
               </>
             )}
           </motion.div>
@@ -4111,7 +4348,7 @@ const renderCalendar = () => {
       )}
 
       {showFineModal && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center p-4"
           onClick={closeFineModal}
         >
@@ -4246,6 +4483,113 @@ const renderCalendar = () => {
     </>
   )
 
+  // ===== RESERVATIONS SECTION =====
+  const renderReservations = () => {
+    return (
+      <div className="p-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold text-gray-900 mb-2">Reservations</h2>
+            <p className="text-gray-600">Manage active holds and reservations</p>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-md overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gradient-to-r from-blue-600 to-indigo-600">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Member</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Asset</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Type</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Hold Date</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Expires</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-white uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {holdLoading ? (
+                    <tr>
+                      <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                        <div className="flex items-center justify-center gap-3">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                          <span>Loading reservations...</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : holds.length === 0 ? (
+                    <tr>
+                      <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                        <div className="flex flex-col items-center gap-3">
+                          <Clock className="w-16 h-16 text-blue-500 opacity-50" />
+                          <p className="text-lg font-semibold">No active reservations</p>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    holds.map((hold, index) => (
+                      <motion.tr
+                        key={hold.Hold_ID}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.05 }}
+                        className="hover:bg-gray-50 transition-colors"
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900">{hold.Member_Name}</div>
+                            <div className="text-xs text-gray-500">{hold.User_Email}</div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-medium text-gray-900">{hold.Asset_Title}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">
+                            {hold.Asset_Type}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {new Date(hold.Hold_Date).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {new Date(hold.Hold_Expires).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-3 py-1 text-xs font-semibold rounded-full ${hold.Status === 'Active' ? 'bg-green-100 text-green-800' :
+                            hold.Status === 'Expired' ? 'bg-red-100 text-red-800' :
+                              hold.Status === 'Fulfilled' ? 'bg-blue-100 text-blue-800' :
+                                'bg-gray-100 text-gray-800'
+                            }`}>
+                            {hold.Status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          {hold.Status === 'Active' && (
+                            <button
+                              onClick={() => handleCancelHold(hold.Hold_ID)}
+                              className="text-red-600 hover:text-red-900 font-medium hover:underline"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </td>
+                      </motion.tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    )
+  }
+
   // ===== FINE MANAGEMENT SECTION =====
   const renderFineManagement = () => {
     const handlePayFine = async () => {
@@ -4264,7 +4608,7 @@ const renderCalendar = () => {
           body: JSON.stringify({
             amount: parseFloat(paymentAmount),
             paymentMethod: paymentMethod,
-            processedBy: user.userId
+            processedBy: 1
           })
         })
 
@@ -4297,7 +4641,7 @@ const renderCalendar = () => {
           },
           body: JSON.stringify({
             reason: 'Waived by librarian',
-            processedBy: user.userId
+            processedBy: 1
           })
         })
 
@@ -4341,12 +4685,30 @@ const renderCalendar = () => {
           transition={{ duration: 0.5 }}
         >
           {/* Header */}
-          <div className="mb-8">
-            <h2 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-3">
-              <DollarSign className="w-8 h-8 text-green-600" />
-              Fines & Payments
-            </h2>
-            <p className="text-gray-600">Manage overdue fines and process payments</p>
+          <div className="mb-8 flex items-start justify-between">
+            <div>
+              <h2 className="text-3xl font-bold text-gray-900 mb-2 flex items-center gap-3">
+                <DollarSign className="w-8 h-8 text-green-600" />
+                Fines & Payments
+              </h2>
+              <p className="text-gray-600">Manage overdue fines and process payments</p>
+            </div>
+
+            {/* Configuration Info Card */}
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl px-6 py-4 shadow-sm">
+              <div className="flex items-center gap-4">
+                <div className="bg-blue-500 p-3 rounded-lg shadow-md">
+                  <DollarSign className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <p className="text-xs text-blue-600 font-semibold uppercase tracking-wide mb-1">Current Fine Rate</p>
+                  <p className="text-3xl font-bold text-blue-900">
+                    ${fineRatePerDay.toFixed(2)}
+                    <span className="text-sm font-normal text-blue-600 ml-1">/day</span>
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Statistics Cards */}
@@ -4543,11 +4905,10 @@ const renderCalendar = () => {
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
-                            fine.Fine_Status === 'Paid' ? 'bg-green-100 text-green-800' :
+                          <span className={`px-3 py-1 text-xs font-semibold rounded-full ${fine.Fine_Status === 'Paid' ? 'bg-green-100 text-green-800' :
                             fine.Fine_Status === 'Unpaid' ? 'bg-red-100 text-red-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
+                              'bg-gray-100 text-gray-800'
+                            }`}>
                             {fine.Fine_Status}
                           </span>
                         </td>
@@ -4731,7 +5092,7 @@ const renderCalendar = () => {
                   </tr>
                 ) : (
                   borrowRecords.map((record, index) => (
-                    <motion.tr 
+                    <motion.tr
                       key={record.Borrow_ID}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
@@ -4747,13 +5108,12 @@ const renderCalendar = () => {
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">{record.Title}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          record.Asset_Type === 'Book' ? 'bg-blue-100 text-blue-800' :
+                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${record.Asset_Type === 'Book' ? 'bg-blue-100 text-blue-800' :
                           record.Asset_Type === 'CD' ? 'bg-purple-100 text-purple-800' :
-                          record.Asset_Type === 'Movie' ? 'bg-red-100 text-red-800' :
-                          record.Asset_Type === 'Audiobook' ? 'bg-green-100 text-green-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
+                            record.Asset_Type === 'Movie' ? 'bg-red-100 text-red-800' :
+                              record.Asset_Type === 'Audiobook' ? 'bg-green-100 text-green-800' :
+                                'bg-gray-100 text-gray-800'
+                          }`}>
                           {record.Asset_Type}
                         </span>
                       </td>
@@ -4772,23 +5132,22 @@ const renderCalendar = () => {
                         })}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                        {record.Return_Date ? 
+                        {record.Return_Date ?
                           new Date(record.Return_Date).toLocaleDateString('en-US', {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric'
-                          }) : 
+                          }) :
                           <span className="text-gray-400">Not returned</span>
                         }
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          record.Return_Date 
-                            ? 'bg-green-100 text-green-800' 
-                            : new Date(record.Due_Date) < new Date() 
-                              ? 'bg-red-100 text-red-800' 
-                              : 'bg-yellow-100 text-yellow-800'
-                        }`}>
+                        <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${record.Return_Date
+                          ? 'bg-green-100 text-green-800'
+                          : new Date(record.Due_Date) < new Date()
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-yellow-100 text-yellow-800'
+                          }`}>
                           {record.Return_Date ? 'Returned' : new Date(record.Due_Date) < new Date() ? 'Overdue' : 'Active'}
                         </span>
                       </td>
@@ -4806,20 +5165,21 @@ const renderCalendar = () => {
   return (
     <div className="flex h-screen bg-gray-100">
       {/* Sidebar */}
-      <LibrarianSidebar 
-        activePage={activeTab} 
-        setActivePage={(page) => changeTab(page)} 
-        sidebarOpen={sidebarOpen} 
-        setSidebarOpen={setSidebarOpen} 
+      <LibrarianSidebar
+        activePage={activeTab}
+        setActivePage={(page) => changeTab(page)}
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
       />
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Navbar */}
-        <TopNavbar 
-          sidebarOpen={sidebarOpen} 
-          setSidebarOpen={setSidebarOpen} 
-          onLogout={handleLogout} 
+        <TopNavbar
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+          onLogout={handleLogout}
+          notifications={notifications}
         />
 
         {/* Content Area */}
@@ -4827,14 +5187,15 @@ const renderCalendar = () => {
           <LoadingOverlay isLoading={loading} message="Processing..." />
           <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
           <ErrorPopup errorMessage={error} onClose={() => setError('')} />
-          
+
           <div className="dashboard-content">
             {activeTab === 'overview' && renderDashboardOverview()}
-            {activeTab === 'books' && renderAssets()}
+            {activeTab === 'catalog' && renderAssets()}
             {activeTab === 'members' && renderMembers()}
+            {activeTab === 'reservations' && renderReservations()}
             {activeTab === 'fines' && renderFineManagement()}
-            {activeTab === 'records' && renderBorrowRecords()}
-            {activeTab === 'my-reports' && <LibrarianReport />}
+            {activeTab === 'transactions' && renderBorrowRecords()}
+            {activeTab === 'reports' && <LibrarianReport />}
             {activeTab === 'calendar' && renderCalendar()}
           </div>
         </div>
@@ -4849,16 +5210,16 @@ const renderCalendar = () => {
           {(() => {
             // Get theme for the current asset type
             const theme = getAssetTheme()
-            
+
             return (
-              <motion.div 
+              <motion.div
                 className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setShowAssetModal(false)}
               >
-                <motion.div 
+                <motion.div
                   className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden"
                   initial={{ scale: 0.9, y: 20 }}
                   animate={{ scale: 1, y: 0 }}
@@ -4866,161 +5227,161 @@ const renderCalendar = () => {
                   transition={{ type: "spring", duration: 0.3 }}
                   onClick={(e) => e.stopPropagation()}
                 >
-              {/* Modal Header */}
-              <div className={`px-6 py-5 border-b border-gray-200 bg-gradient-to-r ${theme.gradient}`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
-                      <theme.Icon className="w-6 h-6 text-white" />
-                    </div>
-                    <h3 className="text-2xl font-bold text-white">
-                      {isEditMode ? 'Edit' : 'Add New'} {activeAssetTab.slice(0, -1).charAt(0).toUpperCase() + activeAssetTab.slice(1, -1)}
-                    </h3>
-                  </div>
-                  <button 
-                    onClick={() => setShowAssetModal(false)}
-                    className="p-2 hover:bg-white/20 rounded-lg transition-colors duration-200"
-                  >
-                    <X className="w-5 h-5 text-white" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Modal Body */}
-              <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
-                <form onSubmit={handleAddAsset} className="space-y-6">
-                  {/* Image Upload Section */}
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                      <Image className="w-4 h-4" />
-                      <span>Asset Image</span>
-                    </label>
-                    <div className="relative">
-                      <input 
-                        type="file" 
-                        id="image-upload" 
-                        accept="image/*" 
-                        onChange={handleImageChange} 
-                        className="hidden" 
-                      />
-                      {(imagePreview || assetForm.Image_URL) ? (
-                        <div className="relative group">
-                          <div className="relative w-full h-80 rounded-xl overflow-hidden border-2 border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100">
-                            <img 
-                              src={imagePreview || assetForm.Image_URL} 
-                              alt="Preview" 
-                              className="w-full h-full object-contain cursor-pointer hover:scale-105 transition-transform duration-300"
-                              onClick={() => document.getElementById('image-upload').click()}
-                            />
-                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200"></div>
-                          </div>
-                          <button 
-                            type="button"
-                            onClick={removeImage}
-                            className="absolute top-3 right-3 p-2 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg transition-all duration-200 hover:scale-110"
-                          >
-                            <XCircle className="w-5 h-5" />
-                          </button>
-                          <button 
-                            type="button"
-                            onClick={() => document.getElementById('image-upload').click()}
-                            className="absolute bottom-3 right-3 px-4 py-2 bg-white/90 hover:bg-white backdrop-blur-sm text-gray-700 rounded-lg shadow-lg transition-all duration-200 hover:scale-105 flex items-center gap-2 text-sm font-medium"
-                          >
-                            <Upload className="w-4 h-4" />
-                            <span>Change Image</span>
-                          </button>
+                  {/* Modal Header */}
+                  <div className={`px-6 py-5 border-b border-gray-200 bg-gradient-to-r ${theme.gradient}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
+                          <theme.Icon className="w-6 h-6 text-white" />
                         </div>
-                      ) : (
-                        <label 
-                          htmlFor="image-upload"
-                          className={`flex flex-col items-center justify-center w-full h-80 border-2 border-dashed rounded-xl cursor-pointer bg-gradient-to-br ${theme.bg} hover:bg-opacity-80 transition-all duration-200 group`}
-                        >
-                          <div className={`p-4 rounded-full bg-white shadow-md group-hover:scale-110 transition-transform duration-200`}>
-                            <Upload className={`w-8 h-8 ${theme.text}`} />
-                          </div>
-                          <p className={`mt-4 text-sm font-semibold ${theme.text}`}>Click to upload image</p>
-                          <p className="mt-1 text-xs text-gray-500">PNG, JPG up to 10MB</p>
-                        </label>
-                      )}
+                        <h3 className="text-2xl font-bold text-white">
+                          {isEditMode ? 'Edit' : 'Add New'} {activeAssetTab.slice(0, -1).charAt(0).toUpperCase() + activeAssetTab.slice(1, -1)}
+                        </h3>
+                      </div>
+                      <button
+                        onClick={() => setShowAssetModal(false)}
+                        className="p-2 hover:bg-white/20 rounded-lg transition-colors duration-200"
+                      >
+                        <X className="w-5 h-5 text-white" />
+                      </button>
                     </div>
                   </div>
 
-                  {/* Form Fields */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {getAssetFormFields().filter(field => !(activeAssetTab === 'movies' && field.name === 'Copies' && isEditMode)).map(field => (
-                      <div 
-                        key={field.name}
-                        className={field.name === 'Description' ? 'md:col-span-2' : ''}
-                      >
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">
-                          {field.label} {field.required && <span className="text-red-500">*</span>}
+                  {/* Modal Body */}
+                  <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
+                    <form onSubmit={handleAddAsset} className="space-y-6">
+                      {/* Image Upload Section */}
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                          <Image className="w-4 h-4" />
+                          <span>Asset Image</span>
                         </label>
-                        <input 
-                          type={field.type} 
-                          value={assetForm[field.name] || ''} 
-                          onChange={(e) => setAssetForm({ ...assetForm, [field.name]: e.target.value })} 
-                          required={field.required}
-                          className={`w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-lg 
+                        <div className="relative">
+                          <input
+                            type="file"
+                            id="image-upload"
+                            accept="image/*"
+                            onChange={handleImageChange}
+                            className="hidden"
+                          />
+                          {(imagePreview || assetForm.Image_URL) ? (
+                            <div className="relative group">
+                              <div className="relative w-full h-80 rounded-xl overflow-hidden border-2 border-gray-200 bg-gradient-to-br from-gray-50 to-gray-100">
+                                <img
+                                  src={imagePreview || assetForm.Image_URL}
+                                  alt="Preview"
+                                  className="w-full h-full object-contain cursor-pointer hover:scale-105 transition-transform duration-300"
+                                  onClick={() => document.getElementById('image-upload').click()}
+                                />
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200"></div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={removeImage}
+                                className="absolute top-3 right-3 p-2 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg transition-all duration-200 hover:scale-110"
+                              >
+                                <XCircle className="w-5 h-5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => document.getElementById('image-upload').click()}
+                                className="absolute bottom-3 right-3 px-4 py-2 bg-white/90 hover:bg-white backdrop-blur-sm text-gray-700 rounded-lg shadow-lg transition-all duration-200 hover:scale-105 flex items-center gap-2 text-sm font-medium"
+                              >
+                                <Upload className="w-4 h-4" />
+                                <span>Change Image</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <label
+                              htmlFor="image-upload"
+                              className={`flex flex-col items-center justify-center w-full h-80 border-2 border-dashed rounded-xl cursor-pointer bg-gradient-to-br ${theme.bg} hover:bg-opacity-80 transition-all duration-200 group`}
+                            >
+                              <div className={`p-4 rounded-full bg-white shadow-md group-hover:scale-110 transition-transform duration-200`}>
+                                <Upload className={`w-8 h-8 ${theme.text}`} />
+                              </div>
+                              <p className={`mt-4 text-sm font-semibold ${theme.text}`}>Click to upload image</p>
+                              <p className="mt-1 text-xs text-gray-500">PNG, JPG up to 10MB</p>
+                            </label>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Form Fields */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {getAssetFormFields().filter(field => !(activeAssetTab === 'movies' && field.name === 'Copies' && isEditMode)).map(field => (
+                          <div
+                            key={field.name}
+                            className={field.name === 'Description' ? 'md:col-span-2' : ''}
+                          >
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                              {field.label} {field.required && <span className="text-red-500">*</span>}
+                            </label>
+                            <input
+                              type={field.type}
+                              value={assetForm[field.name] || ''}
+                              onChange={(e) => setAssetForm({ ...assetForm, [field.name]: e.target.value })}
+                              required={field.required}
+                              className={`w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-lg 
                             focus:border-transparent focus:outline-none transition-all duration-200
                             hover:border-gray-300`}
-                          style={{
-                            boxShadow: 'none'
-                          }}
-                          onFocus={(e) => {
-                            const colors = {
-                              'blue': 'rgb(59, 130, 246)',
-                              'purple': 'rgb(168, 85, 247)',
-                              'green': 'rgb(34, 197, 94)',
-                              'red': 'rgb(239, 68, 68)',
-                              'indigo': 'rgb(99, 102, 241)',
-                              'amber': 'rgb(245, 158, 11)'
-                            }
-                            const color = colors[theme.color] || colors.blue
-                            e.target.style.boxShadow = `0 0 0 3px ${color}40`
-                            e.target.style.borderColor = color
-                          }}
-                          onBlur={(e) => {
-                            e.target.style.borderColor = '#e5e7eb'
-                            e.target.style.boxShadow = 'none'
-                          }}
-                        />
+                              style={{
+                                boxShadow: 'none'
+                              }}
+                              onFocus={(e) => {
+                                const colors = {
+                                  'blue': 'rgb(59, 130, 246)',
+                                  'purple': 'rgb(168, 85, 247)',
+                                  'green': 'rgb(34, 197, 94)',
+                                  'red': 'rgb(239, 68, 68)',
+                                  'indigo': 'rgb(99, 102, 241)',
+                                  'amber': 'rgb(245, 158, 11)'
+                                }
+                                const color = colors[theme.color] || colors.blue
+                                e.target.style.boxShadow = `0 0 0 3px ${color}40`
+                                e.target.style.borderColor = color
+                              }}
+                              onBlur={(e) => {
+                                e.target.style.borderColor = '#e5e7eb'
+                                e.target.style.boxShadow = 'none'
+                              }}
+                            />
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    </form>
                   </div>
-                </form>
-              </div>
 
-              {/* Modal Footer */}
-              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3">
-                <button 
-                  type="button"
-                  onClick={() => setShowAssetModal(false)}
-                  className="px-6 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium text-sm flex items-center gap-2"
-                >
-                  <X className="w-4 h-4" />
-                  <span>Cancel</span>
-                </button>
-                <button 
-                  type="submit"
-                  onClick={handleAddAsset}
-                  disabled={loading}
-                  className={`px-6 py-2.5 bg-gradient-to-r ${theme.gradient} text-white rounded-lg hover:shadow-lg transition-all duration-200 font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
-                >
-                  {loading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>{isEditMode ? 'Updating...' : 'Adding...'}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4" />
-                      <span>{isEditMode ? 'Update Asset' : 'Add Asset'}</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
+                  {/* Modal Footer */}
+                  <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowAssetModal(false)}
+                      className="px-6 py-2.5 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-all duration-200 font-medium text-sm flex items-center gap-2"
+                    >
+                      <X className="w-4 h-4" />
+                      <span>Cancel</span>
+                    </button>
+                    <button
+                      type="submit"
+                      onClick={handleAddAsset}
+                      disabled={loading}
+                      className={`px-6 py-2.5 bg-gradient-to-r ${theme.gradient} text-white rounded-lg hover:shadow-lg transition-all duration-200 font-medium text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
+                      {loading ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>{isEditMode ? 'Updating...' : 'Adding...'}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4" />
+                          <span>{isEditMode ? 'Update Asset' : 'Add Asset'}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
             )
           })()}
         </AnimatePresence>

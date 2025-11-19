@@ -1,4 +1,4 @@
-  require("dotenv").config();//imports dotenv that loads environmental variables from /server.env
+require("dotenv").config();//imports dotenv that loads environmental variables from /server.env
 const http = require("node:http");
 
 // Import controllers
@@ -12,7 +12,9 @@ const notificationController = require('./controllers/notificationController');
 const memberController = require('./controllers/memberController');
 const eventController = require('./controllers/eventController');
 const fineController = require('./controllers/fineController');
-const { authenticateRequest, enforceRoles } = require('./middleware/authMiddleware');
+const holdController = require('./controllers/holdController');
+const configController = require('./controllers/configController');
+const { authenticateRequest, enforceRoles, revokeToken } = require('./middleware/authMiddleware');
 
 const ROLES = {
   STUDENT: 'student',
@@ -47,9 +49,9 @@ function parseBody(req) {
 function matchRoute(pattern, path) {
   const patternParts = pattern.split('/');
   const pathParts = path.split('/');
-  
+
   if (patternParts.length !== pathParts.length) return null;
-  
+
   const params = {};
   for (let i = 0; i < patternParts.length; i++) {
     if (patternParts[i].startsWith(':')) {
@@ -66,38 +68,44 @@ const routes = [
   // Auth routes
   { method: 'POST', path: '/api/signup', handler: authController },
   { method: 'POST', path: '/api/login', handler: authController },
-  { method: 'POST', path: '/api/logout', handler: authController },
-  
+  {
+    method: 'POST', path: '/api/logout', handler: async (req, res) => {
+      const user = await authenticateRequest(req, res);
+      if (!user) return;
+      revokeToken(req, res);
+    }, auth: true, roles: ROLE_GROUPS.ANY_AUTH
+  },
+
   // Asset routes - Books
   { method: 'GET', path: '/api/assets/books', handler: assetController.getAllBooks, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   { method: 'POST', path: '/api/assets/books', handler: assetController.addBook, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'PUT', path: '/api/assets/books/:id', handler: assetController.updateAsset, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'DELETE', path: '/api/assets/books/:id', handler: assetController.deleteAsset, auth: true, roles: ROLE_GROUPS.STAFF },
-  
+
   // Asset routes - CDs
   { method: 'GET', path: '/api/assets/cds', handler: assetController.getAllCDs, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   { method: 'POST', path: '/api/assets/cds', handler: assetController.addCD, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'PUT', path: '/api/assets/cds/:id', handler: assetController.updateAsset, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'DELETE', path: '/api/assets/cds/:id', handler: assetController.deleteAsset, auth: true, roles: ROLE_GROUPS.STAFF },
-  
+
   // Asset routes - Audiobooks
   { method: 'GET', path: '/api/assets/audiobooks', handler: assetController.getAllAudiobooks, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   { method: 'POST', path: '/api/assets/audiobooks', handler: assetController.addAudiobook, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'PUT', path: '/api/assets/audiobooks/:id', handler: assetController.updateAsset, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'DELETE', path: '/api/assets/audiobooks/:id', handler: assetController.deleteAsset, auth: true, roles: ROLE_GROUPS.STAFF },
-  
+
   // Asset routes - Movies
   { method: 'GET', path: '/api/assets/movies', handler: assetController.getAllMovies, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   { method: 'POST', path: '/api/assets/movies', handler: assetController.addMovie, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'PUT', path: '/api/assets/movies/:id', handler: assetController.updateAsset, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'DELETE', path: '/api/assets/movies/:id', handler: assetController.deleteAsset, auth: true, roles: ROLE_GROUPS.STAFF },
-  
+
   // Asset routes - Technology
   { method: 'GET', path: '/api/assets/technology', handler: assetController.getAllTechnology, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   { method: 'POST', path: '/api/assets/technology', handler: assetController.addTechnology, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'PUT', path: '/api/assets/technology/:id', handler: assetController.updateAsset, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'DELETE', path: '/api/assets/technology/:id', handler: assetController.deleteAsset, auth: false, roles: ROLE_GROUPS.STAFF },
-  
+  { method: 'DELETE', path: '/api/assets/technology/:id', handler: assetController.deleteAsset, auth: true, roles: ROLE_GROUPS.STAFF },
+
   // Asset routes - Study Rooms
   { method: 'GET', path: '/api/assets/study-rooms', handler: assetController.getAllStudyRooms, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   { method: 'POST', path: '/api/assets/study-rooms', handler: assetController.addStudyRoom, auth: true, roles: ROLE_GROUPS.STAFF },
@@ -107,14 +115,13 @@ const routes = [
 
   // Event routes
   { method: 'GET', path: '/api/events', handler: eventController.getAllEvents },
-  {method: 'POST', path: '/api/events', handler: eventController.createEvent},
-  {method: 'DELETE', path: '/api/events/:id', handler: eventController.deleteEvent},
-  
+  { method: 'POST', path: '/api/events', handler: eventController.createEvent },
+  { method: 'DELETE', path: '/api/events/:id', handler: eventController.deleteEvent },
+
   // Student routes
   { method: 'GET', path: '/api/students', handler: studentController.getAllStudents, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'PUT', path: '/api/students/:id', handler: studentController.updateStudent, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'DELETE', path: '/api/students/:id', handler: studentController.deleteStudent, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'POST', path: '/api/students', handler: studentController.createStudent, auth: true, roles: ROLE_GROUPS.STAFF },
 
 
   // Member routes
@@ -124,14 +131,28 @@ const routes = [
   { method: 'PUT', path: '/api/members/:id', handler: memberController.updateMember, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'DELETE', path: '/api/members/:id', handler: memberController.deleteMember, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/members/:id/activity', handler: memberController.getMemberActivity, auth: true, roles: ROLE_GROUPS.STAFF },
-  
+
   // Borrow routes
   { method: 'GET', path: '/api/borrow-records', handler: borrowController.getAllRecords, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'POST', path: '/api/borrow/issue', handler: borrowController.issueBook, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'PUT', path: '/api/borrow-records/:id/return', handler: borrowController.returnBook, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'PUT', path: '/api/borrow-records/:id/renew', handler: borrowController.renewBook, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'POST', path: '/api/borrow/issue', handler: borrowController.issueAsset, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'PUT', path: '/api/borrow-records/:id/return', handler: borrowController.returnAsset, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'PUT', path: '/api/borrow-records/:id/renew', handler: borrowController.renewAsset, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/dashboard/stats', handler: borrowController.getDashboardStats, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'POST', path: '/api/borrow', handler: borrowController.borrowAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
+  { method: 'POST', path: '/api/borrow', handler: borrowController.borrowAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+  { method: 'PUT', path: '/api/borrow/return/:id', handler: borrowController.returnAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+  { method: "GET", path: '/api/borrow-records/user', handler: borrowController.getUserBorrows, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+  { method: 'PUT', path: '/api/borrow/return/:id', handler: borrowController.userReturnAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+  { method: 'GET', path: '/api/dashboard/student/stats', handler: borrowController.getStudentDashboardStats, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+
+  // Hold routes
+  { method: 'GET', path: '/api/holds', handler: holdController.getAllHolds, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/holds/user', handler: holdController.getUserHolds, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+  { method: 'POST', path: '/api/holds', handler: holdController.createHold, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+  { method: 'PUT', path: '/api/holds/:id/cancel', handler: holdController.cancelHold, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'POST', path: '/api/hold', handler: borrowController.holdAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+
+  // Waitlist routes
+  { method: 'POST', path: '/api/waitlist', handler: borrowController.waitlistAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
 
   // Report routes
   { method: 'GET', path: '/api/reports/most-borrowed', handler: reportController.getMostBorrowedAssets, auth: true, roles: ROLE_GROUPS.STAFF },
@@ -139,29 +160,38 @@ const routes = [
   { method: 'GET', path: '/api/reports/active-borrowers', handler: reportController.getActiveBorrowers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/overdue-items', handler: reportController.getOverdueItems, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/inventory-summary', handler: reportController.getInventorySummary, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'GET', path: '/api/reports/custom', handler: reportController.getCustomReport, auth: true, roles: ROLE_GROUPS.STAFF },
-  
+
   // Librarian Report routes
   { method: 'GET', path: '/api/reports/librarian/:id/summary', handler: reportController.getLibrarianSummary, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/librarian/:id/transactions', handler: reportController.getLibrarianTransactions, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/librarian/:id/daily-activity', handler: reportController.getLibrarianDailyActivity, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/reports/librarian/:id/room-bookings', handler: reportController.getLibrarianRoomBookings, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/reports/librarian/:id/room-bookings/meta', handler: reportController.getRoomReportMetadata, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/librarian/:id/members', handler: reportController.getLibrarianMembers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/librarian/:id/books', handler: reportController.getLibrarianBooks, auth: true, roles: ROLE_GROUPS.STAFF },
-  
+
   // Notification routes
-  { method: 'GET', path: '/api/notifications', handler: notificationController.getAdminNotifications, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/notifications/counts', handler: notificationController.getNotificationCounts, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/notifications/critical', handler: notificationController.getCriticalNotifications, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/notifications', handler: notificationController.getAdminNotifications, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/notifications/counts', handler: notificationController.getNotificationCounts, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/notifications/critical', handler: notificationController.getCriticalNotifications, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'POST', path: '/api/notifications/low-stock-alerts', handler: notificationController.createLowStockAlert, auth: true, roles: ROLE_GROUPS.STAFF },
-  
+
   // Fine Management routes
   { method: 'GET', path: '/api/fines/stats', handler: fineController.getFineStats, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/fines/user/:id', handler: fineController.getUserFines, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   { method: 'GET', path: '/api/fines/:id', handler: fineController.getFineById, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/fines', handler: fineController.getAllFines, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'POST', path: '/api/fines/:id/pay', handler: fineController.processFinePayment, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'POST', path: '/api/fines/:id/pay-online', handler: fineController.payFineOnline, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   { method: 'POST', path: '/api/fines/:id/waive', handler: fineController.waiveFine, auth: true, roles: ROLE_GROUPS.STAFF },
-  
+
+  // Configuration routes
+  { method: 'GET', path: '/api/config', handler: configController.getAllConfig, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/config/:key', handler: configController.getConfig, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+  { method: 'PUT', path: '/api/config/:key', handler: configController.updateConfig, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'POST', path: '/api/config', handler: configController.createConfig, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'DELETE', path: '/api/config/:key', handler: configController.deleteConfig, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+
   // Upload route
   { method: 'POST', path: '/api/upload', handler: uploadController.handleUpload, auth: true, roles: ROLE_GROUPS.STAFF },
 ];
@@ -196,7 +226,7 @@ function findMatchingRoute(method, pathname) {
 // Helper to handle matched route
 async function handleMatchedRoute(req, res, matchedRoute, pathname, urlParts) {
   if (matchedRoute.auth) {
-    const user = authenticateRequest(req, res);
+    const user = await authenticateRequest(req, res);
     if (!user) {
       return;
     }
@@ -211,21 +241,21 @@ async function handleMatchedRoute(req, res, matchedRoute, pathname, urlParts) {
     matchedRoute.handler(req, res);
     return;
   }
-  
+
   // Parse body for POST/PUT requests
   if (req.method === 'POST' || req.method === 'PUT') {
     req.body = await parseBody(req);
   }
-  
+
   // Attach params to request
   req.params = matchedRoute.params;
-  
+
   // Parse and attach query parameters
   req.query = {};
   urlParts.searchParams.forEach((value, key) => {
     req.query[key] = value;
   });
-  
+
   // Call the handler
   await matchedRoute.handler(req, res);
 }
@@ -243,7 +273,7 @@ const server = http.createServer(async (req, res) => {
   // Parse the route
   const urlParts = new URL(req.url, `http://${req.headers.host}`);
   const pathname = urlParts.pathname;
-  
+
   // Find matching route
   const matchedRoute = findMatchingRoute(req.method, pathname);
 

@@ -37,7 +37,7 @@ exports.getAdminNotifications = (req, res) => {
       a.Asset_ID as asset_id,
       b.Borrow_Date as borrow_date
     FROM borrow b
-    JOIN user u ON b.User_ID = u.User_ID
+    JOIN user u ON b.Borrower_ID = u.User_ID
     JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
     JOIN asset a ON r.Asset_ID = a.Asset_ID
     LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
@@ -53,11 +53,12 @@ exports.getAdminNotifications = (req, res) => {
     
     SELECT 
       'low_stock' as notification_type,
-      a.Asset_ID as id,
+      lsa.Alert_ID as id,
       NULL as borrower_name,
       NULL as borrower_email,
       NULL as borrower_phone,
       CASE 
+        WHEN lsa.Asset_Title IS NOT NULL THEN lsa.Asset_Title
         WHEN bk.Title IS NOT NULL THEN bk.Title
         WHEN m.Title IS NOT NULL THEN m.Title
         WHEN cd.Title IS NOT NULL THEN cd.Title
@@ -65,38 +66,20 @@ exports.getAdminNotifications = (req, res) => {
         WHEN t.Description IS NOT NULL THEN t.Description
         ELSE 'Unknown Item'
       END as item_title,
-      CASE 
-        WHEN bk.Asset_ID IS NOT NULL THEN 'Book'
-        WHEN m.Asset_ID IS NOT NULL THEN 'Movie'
-        WHEN cd.Asset_ID IS NOT NULL THEN 'CD'
-        WHEN ab.Asset_ID IS NOT NULL THEN 'Audiobook'
-        WHEN t.Asset_ID IS NOT NULL THEN 'Technology'
-        ELSE 'Unknown'
-      END as item_type,
+      lsa.Asset_Type as item_type,
       NULL as due_date,
       NULL as days_overdue,
       'Info' as severity,
-      a.Asset_ID as asset_id,
-      NULL as borrow_date
-    FROM asset a
+      lsa.Asset_ID as asset_id,
+      lsa.Created_At as borrow_date
+    FROM low_stock_alerts lsa
+    JOIN asset a ON lsa.Asset_ID = a.Asset_ID
     LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
     LEFT JOIN movie m ON a.Asset_ID = m.Asset_ID
     LEFT JOIN cd cd ON a.Asset_ID = cd.Asset_ID
     LEFT JOIN audiobook ab ON a.Asset_ID = ab.Asset_ID
     LEFT JOIN technology t ON a.Asset_ID = t.Asset_ID
-    WHERE a.Asset_ID NOT IN (
-      SELECT Asset_ID FROM study_room
-    )
-    AND (
-      SELECT COUNT(*) 
-      FROM rentable r 
-      WHERE r.Asset_ID = a.Asset_ID AND r.Availability = 1
-    ) = 0
-    AND (
-      SELECT COUNT(*) 
-      FROM rentable r 
-      WHERE r.Asset_ID = a.Asset_ID
-    ) > 0
+    WHERE lsa.Created_At >= DATE_SUB(NOW(), INTERVAL 7 DAY)
     
     UNION ALL
     
@@ -130,7 +113,7 @@ exports.getAdminNotifications = (req, res) => {
       a.Asset_ID as asset_id,
       b.Borrow_Date as borrow_date
     FROM borrow b
-    JOIN user u ON b.User_ID = u.User_ID
+    JOIN user u ON b.Borrower_ID = u.User_ID
     JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
     JOIN asset a ON r.Asset_ID = a.Asset_ID
     LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
@@ -143,18 +126,7 @@ exports.getAdminNotifications = (req, res) => {
       AND b.Due_Date >= CURDATE()
       AND b.Due_Date <= DATE_ADD(CURDATE(), INTERVAL 3 DAY)
     
-    ORDER BY 
-      CASE notification_type
-        WHEN 'overdue' THEN 1
-        WHEN 'due_soon' THEN 2
-        WHEN 'low_stock' THEN 3
-      END,
-      CASE severity
-        WHEN 'Critical' THEN 1
-        WHEN 'Urgent' THEN 2
-        WHEN 'Warning' THEN 3
-        WHEN 'Info' THEN 4
-      END
+    ORDER BY borrow_date DESC
   `;
 
   db.query(query, (err, results) => {
@@ -175,11 +147,9 @@ exports.getNotificationCounts = (req, res) => {
       COUNT(CASE WHEN b.Return_Date IS NULL AND b.Due_Date < CURDATE() THEN 1 END) as overdue_count,
       COUNT(CASE WHEN b.Return_Date IS NULL AND b.Due_Date >= CURDATE() AND b.Due_Date <= DATE_ADD(CURDATE(), INTERVAL 3 DAY) THEN 1 END) as due_soon_count,
       (
-        SELECT COUNT(DISTINCT a.Asset_ID)
-        FROM asset a
-        WHERE a.Asset_ID NOT IN (SELECT Asset_ID FROM study_room)
-        AND (SELECT COUNT(*) FROM rentable r WHERE r.Asset_ID = a.Asset_ID AND r.Availability = 1) = 0
-        AND (SELECT COUNT(*) FROM rentable r WHERE r.Asset_ID = a.Asset_ID) > 0
+        SELECT COUNT(*)
+        FROM low_stock_alerts
+        WHERE Created_At >= DATE_SUB(NOW(), INTERVAL 7 DAY)
       ) as low_stock_count
     FROM borrow b
   `;
@@ -226,7 +196,7 @@ exports.getCriticalNotifications = (req, res) => {
       b.Borrow_Date,
       a.Asset_ID
     FROM borrow b
-    JOIN user u ON b.User_ID = u.User_ID
+    JOIN user u ON b.Borrower_ID = u.User_ID
     JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
     JOIN asset a ON r.Asset_ID = a.Asset_ID
     LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
@@ -253,7 +223,7 @@ exports.getCriticalNotifications = (req, res) => {
 
 // Create a manual low stock alert from librarian dashboard
 exports.createLowStockAlert = (req, res) => {
-  const { 
+  const {
     assetId,
     assetType,
     assetTitle,

@@ -14,6 +14,7 @@
     "start": "npm run start --workspace server",
     "db:test": "npm run db:test --workspace server",
     "db:run-cli": "npm run db:run-cli --workspace server",
+    "db:triggers": "node server/create-triggers.js",
     "lint:server": "npm run lint --workspace server"
   },
   "devDependencies": {
@@ -21,10 +22,11 @@
     "eslint": "^9.36.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.22",
-    "globals": "^16.4.0",
-    "vite": "npm:rolldown-vite@7.1.14"
+    "globals": "^16.4.0"
   },
-  "overrides": {
-    "vite": "npm:rolldown-vite@7.1.14"
+  "dependencies": {
+    "axios": "^1.13.2",
+    "dotenv": "^17.2.3",
+    "mysql2": "^3.15.3"
   }
 }
