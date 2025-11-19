@@ -101,8 +101,39 @@ const PreviewList = ({ items, type, emptyMessage }) => {
 
 // --- Dashboard Page Component ---
 
-function DashboardOverview({ stats, loading }) {
+const API_URL = window.location.hostname === 'localhost'
+    ? 'http://localhost:3000/api'
+    : 'https://librarymanagementsystem-z2yw.onrender.com/api'
+
+function DashboardOverview() {
     const navigate = useNavigate()
+    const [stats, setStats] = useState(null)
+    const [loading, setLoading] = useState(true)
+
+    useEffect(() => {
+        const fetchStats = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                const response = await fetch(`${API_URL}/dashboard/student/stats`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    setStats(data);
+                } else {
+                    console.error('Failed to fetch stats');
+                }
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchStats();
+    }, []);
 
     if (loading) return <div className="student-loading">Loading dashboard...</div>
 
@@ -343,7 +374,7 @@ function StudentDashboard() {
                                 <Route path="overview" element={<DashboardOverview />} />
                                 <Route path="assets" element={<Assets />} />
                                 <Route path="inventory" element={<div className="student-placeholder-panel"><h3>Inventory</h3><p>Coming soon...</p></div>} />
-                                <Route path="reports" element={<div className="student-placeholder-panel"><h3>Reports</h3><p>Coming soon...</p></div>} />
+                                <Route path="reports" element={<Reports />} />
                             </Routes>
                         </div>
                     </div>

@@ -579,4 +579,105 @@ END as Status
   });
 };
 
+/**
+ * Process online fine payment by student
+ * POST /api/fines/:id/pay-online
+ */
+exports.payFineOnline = (req, res) => {
+  const borrowId = req.params.id;
+  const userId = req.user.id;
+  const { amount, paymentMethod = 'Online' } = req.body;
+
+  // Start transaction
+  db.getConnection((err, connection) => {
+    if (err) {
+      console.error('Connection error:', err);
+      return res.writeHead(500, { 'Content-Type': 'application/json' })
+        && res.end(JSON.stringify({ message: 'Database connection failed' }));
+    }
+
+    connection.beginTransaction((err) => {
+      if (err) {
+        connection.release();
+        return res.writeHead(500, { 'Content-Type': 'application/json' })
+          && res.end(JSON.stringify({ message: 'Transaction failed to start' }));
+      }
+
+      // Verify ownership and get fine details
+      connection.query(
+        'SELECT Borrower_ID, Fee_Incurred, Return_Date FROM borrow WHERE Borrow_ID = ?',
+        [borrowId],
+        (err, borrowResults) => {
+          if (err || borrowResults.length === 0) {
+            return connection.rollback(() => {
+              connection.release();
+              res.writeHead(404, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ message: 'Borrow record not found' }));
+            });
+          }
+
+          if (borrowResults[0].Borrower_ID !== userId) {
+            return connection.rollback(() => {
+              connection.release();
+              res.writeHead(403, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ message: 'Unauthorized to pay this fine' }));
+            });
+          }
+
+          const currentFee = parseFloat(borrowResults[0].Fee_Incurred || 0);
+          const isReturned = borrowResults[0].Return_Date !== null;
+          let newFee;
+
+          // For online payment, we assume paying the full amount or a specific amount
+          // Logic mirrors processFinePayment but simplified for student
+          if (isReturned) {
+            // Returned item: Fee_Incurred is Debt. Pay it off.
+            newFee = Math.max(0, currentFee - parseFloat(amount));
+          } else {
+            // Active item: Fee_Incurred is Paid Amount. Add to it.
+            // Wait, if item is NOT returned, Fee_Incurred usually stores what has been paid? 
+            // Let's check getAllFines logic:
+            // WHEN b.Return_Date IS NULL AND b.Due_Date < CURDATE() THEN LEAST(...) * ?
+            // So Fee_Incurred is NOT the fine amount for active items. It's likely 0 or previously paid amount?
+            // In processFinePayment: "Active item: Fee_Incurred represents PAID AMOUNT. Add payment."
+            newFee = currentFee + parseFloat(amount);
+          }
+
+          // Update borrow record
+          connection.query(
+            'UPDATE borrow SET Fee_Incurred = ? WHERE Borrow_ID = ?',
+            [newFee, borrowId],
+            (err) => {
+              if (err) {
+                return connection.rollback(() => {
+                  connection.release();
+                  res.writeHead(500, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ message: 'Failed to record payment', error: err.message }));
+                });
+              }
+
+              connection.commit((err) => {
+                if (err) {
+                  return connection.rollback(() => {
+                    connection.release();
+                    res.writeHead(500, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ message: 'Failed to commit payment' }));
+                  });
+                }
+
+                connection.release();
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                  message: 'Payment successful',
+                  newBalance: newFee
+                }));
+              });
+            }
+          );
+        }
+      );
+    });
+  });
+};
+
 module.exports = exports;
