@@ -64,12 +64,12 @@ function StudentDashboard() {
       content: <Temp />
     },
     {
-      path: 'reports',
-      label: 'Reports',
+      path: 'history',
+      label: 'History',
       content: <Temp />
     },
     {
-    path: 'test-loading',
+    path: 'test-fines',
     label: 'Test Loading',
     content: <TestLoad />
   }

@@ -82,10 +82,12 @@ exports.borrowAsset = async (req, res) => {
       connection.release();
     }
 }
+
 exports.holdAsset = async (req, res) => {
   const connection = await db.promise().getConnection();
     try {
-      const { userID, assetID } = req.body
+      const { assetID } = req.body
+      const userID = req.user.id;
       console.log("Recieved data:", {userID, assetID})
       if(!userID || !assetID) {
         console.log("Missing required Fields")
@@ -162,6 +164,9 @@ exports.holdAsset = async (req, res) => {
     finally {
       connection.release();
     }
+}
+exports.waitlistAsset = async (req, res) => {
+    
 }
 // Issue any asset (book, CD, audiobook, movie, technology, study-room)
 exports.issueAsset = (req, res) => {
@@ -381,57 +386,23 @@ exports.userReturnAsset = async (req, res) => {
   const { borrowID, fineAmount = 0 } = req.body;
   const userID = req.user.id
 
-  const [validBorrow] = await db.promise().query(
-    `SELECT Borrow_ID FROM borrow WHERE Borrow_ID = ? AND Borrower_ID = ?`,
-    [borrowID, userID]
+  const [validBorrower] = await db.promise().query(
+    `SELECT Borrower_ID FROM borrow WHERE Borrow_ID = ? AND Return_Date IS NULL`,
+    [borrowID]
   )
-  if(validBorrow.length === 0){
-    console.error('Error checking asset availability:', err);
-    return res.writeHead(403, { 'Content-Type': 'application/json' })
-      && res.end(JSON.stringify({ message: 'Database error', error: err.message }));
+  if(validBorrower.length === 0){
+    return res.writeHead(404, { 'Content-Type': 'application/json' })
+        && res.end(JSON.stringify({ message: 'Borrow does not exist'}));
   }
-  
-  const connection = await db.promise().getConnection();
-
-  try{
-    await connection.beginTransaction();
-
-    //Get rentable to be returned
-    const [borrowRecord] = await connection.query(
-      'SELECT Rentable_ID FROM borrow WHERE Borrow_ID = ? AND Return_Date IS NULL',
-      [borrowID]
-    );
-    
-    if(!borrowRecord.length) {
-      throw Object.assign(new Error('Borrow record not found or already returned'), {status: 404});
-    }
-    const rentableId = borrowRecord[0].Rentable_ID;
-    // Update borrow record with return date and fine
-    const updateQuery = fineAmount 
-    ? 'UPDATE borrow SET Return_Date = NOW(), Fee_Incurred = ? WHERE Borrow_ID = ? AND Return_Date IS NULL'
-    : 'UPDATE borrow SET Return_Date = NOW() WHERE Borrow_ID = ? AND Return_Date IS NULL';
-  
-    const params = fineAmount ? [fineAmount, borrowID] : [borrowID];
-
-    await connection.query(updateQuery, params);
-    
-    await connection.query(
-      `UPDATE rentable SET Availability = 1 WHERE Rentable_ID = ?`, [rentableId]
-    );
-  
-    await connection.commit();
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ 
-      message: 'Asset returned successfully',
-    }));
-  } catch (error) {
-    await connection.rollback();
-    console.error('Error returning book:', error);
-      return res.writeHead(error.status || 500, { 'Content-Type': 'application/json' })
-        && res.end(JSON.stringify({ message: 'Failed to return asset', error: error.message }));
-    } finally {
-      connection.release();
+  if(validBorrower[0] != userID){
+    return res.writeHead(401, { 'Content-Type': 'application/json' })
+        && res.end(JSON.stringify({ message: 'Unauthorized return'}));
   }
+  const newReq = {
+    ...req,
+    params: { id: borrowID }, 
+  };
+  return returnAsset(newReq, res);
 };
 
 // Renew asset

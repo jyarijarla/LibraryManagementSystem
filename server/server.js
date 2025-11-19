@@ -137,7 +137,7 @@ const routes = [
   { method: 'PUT', path: '/api/borrow/return/:id', handler: borrowController.returnAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
 
   // Hold routes
-  { method: 'POST', path: '/api/hold', handler: borrowController.borrowAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
+  { method: 'POST', path: '/api/hold', handler: borrowController.holdAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
 
   // Report routes
   { method: 'GET', path: '/api/reports/most-borrowed', handler: reportController.getMostBorrowedAssets, auth: true, roles: ROLE_GROUPS.STAFF },
