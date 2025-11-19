@@ -56,7 +56,7 @@ const createLibrarian = async () => {
       // Insert new librarian
       db.query(
         `INSERT INTO user (Username, First_Name, Last_Name, User_Email, User_Phone, Date_Of_Birth, Password, Role, Balance) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00)`,
+         VALUES (?, ?, ?, ?, ?, DATE(?), ?, ?, 0.00)`,
         [
           librarianData.username,
           librarianData.firstName,

@@ -96,7 +96,7 @@ const routes = [
   { method: 'GET', path: '/api/assets/technology', handler: assetController.getAllTechnology, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   { method: 'POST', path: '/api/assets/technology', handler: assetController.addTechnology, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'PUT', path: '/api/assets/technology/:id', handler: assetController.updateAsset, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'DELETE', path: '/api/assets/technology/:id', handler: assetController.deleteAsset, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'DELETE', path: '/api/assets/technology/:id', handler: assetController.deleteAsset, auth: false, roles: ROLE_GROUPS.STAFF },
   
   // Asset routes - Study Rooms
   { method: 'GET', path: '/api/assets/study-rooms', handler: assetController.getAllStudyRooms, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
@@ -114,7 +114,9 @@ const routes = [
   { method: 'GET', path: '/api/students', handler: studentController.getAllStudents, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'PUT', path: '/api/students/:id', handler: studentController.updateStudent, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'DELETE', path: '/api/students/:id', handler: studentController.deleteStudent, auth: true, roles: ROLE_GROUPS.STAFF },
-  
+  { method: 'POST', path: '/api/students', handler: studentController.createStudent, auth: true, roles: ROLE_GROUPS.STAFF },
+
+
   // Member routes
   { method: 'GET', path: '/api/members', handler: memberController.getAllMembers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/members/:id', handler: memberController.getMemberProfile, auth: true, roles: ROLE_GROUPS.STAFF },
@@ -137,6 +139,7 @@ const routes = [
   { method: 'GET', path: '/api/reports/active-borrowers', handler: reportController.getActiveBorrowers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/overdue-items', handler: reportController.getOverdueItems, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/inventory-summary', handler: reportController.getInventorySummary, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/reports/custom', handler: reportController.getCustomReport, auth: true, roles: ROLE_GROUPS.STAFF },
   
   // Librarian Report routes
   { method: 'GET', path: '/api/reports/librarian/:id/summary', handler: reportController.getLibrarianSummary, auth: true, roles: ROLE_GROUPS.STAFF },

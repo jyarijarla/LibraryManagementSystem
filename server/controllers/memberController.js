@@ -269,7 +269,7 @@ exports.addMember = (req, res) => {
       // Insert new member (Role = 1 for student/member)
       db.query(
         `INSERT INTO user (Username, First_Name, Last_Name, User_Email, User_Phone, Date_Of_Birth, Password, Role, Balance) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0.00)`,
+         VALUES (?, ?, ?, ?, ?, DATE(?), ?, 1, 0.00)`,
         [username, firstName, lastName || '', email, phone || null, dateOfBirth, initialPassword],
         (err, result) => {
           if (err) {
@@ -318,7 +318,7 @@ exports.updateMember = (req, res) => {
     params.push(phone || null);
   }
   if (dateOfBirth) {
-    updates.push('Date_Of_Birth = ?');
+    updates.push('Date_Of_Birth = DATE(?)');
     params.push(dateOfBirth);
   }
   // Status field removed - Account_Status column doesn't exist

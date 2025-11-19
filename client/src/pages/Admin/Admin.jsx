@@ -1,3 +1,4 @@
+import UserDropdown from '../../components/UserDropdown';
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import './Admin.css'
@@ -17,7 +18,59 @@ const getAssetImagePath = (assetType, assetId, extension = 'png') => {
   return `/assets/${assetType}/${assetId}.${extension}`
 }
 
+// Helper to get username from user object
+const getUsername = (user) => user.username || user.studentId || '-';
+
+// Helper to match a borrow record to a user robustly (by ID first, then by name)
+const userMatchesBorrow = (borrow, user) => {
+  if (!borrow || !user) return false;
+
+  // Helper to pick first non-null field from a list
+  const pick = (obj, keys) => {
+    for (const k of keys) {
+      if (obj[k] !== undefined && obj[k] !== null) return obj[k];
+    }
+    return undefined;
+  };
+
+  // Try several possible ID fields on the borrow record
+  const borrowId = pick(borrow, ['Borrower_ID', 'BorrowerId', 'Borrower_Id', 'User_ID', 'UserId', 'BorrowerID']);
+  const userId = pick(user, ['id', 'User_ID', 'userId', 'UserId']);
+
+  if (borrowId != null && userId != null) {
+    try {
+      if (String(borrowId) === String(userId)) return true;
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // Try matching by full name using various possible name fields
+  const userFullName = `${user.firstname || user.First_Name || ''} ${user.lastname || user.Last_Name || ''}`.trim();
+  const borrowFullName = pick(borrow, ['Borrower_Name']) || ((borrow.First_Name || borrow.FirstName || borrow.first_name) ? `${borrow.First_Name || borrow.FirstName || borrow.first_name} ${borrow.Last_Name || borrow.LastName || borrow.last_name || ''}`.trim() : undefined);
+
+  if (userFullName && borrowFullName) {
+    return userFullName === borrowFullName;
+  }
+
+  return false;
+}
 function Admin() {
+        // Modal state for showing all users in Reports tab
+        const [showUserListModal, setShowUserListModal] = useState(false);
+      // Custom report state (for Reports tab)
+      const [customReportType, setCustomReportType] = useState('table');
+      const [customReportData, setCustomReportData] = useState([]);
+      const [customReportFilters, setCustomReportFilters] = useState({
+        startDate: '',
+        endDate: '',
+        assetType: '',
+        userId: ''
+      });
+      const [customReportLoading, setCustomReportLoading] = useState(false);
+      const [customReportError, setCustomReportError] = useState('');
+    // Modal state for dashboard overview cards
+    const [overviewModal, setOverviewModal] = useState(null);
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   
@@ -43,7 +96,269 @@ function Admin() {
   const [itemToDelete, setItemToDelete] = useState(null)
   const [isEditMode, setIsEditMode] = useState(false)
   const [imageRefreshKey, setImageRefreshKey] = useState(Date.now()) // Cache buster for images
-  
+  // User Management modal states
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
+  const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const [showDeleteUserModal, setShowDeleteUserModal] = useState(false);
+  const [showViewUserModal, setShowViewUserModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  // Tab state for user view modal
+  const [activeUserModalTab, setActiveUserModalTab] = useState('Personal Info');
+  // Fines state for selected user
+  const [userFines, setUserFines] = useState([]);
+  // Borrow filter for user modal: 'current' | 'all' | 'overdue'
+  const [userBorrowFilter, setUserBorrowFilter] = useState('current');
+  // Map of fines by borrow id for quick lookup
+  const [userFinesMap, setUserFinesMap] = useState({});
+
+  // Helpers: current admin id (for processedBy)
+  const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+  const currentUserId = currentUser.id || currentUser.User_ID || null;
+
+  // Keep a map of fines when userFines changes
+  useEffect(() => {
+    const map = {};
+    (userFines || []).forEach(f => {
+      if (f && f.Borrow_ID) map[String(f.Borrow_ID)] = f;
+    });
+    setUserFinesMap(map);
+  }, [userFines]);
+
+  // Fetch fines when modal opens or selectedUser changes
+  useEffect(() => {
+    if (showViewUserModal && selectedUser && selectedUser.id) {
+      // Ensure we have latest borrow records when viewing a user
+      try {
+        fetchBorrowRecords();
+      } catch (e) {
+        console.error('Failed to refresh borrow records:', e);
+      }
+
+      // Debug log: show selectedUser and borrowRecords overview
+      console.log('ViewUserModal opened for user:', selectedUser);
+      // fetch fines for this user
+      fetch(`${API_URL}/fines/user/${selectedUser.id}`)
+        .then(res => res.ok ? res.json() : [])
+        .then(data => setUserFines(Array.isArray(data) ? data : []))
+        .catch(() => setUserFines([]));
+    } else {
+      setUserFines([]);
+    }
+  }, [showViewUserModal, selectedUser]);
+
+  // Return a borrow (admin action)
+  const handleReturnBorrow = async (borrowId) => {
+    if (!borrowId) return;
+    if (!window.confirm(`Mark borrow #${borrowId} as returned?`)) return;
+    setLoading(true);
+    try {
+      // Optimistic UI update: mark the borrow as returned locally so it disappears from 'current' immediately
+      setBorrowRecords(prev => prev.map(r => r.Borrow_ID === borrowId ? { ...r, Return_Date: new Date().toISOString() } : r));
+
+      const response = await fetch(`${API_URL}/borrow-records/${borrowId}/return`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to return borrow');
+      // Show success popup
+      setSuccessMessage(`Borrow ${borrowId} marked returned`);
+      // Refresh data
+      await fetchBorrowRecords();
+      if (selectedUser && selectedUser.id) {
+        // refresh fines as well
+        const finesRes = await fetch(`${API_URL}/fines/user/${selectedUser.id}`);
+        if (finesRes.ok) {
+          const finesData = await finesRes.json();
+          setUserFines(Array.isArray(finesData) ? finesData : []);
+        }
+      }
+    } catch (err) {
+      console.error('Return error:', err);
+      setError(err.message || 'Failed to return borrow');
+      setTimeout(() => setError(''), 4000);
+    } finally {
+      setLoading(false);
+      setTimeout(() => setSuccessMessage(''), 2000);
+    }
+  };
+
+  // Waive fine for a borrow (admin action)
+  const handleWaiveFine = async (borrowId) => {
+    if (!borrowId) return;
+    if (!window.confirm(`Waive fine for borrow #${borrowId}?`)) return;
+    setLoading(true);
+    try {
+      const body = { reason: 'Waived by admin', processedBy: currentUserId };
+      const response = await fetch(`${API_URL}/fines/${borrowId}/waive`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(body)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Failed to waive fine');
+      setSuccessMessage(`Fine waived for borrow ${borrowId}`);
+      // Refresh fines and borrow records
+      await fetchBorrowRecords();
+      if (selectedUser && selectedUser.id) {
+        const finesRes = await fetch(`${API_URL}/fines/user/${selectedUser.id}`);
+        if (finesRes.ok) {
+          const finesData = await finesRes.json();
+          setUserFines(Array.isArray(finesData) ? finesData : []);
+        }
+      }
+    } catch (err) {
+      console.error('Waive error:', err);
+      setError(err.message || 'Failed to waive fine');
+      setTimeout(() => setError(''), 4000);
+    } finally {
+      setLoading(false);
+      setTimeout(() => setSuccessMessage(''), 2000);
+    }
+  };
+
+  // Form data shared by Create + Edit modals
+  const [userForm, setUserForm] = useState({
+    studentId: "", // used for username
+    firstname: "",
+    lastname: "",
+    email: "",
+    role: "Student",
+    password: "",
+    dateOfBirth: "",
+    phone: ""
+  });
+
+  // Normalize various date formats to YYYY-MM-DD for <input type="date"> value
+  const formatDateForInput = (val) => {
+    if (!val) return ''
+    // If already in YYYY-MM-DD form
+    if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val
+    // If it's an ISO string like 2025-11-18T00:00:00.000Z, take first 10 chars
+    if (typeof val === 'string' && val.length >= 10 && /\d{4}-\d{2}-\d{2}/.test(val.slice(0,10))) return val.slice(0,10)
+    // If it's a Date object or other string, try to create Date and format
+    const d = new Date(val)
+    if (isNaN(d)) return ''
+    const yyyy = d.getFullYear()
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  }
+
+  // Format YYYY-MM-DD or Date-like value to localized date string without timezone shift
+  const formatDateForDisplay = (val) => {
+    if (!val) return '-'
+    // If already in YYYY-MM-DD
+    const m = String(val).match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (m) {
+      const yyyy = parseInt(m[1], 10)
+      const mm = parseInt(m[2], 10) - 1
+      const dd = parseInt(m[3], 10)
+      // Construct a local Date at midnight so toLocaleDateString preserves the calendar date
+      return new Date(yyyy, mm, dd).toLocaleDateString()
+    }
+    // Fallback to Date parsing using UTC
+    const d = new Date(val)
+    if (isNaN(d)) return '-'
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toLocaleDateString()
+  }
+
+  // Parse user-entered date strings into YYYY-MM-DD.
+  // Accepts 'YYYY-MM-DD' or 'MM/DD/YYYY' or 'M/D/YYYY'. Returns YYYY-MM-DD or null.
+  const normalizeUserDOB = (input) => {
+    if (!input) return null
+    const s = String(input).trim()
+    // Already YYYY-MM-DD
+    const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (isoMatch) return s
+
+    // MM/DD/YYYY or M/D/YYYY
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+    if (m) {
+      let mm = parseInt(m[1], 10)
+      let dd = parseInt(m[2], 10)
+      const yyyy = parseInt(m[3], 10)
+      if (mm < 1 || mm > 12) return null
+      if (dd < 1 || dd > 31) return null
+      mm = String(mm).padStart(2, '0')
+      dd = String(dd).padStart(2, '0')
+      return `${yyyy}-${mm}-${dd}`
+    }
+
+    // Try Date parsing fallback (avoid timezone issues by using date parts)
+    const d = new Date(s)
+    if (!isNaN(d)) {
+      const yyyy = d.getFullYear()
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      return `${yyyy}-${mm}-${dd}`
+    }
+
+    return null
+  }
+
+  const mapRoleValueToName = (role) => {
+    if (role === null || role === undefined) return 'Student'
+    if (typeof role === 'number') {
+      if (role === 1) return 'Student'
+      if (role === 2) return 'Admin'
+      if (role === 3) return 'Librarian'
+      if (role === 4) return 'Teacher'
+      return 'Student'
+    }
+    // if string, return normalized capitalization
+    const s = String(role)
+    if (/admin/i.test(s)) return 'Admin'
+    if (/librarian/i.test(s)) return 'Librarian'
+    if (/teacher/i.test(s)) return 'Teacher'
+    return 'Student'
+  }
+
+  // Handle typing in the form
+  const handleInputChange = (e) => {
+    setUserForm({
+      ...userForm,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  const openEditUserModal = (user) => {
+  setSelectedUser(user);
+  setUserForm({
+    studentId: user.studentId || user.username || '',
+    firstname: user.firstname || '',
+    lastname: user.lastname || '',
+    // keep username if present; otherwise fall back to studentId
+    username: (user.username && String(user.username)) || (user.studentId && String(user.studentId)) || '',
+    email: user.email || '',
+    role: mapRoleValueToName(user.role),
+    password: '', // blank when editing
+    dateOfBirth: formatDateForInput(user.dateOfBirth),
+    phone: user.phone || ''
+  });
+  setShowEditUserModal(true);
+};
+
+const openDeleteUserModal = (user) => {
+  setSelectedUser(user);
+  setShowDeleteUserModal(true);
+};
+
+
+
+
+
+// For delete modal
+const [userToDelete, setUserToDelete] = useState(null);
+
+
+
   // Report states
   const [mostBorrowedReport, setMostBorrowedReport] = useState([])
   const [activeBorrowersReport, setActiveBorrowersReport] = useState([])
@@ -206,15 +521,23 @@ function Admin() {
     }
   }
 
+ 
+
+
   const fetchStudents = async () => {
     try {
       console.log('Fetching students...')
-      const response = await fetch(`${API_URL}/students`)
+      const response = await fetch(`${API_URL}/students`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
       if (!response.ok) throw new Error('Failed to fetch students')
       const data = await response.json()
       console.log(`✅ Received ${data.length} students`)
-      // Sort by User_ID in ascending order
-      const sortedData = data.sort((a, b) => a.User_ID - b.User_ID)
+      // Sort by id in ascending order
+      const sortedData = data.sort((a, b) => (a.id || 0) - (b.id || 0))
       setStudents(sortedData)
     } catch (error) {
       console.error('❌ Error fetching students:', error)
@@ -500,6 +823,145 @@ function Admin() {
     }
   }
 
+const handleCreateUser = async (e) => {
+  e.preventDefault();
+  console.log("Submitting new user:", userForm);
+
+  try {
+    // Normalize DOB before sending (accept user entered formats)
+    const normalizedDOB = normalizeUserDOB(userForm.dateOfBirth) || normalizeUserDOB(formatDateForInput(userForm.dateOfBirth))
+    if (!normalizedDOB) throw new Error('Please enter a valid Date of Birth (MM/DD/YYYY or YYYY-MM-DD)')
+
+    // Always send username as studentId
+    const payload = {
+      ...userForm,
+      dateOfBirth: normalizedDOB,
+      studentId: userForm.studentId // this is the username
+    }
+
+    const response = await fetch(`${API_URL}/students`, {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('Create student server response:', data);
+      throw new Error(data.error || data.message || 'Failed to create user');
+    }
+
+    setShowCreateUserModal(false);
+    fetchStudents(); // refresh the list
+    setUserForm({ studentId: "", firstname: "", lastname: "", email: "", role: "Student", password: "", dateOfBirth: "", phone: "" });
+  } catch (err) {
+    setError(err.message);
+    console.error("Create error response:", err.message);
+  }
+};
+
+
+const handleEditUser = async (e) => {
+  e.preventDefault();
+
+  try {
+    // Normalize DOB before sending
+    const normalizedDOB = normalizeUserDOB(userForm.dateOfBirth) || normalizeUserDOB(formatDateForInput(userForm.dateOfBirth))
+    if (userForm.dateOfBirth && !normalizedDOB) throw new Error('Please enter a valid Date of Birth (MM/DD/YYYY or YYYY-MM-DD)')
+
+    // Only use studentId for username
+    const coercedUsername = (userForm.studentId && String(userForm.studentId).trim()) || '';
+    if (!coercedUsername) throw new Error('Username is required and cannot be empty');
+    const payload = { ...userForm, dateOfBirth: normalizedDOB, studentId: coercedUsername };
+
+    const response = await fetch(`${API_URL}/students/${selectedUser.id}`, {
+      method: "PUT",
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to update user');
+
+    // Apply updated values to the selectedUser and the edit form so the View modal
+    // (which may be open underneath the Edit modal) shows the changes immediately.
+    const updatedFields = {
+      firstname: (payload && payload.firstname) || userForm.firstname,
+      lastname: (payload && payload.lastname) || userForm.lastname,
+      email: (payload && payload.email) || userForm.email,
+      studentId: (payload && payload.studentId) || userForm.studentId || '',
+      username: (payload && payload.studentId) || userForm.username || '',
+      phone: (payload && payload.phone) || userForm.phone || '',
+      dateOfBirth: normalizedDOB || userForm.dateOfBirth || '',
+      role: (payload && payload.role) || userForm.role
+    };
+
+    setSelectedUser(prev => ({ ...(prev || {}), ...updatedFields }));
+    setUserForm(prev => ({ ...prev, ...updatedFields }));
+
+    setShowEditUserModal(false);
+    fetchStudents();
+  } catch (err) {
+    setError(err.message);
+    console.error("Edit error response:", err.message);
+  }
+};
+
+
+const handleDeleteUser = async () => {
+  if (!selectedUser) return;
+
+  try {
+    const response = await fetch(`${API_URL}/students/${selectedUser.id}`, {
+      method: "DELETE",
+      headers: {
+        "Authorization": `Bearer ${localStorage.getItem('token')}`
+      }
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to delete user');
+
+    setShowDeleteUserModal(false);
+    fetchStudents();
+  } catch (err) {
+    setError(err.message);
+    console.error("Delete error response:", err.message);
+  }
+};
+
+  // Copy helper for modal values
+  const copyToClipboard = async (text) => {
+    if (!text) return;
+    try {
+      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+      setSuccessMessage('Copied to clipboard')
+      setTimeout(() => setSuccessMessage(''), 1800)
+    } catch (err) {
+      console.error('Copy failed', err)
+      setError('Failed to copy to clipboard')
+      setTimeout(() => setError(''), 2000)
+    }
+  }
+
+
+
     const getAssetFormFields = () => {
       switch(activeAssetTab) {
         case 'books':
@@ -632,29 +1094,102 @@ function Admin() {
     <div className="tab-content">
       <h2>Dashboard Overview</h2>
       <ErrorPopup errorMessage={error} />
-      
+
       <div className="stats-grid">
-        <div className="stat-card">
+        <div className="stat-card" onClick={() => setOverviewModal('assets')} style={{ cursor: 'pointer' }}>
           <div className="stat-icon blue">📚</div>
           <div className="stat-details">
             <h3>{books.length + cds.length + audiobooks.length + movies.length + technology.length + studyRooms.length}</h3>
             <p>Total Assets</p>
           </div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card" onClick={() => setOverviewModal('students')} style={{ cursor: 'pointer' }}>
           <div className="stat-icon purple">👥</div>
           <div className="stat-details">
             <h3>{students.length}</h3>
             <p>Total Students</p>
           </div>
         </div>
-        <div className="stat-card">
+        <div className="stat-card" onClick={() => setOverviewModal('borrowed')} style={{ cursor: 'pointer' }}>
           <div className="stat-icon orange">📖</div>
           <div className="stat-details">
             <h3>{borrowRecords.filter(r => !r.Return_Date).length}</h3>
             <p>Currently Borrowed</p>
           </div>
         </div>
+      </div>
+
+      {/* Overview Modals */}
+      {overviewModal === 'assets' && (
+        <div className="modal-overlay" onClick={() => setOverviewModal(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <h3>All Assets</h3>
+            <ul style={{ maxHeight: '320px', overflowY: 'auto', marginBottom: '18px' }}>
+              <li><strong>Books:</strong> {books.length}</li>
+              <li><strong>CDs:</strong> {cds.length}</li>
+              <li><strong>Audiobooks:</strong> {audiobooks.length}</li>
+              <li><strong>Movies:</strong> {movies.length}</li>
+              <li><strong>Technology:</strong> {technology.length}</li>
+              <li><strong>Study Rooms:</strong> {studyRooms.length}</li>
+            </ul>
+            <div style={{ fontSize: '0.98rem', color: '#555' }}>
+              <strong>Recent Additions:</strong>
+              <ul>
+                {[...books, ...cds, ...audiobooks, ...movies, ...technology, ...studyRooms].slice(-5).map(a => (
+                  <li key={a.Asset_ID || a.Room_Number || a.Model_Num}>{a.Title || a.Room_Number || a.Model_Num || 'Asset'}</li>
+                ))}
+              </ul>
+            </div>
+            <button className="close-btn" onClick={() => setOverviewModal(null)} style={{ marginTop: '18px' }}>Close</button>
+          </div>
+        </div>
+      )}
+      {overviewModal === 'students' && (
+        <div className="modal-overlay" onClick={() => setOverviewModal(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <h3>All Students</h3>
+            <ul style={{ maxHeight: '320px', overflowY: 'auto', marginBottom: '18px' }}>
+              {students.map(s => (
+                <li key={s.id}><strong>{s.studentId || s.username}</strong>: {s.firstname} {s.lastname} ({mapRoleValueToName(s.role)})</li>
+              ))}
+            </ul>
+            <button className="close-btn" onClick={() => setOverviewModal(null)} style={{ marginTop: '18px' }}>Close</button>
+          </div>
+        </div>
+      )}
+      {overviewModal === 'borrowed' && (
+        <div className="modal-overlay" onClick={() => setOverviewModal(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+            <h3>Currently Borrowed Items</h3>
+            <ul style={{ maxHeight: '320px', overflowY: 'auto', marginBottom: '18px' }}>
+              {borrowRecords.filter(r => !r.Return_Date).map(r => (
+                <li key={r.Borrow_ID}><strong>{r.Title || r.Item_Title || 'Asset'}</strong> by {r.Borrower_Name} (Due: {formatDateForDisplay(r.Due_Date)})</li>
+              ))}
+            </ul>
+            <button className="close-btn" onClick={() => setOverviewModal(null)} style={{ marginTop: '18px' }}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* Asset Type Breakdown Chart */}
+      <div style={{ marginTop: '32px', background: '#f9fafb', borderRadius: '12px', padding: '24px', maxWidth: '600px' }}>
+        <h3 style={{ marginBottom: '18px' }}>Asset Type Breakdown</h3>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={[
+            { type: 'Books', count: books.length },
+            { type: 'CDs', count: cds.length },
+            { type: 'Audiobooks', count: audiobooks.length },
+            { type: 'Movies', count: movies.length },
+            { type: 'Technology', count: technology.length },
+            { type: 'Study Rooms', count: studyRooms.length }
+          ]}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="type" />
+            <YAxis allowDecimals={false} />
+            <Tooltip />
+            <Bar dataKey="count" fill="#6366f1" />
+          </BarChart>
+        </ResponsiveContainer>
       </div>
     </div>
   )
@@ -843,37 +1378,49 @@ function Admin() {
         <table className="data-table">
           <thead>
             <tr>
-              <th>#</th>
               <th>Student ID</th>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Phone</th>
-              <th>Active Borrows</th>
-              <th>Status</th>
+              <th>First Name</th>
+              <th>Last Name</th>
+              <th>Role</th>
+              <th style={{ textAlign: 'center' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {students.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ textAlign: 'center' }}>No students found</td>
+                <td colSpan="5" style={{ textAlign: 'center' }}>No students found</td>
               </tr>
             ) : (
-              students.map((student, index) => (
+              students.map((student) => (
                 <tr key={student.id}>
-                  <td>{index + 1}</td>
-                  <td><strong>{student.studentId}</strong></td>
-                  <td>{student.name}</td>
-                  <td>{student.email}</td>
-                  <td>{student.phone || '-'}</td>
+                  <td><strong>{student.studentId || student.username}</strong></td>
+                  <td>{student.firstname || '-'}</td>
+                  <td>{student.lastname || '-'}</td>
                   <td>
-                    <span className={`status-badge ${student.borrowedBooks > 0 ? 'borrowed' : 'available'}`}>
-                      {student.borrowedBooks}
-                    </span>
+                    <span className="status-badge available">{mapRoleValueToName(student.role)}</span>
                   </td>
-                  <td>
-                    <span className="status-badge active">
-                      {student.status}
-                    </span>
+                  <td style={{ textAlign: 'center' }}>
+                    <div className="row-action-group">
+                      <button
+                        className="icon-btn view-icon"
+                        title="View"
+                        aria-label={`View ${student.firstname || student.username || student.studentId || 'user'}`}
+                        onClick={() => {
+                          setSelectedUser(student)
+                          setShowViewUserModal(true)
+                        }}
+                      >
+                        🔍
+                      </button>
+                      <button
+                        className="icon-btn delete-icon"
+                        title="Delete"
+                        aria-label={`Delete ${student.firstname || student.username || student.studentId || 'user'}`}
+                        onClick={() => openDeleteUserModal(student)}
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -934,71 +1481,140 @@ function Admin() {
 
   const renderReports = () => {
     const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
-    
+
+    // Generate custom report handler (must be outside renderReports)
+    const generateCustomReport = async () => {
+      setCustomReportLoading(true);
+      setCustomReportError('');
+      try {
+        const params = new URLSearchParams();
+        if (customReportFilters.startDate) params.append('startDate', customReportFilters.startDate);
+        if (customReportFilters.endDate) params.append('endDate', customReportFilters.endDate);
+        if (customReportFilters.assetType) params.append('assetType', customReportFilters.assetType);
+        if (customReportFilters.userId) params.append('userId', customReportFilters.userId);
+        const response = await fetch(`${API_URL}/reports/custom?${params.toString()}`);
+        if (!response.ok) throw new Error('Failed to fetch custom report');
+        const data = await response.json();
+        setCustomReportData(Array.isArray(data) ? data : []);
+      } catch (err) {
+        setCustomReportError(err.message || 'Error generating report');
+      } finally {
+        setCustomReportLoading(false);
+      }
+    };
+
     return (
       <div className="tab-content">
         <h2>Library Reports</h2>
         <ErrorPopup errorMessage={error} />
-        
-        {/* Report 1: Most Borrowed Assets */}
-        <div className="report-section">
-          <h3>📊 Most Borrowed Assets (Top 10)</h3>
-          
-          {mostBorrowedReport.length > 0 && (
-            <div style={{ marginBottom: '30px', backgroundColor: '#f9fafb', padding: '20px', borderRadius: '8px' }}>
-              <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={mostBorrowedReport.slice(0, 10)}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="Title" 
-                    angle={-45} 
-                    textAnchor="end" 
-                    height={120}
-                    tick={{ fontSize: 12 }}
-                  />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="Total_Borrows" fill="#3b82f6" name="Total Borrows" />
-                  <Bar dataKey="Available_Copies" fill="#10b981" name="Available" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
 
-          <div className="table-container">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Asset ID</th>
-                  <th>Title</th>
-                  <th>Type</th>
-                  <th>Total Borrows</th>
-                  <th>Total Copies</th>
-                  <th>Available</th>
-                  <th>Borrow Rate</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mostBorrowedReport.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" style={{ textAlign: 'center' }}>No data available</td>
-                  </tr>
-                ) : (
-                  mostBorrowedReport.map((item) => (
-                    <tr key={item.Asset_ID}>
-                      <td>{item.Asset_ID}</td>
-                      <td>{item.Title}</td>
-                      <td><span className="category-badge">{item.Type}</span></td>
-                      <td><strong>{item.Total_Borrows}</strong></td>
-                      <td>{item.Total_Copies}</td>
-                      <td>{item.Available_Copies}</td>
-                      <td>{item.Borrow_Rate_Per_Copy}</td>
+        {/* Custom Report Generator */}
+        <div className="report-section" style={{ marginBottom: '32px', background: '#f3f4f6', borderRadius: '14px', padding: '32px 28px' }}>
+          <h3 style={{ marginBottom: '18px', fontWeight: 700, fontSize: '1.3rem' }}>🛠️ Generate Custom Report</h3>
+          <form style={{ display: 'flex', flexWrap: 'wrap', gap: '32px', marginBottom: '18px', alignItems: 'flex-end' }} onSubmit={e => { e.preventDefault(); generateCustomReport(); }}>
+            <div style={{ minWidth: '220px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontWeight: 600 }}>Date Range</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input type="date" value={customReportFilters.startDate} onChange={e => setCustomReportFilters(f => ({ ...f, startDate: e.target.value }))} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', flex: 1 }} />
+                <span style={{ alignSelf: 'center' }}>to</span>
+                <input type="date" value={customReportFilters.endDate} onChange={e => setCustomReportFilters(f => ({ ...f, endDate: e.target.value }))} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', flex: 1 }} />
+              </div>
+            </div>
+            <div style={{ minWidth: '220px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontWeight: 600 }}>Asset Type</label>
+              <select value={customReportFilters.assetType} onChange={e => setCustomReportFilters(f => ({ ...f, assetType: e.target.value }))} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db' }}>
+                <option value="">All</option>
+                <option value="books">Books</option>
+                <option value="cds">CDs</option>
+                <option value="audiobooks">Audiobooks</option>
+                <option value="movies">Movies</option>
+                <option value="technology">Technology</option>
+                <option value="study-rooms">Study Rooms</option>
+              </select>
+            </div>
+            <div style={{ minWidth: '220px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
+              <label style={{ fontWeight: 600 }}>User</label>
+              <UserDropdown
+                users={[{ id: '', firstname: 'All', lastname: 'Students', username: '', studentId: '', role: 1 }, ...students.filter(u => u.role === 1)]}
+                value={customReportFilters.userId}
+                onChange={val => setCustomReportFilters(f => ({ ...f, userId: val }))}
+                allLabel="All Students"
+              />
+            </div>
+            <div style={{ minWidth: '220px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <label style={{ fontWeight: 600 }}>Report Type</label>
+              <select value={customReportType} onChange={e => setCustomReportType(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db' }}>
+                <option value="table">Table</option>
+                <option value="bar">Bar Chart</option>
+                <option value="pie">Pie Chart</option>
+              </select>
+            </div>
+            <div style={{ minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <button className="add-button" type="submit" disabled={customReportLoading} style={{ padding: '10px 0', fontWeight: 600, fontSize: '1.05rem', borderRadius: '8px' }}>
+                {customReportLoading ? 'Generating...' : 'Generate Report'}
+              </button>
+            </div>
+          </form>
+          {customReportError && <ErrorPopup errorMessage={customReportError} />}
+          {/* Custom Report Output */}
+          <div style={{ marginTop: '18px' }}>
+            {customReportType === 'table' && customReportData.length > 0 && (
+              <div className="table-container">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      {Object.keys(customReportData[0]).map(key => <th key={key}>{key}</th>)}
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {customReportData.map((row, idx) => (
+                      <tr key={idx}>
+                        {Object.values(row).map((val, i) => <td key={i}>{val}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {customReportType === 'bar' && customReportData.length > 0 && (
+              <div style={{ background: '#fff', borderRadius: '8px', padding: '16px', marginBottom: '12px' }}>
+                <ResponsiveContainer width="100%" height={350}>
+                  <BarChart data={customReportData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey={Object.keys(customReportData[0])[0]} />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey={Object.keys(customReportData[0])[1]} fill="#6366f1" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            {customReportType === 'pie' && customReportData.length > 0 && (
+              <div style={{ background: '#fff', borderRadius: '8px', padding: '16px', marginBottom: '12px' }}>
+                <ResponsiveContainer width="100%" height={350}>
+                  <PieChart>
+                    <Pie
+                      data={customReportData}
+                      dataKey={Object.keys(customReportData[0])[1]}
+                      nameKey={Object.keys(customReportData[0])[0]}
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={120}
+                      label={(entry) => `${entry[Object.keys(customReportData[0])[0]]}: ${entry[Object.keys(customReportData[0])[1]]}`}
+                    >
+                      {customReportData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            {customReportData.length === 0 && customReportLoading === false && (
+              <div style={{ color: '#666', textAlign: 'center', padding: '18px' }}>No custom report data yet.</div>
+            )}
           </div>
         </div>
 
@@ -1215,7 +1831,13 @@ function Admin() {
     <div className="tab-content">
       <div className="section-header">
         <h2>👤 User & Role Management</h2>
-        <button className="add-button" onClick={() => alert('Create user functionality - Coming soon')}>
+        <button
+          className="add-button create-user-button"
+          onClick={() => {
+            setShowCreateUserModal(true);
+            setUserForm({ studentId: "", firstname: "", lastname: "", email: "", role: "Student", password: "", dateOfBirth: "", phone: "" });
+          }}
+        >
           + Create User
         </button>
       </div>
@@ -1251,36 +1873,49 @@ function Admin() {
         <table className="data-table">
           <thead>
             <tr>
-              <th>#</th>
               <th>Student ID</th>
-              <th>Name</th>
-              <th>Email</th>
+              <th>First Name</th>
+              <th>Last Name</th>
               <th>Role</th>
-              <th>Status</th>
-              <th>Actions</th>
+              <th style={{ textAlign: 'center' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {students.length === 0 ? (
               <tr>
-                <td colSpan="7" style={{ textAlign: 'center' }}>No users found</td>
+                <td colSpan="5" style={{ textAlign: 'center' }}>No users found</td>
               </tr>
             ) : (
-              students.map((student, index) => (
+              students.map((student) => (
                 <tr key={student.id}>
-                  <td>{index + 1}</td>
-                  <td><strong>{student.studentId}</strong></td>
-                  <td>{student.name}</td>
-                  <td>{student.email}</td>
+                  <td><strong>{student.studentId || student.username}</strong></td>
+                  <td>{student.firstname}</td>
+                  <td>{student.lastname}</td>
                   <td>
-                    <span className="status-badge available">Student</span>
+                    <span className="status-badge available">{mapRoleValueToName(student.role)}</span>
                   </td>
-                  <td>
-                    <span className="status-badge active">{student.status}</span>
-                  </td>
-                  <td>
-                    <button className="action-btn" onClick={() => alert('Edit user - Coming soon')}>✏️</button>
-                    <button className="action-btn danger" onClick={() => alert('Delete user - Coming soon')}>🗑️</button>
+                  <td style={{ textAlign: 'center' }}>
+                    <div className="row-action-group">
+                      <button
+                        className="icon-btn view-icon"
+                        title="View"
+                        aria-label={`View ${student.firstname || student.username || student.studentId || 'user'}`}
+                        onClick={() => {
+                          setSelectedUser(student)
+                          setShowViewUserModal(true)
+                        }}
+                      >
+                        🔍
+                      </button>
+                      <button
+                        className="icon-btn delete-icon"
+                        title="Delete"
+                        aria-label={`Delete ${student.firstname || student.username || student.studentId || 'user'}`}
+                        onClick={() => openDeleteUserModal(student)}
+                      >
+                        ✕
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -1385,9 +2020,9 @@ function Admin() {
         </div>
       </nav>
 
-      <LoadingOverlay loading={loading} loadMessage={successMessage} />
+      <LoadingOverlay isLoading={loading} message={loading ? 'Processing...' : ''} />
 
-      <SuccessPopup successMessage={successMessage} />
+      <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
       
       <div className="dashboard-content">
         <div className="dashboard-title-bar">
@@ -1548,12 +2183,433 @@ function Admin() {
         </div>
       )}
 
+      {/* CREATE / EDIT USER MODAL */}
+      {(showCreateUserModal || showEditUserModal) && (
+        <div className="modal-overlay" style={{ zIndex: 1200 }}>
+          <div className="modal-content" style={{ zIndex: 1201 }}>
+            <h2>{showCreateUserModal ? "Create User" : "Edit User"}</h2>
+            <form onSubmit={showCreateUserModal ? handleCreateUser : handleEditUser} className="modal-form">
+              <div className="form-group">
+                <label>First Name</label>
+                <input
+                  type="text"
+                  value={userForm.firstname}
+                  placeholder="First Name"
+                  onChange={(e) => setUserForm({ ...userForm, firstname: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Last Name</label>
+                <input
+                  type="text"
+                  value={userForm.lastname}
+                  placeholder="Last Name"
+                  onChange={(e) => setUserForm({ ...userForm, lastname: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Date of Birth</label>
+                <input
+                  type="text"
+                  value={userForm.dateOfBirth}
+                  placeholder="MM/DD/YYYY or YYYY-MM-DD"
+                  onChange={(e) => setUserForm({ ...userForm, dateOfBirth: e.target.value })}
+                  required={showCreateUserModal}
+                />
+                <small style={{ color: '#666' }}>Enter date as <strong>MM/DD/YYYY</strong> or <strong>YYYY-MM-DD</strong></small>
+              </div>
+
+              <div className="form-group">
+                <label>Username</label>
+                <input
+                  type="text"
+                  value={userForm.studentId || ''}
+                  placeholder="Username"
+                  onChange={(e) => setUserForm({ ...userForm, studentId: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Email</label>
+                <input
+                  type="email"
+                  value={userForm.email}
+                  placeholder="Email"
+                  onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Phone</label>
+                <input
+                  type="tel"
+                  value={userForm.phone || ''}
+                  placeholder="Phone number"
+                  onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })}
+                />
+              </div>
+
+              {showCreateUserModal && (
+                <div className="form-group">
+                  <label>Password</label>
+                  <input
+                    type="password"
+                    value={userForm.password}
+                    placeholder="Password"
+                    onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                    required
+                  />
+                </div>
+              )}
+
+              <div className="form-group">
+                <label>Role</label>
+                <select
+                  value={userForm.role}
+                  onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}
+                >
+                  <option value="Student">Student</option>
+                  <option value="Librarian">Librarian</option>
+                  <option value="Admin">Admin</option>
+                </select>
+              </div>
+
+              {/* Status field removed */}
+
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="cancel-button"
+                  onClick={() => {
+                    setShowCreateUserModal(false);
+                    setShowEditUserModal(false);
+                    setUserForm({ studentId: "", firstname: "", lastname: "", email: "", role: "Student", password: "", dateOfBirth: "", phone: "" });
+                  }}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className={`submit-button ${showCreateUserModal ? 'create-submit' : ''}`}>
+                  {showCreateUserModal ? "Create" : "Save"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+
+
+
+
+    {showDeleteUserModal && (
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-sm space-y-4">
+          <h2 className="text-xl font-semibold text-red-600">Delete User</h2>
+          <p>
+            Are you sure you want to delete{' '}
+            <strong>{selectedUser ? `${selectedUser.firstname || ''} ${selectedUser.lastname || ''}`.trim() : ''}</strong>?
+          </p>
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              onClick={() => setShowDeleteUserModal(false)}
+              className="px-4 py-2 rounded-lg bg-gray-300 hover:bg-gray-400"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDeleteUser}
+              className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* VIEW USER MODAL */}
+    {showViewUserModal && selectedUser && (
+      <div className="modal-overlay" onClick={() => setShowViewUserModal(false)}>
+        <div className={`modal-content user-modal user-modal-${mapRoleValueToName(selectedUser.role).toLowerCase()}`}
+          style={{ maxWidth: '880px', minWidth: '520px', padding: '36px 36px 28px 36px' }}
+          onClick={e => e.stopPropagation()}>
+          <div className="user-modal-header" style={{ display: 'flex', alignItems: 'center', gap: '24px', marginBottom: '24px' }}>
+            <div className="user-avatar" style={{
+              background:
+                mapRoleValueToName(selectedUser.role) === 'Admin' ? 'linear-gradient(135deg, #6366f1 60%, #a5b4fc 100%)' :
+                mapRoleValueToName(selectedUser.role) === 'Librarian' ? 'linear-gradient(135deg, #10b981 60%, #6ee7b7 100%)' :
+                'linear-gradient(135deg, #3b82f6 60%, #93c5fd 100%)',
+              color: '#fff',
+              borderRadius: '50%',
+              width: '80px',
+              height: '80px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '2.8rem',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.10)'
+            }}>
+              {mapRoleValueToName(selectedUser.role) === 'Admin' ? '🛡️' :
+                mapRoleValueToName(selectedUser.role) === 'Librarian' ? '📚' : '🧑‍🎓'}
+            </div>
+            <div style={{ flex: 1 }}>
+              <h2 style={{ fontWeight: 700, fontSize: '1.7rem', margin: 0 }}>
+                {selectedUser.firstname || '-'} {selectedUser.lastname || '-'}
+              </h2>
+              <span className="role-badge" style={{
+                display: 'inline-block',
+                marginTop: '8px',
+                padding: '4px 12px',
+                borderRadius: '12px',
+                background:
+                  mapRoleValueToName(selectedUser.role) === 'Admin' ? '#6366f1' :
+                  mapRoleValueToName(selectedUser.role) === 'Librarian' ? '#10b981' : '#3b82f6',
+                color: '#fff',
+                fontWeight: 600,
+                fontSize: '1rem'
+              }}>{mapRoleValueToName(selectedUser.role)}</span>
+            </div>
+            <button className="close-btn" onClick={() => setShowViewUserModal(false)} title="Close" style={{ fontSize: '1.5rem', marginLeft: '8px' }}>✕</button>
+          </div>
+          {/* Tabs for modal sections */}
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '18px', borderBottom: '1px solid #e5e7eb' }}>
+            {['Personal Info', 'Library Stats', 'Current Borrows'].map((tab, idx) => (
+              <button
+                key={tab}
+                style={{
+                  background: activeUserModalTab === tab ? '#f3f4f6' : 'transparent',
+                  border: 'none',
+                  borderBottom: activeUserModalTab === tab ? '3px solid #6366f1' : '3px solid transparent',
+                  color: activeUserModalTab === tab ? '#6366f1' : '#222',
+                  fontWeight: 600,
+                  fontSize: '1rem',
+                  padding: '10px 18px',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  borderRadius: '8px 8px 0 0',
+                  transition: 'background 0.2s'
+                }}
+                onClick={() => setActiveUserModalTab(tab)}
+              >{tab}</button>
+            ))}
+          </div>
+          <div className="user-modal-body">
+            {/* Tab content */}
+            {activeUserModalTab === 'Personal Info' && (
+              <div className="user-info-sections" style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
+                <div className="user-info-section user-info-details" style={{ flex: 1, minWidth: '220px' }}>
+                  <h4 className="section-title" style={{ marginBottom: '18px', fontWeight: 600, fontSize: '1.1rem' }}>Personal Info</h4>
+                  <div className="info-grid">
+                    <div className="info-row">
+                      <span className="info-label">Username:</span>
+                      <div className="info-value-copy">
+                        <span className="info-value" title={getUsername(selectedUser)}>{getUsername(selectedUser)}</span>
+                        {getUsername(selectedUser) && getUsername(selectedUser) !== '-' && (
+                          <button className="copy-btn" onClick={() => copyToClipboard(getUsername(selectedUser))} title="Copy Username">📋</button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="info-row">
+                      <span className="info-label">Email:</span>
+                      <div className="info-value-copy">
+                        <span className="info-value" title={selectedUser.email || '-'}>{selectedUser.email || '-'}</span>
+                        {selectedUser.email && (
+                          <button className="copy-btn" onClick={() => copyToClipboard(selectedUser.email)} title="Copy Email">📋</button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="info-row">
+                      <span className="info-label">Phone:</span>
+                      <div className="info-value-copy">
+                        <span className="info-value" title={selectedUser.phone || '-'}>{selectedUser.phone || '-'}</span>
+                        {selectedUser.phone && (
+                          <button className="copy-btn" onClick={() => copyToClipboard(selectedUser.phone)} title="Copy Phone">📋</button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="info-row">
+                      <span className="info-label">Date of Birth:</span>
+                      <div className="info-value-copy">
+                        <span className="info-value" title={formatDateForDisplay(selectedUser.dateOfBirth)}>{formatDateForDisplay(selectedUser.dateOfBirth)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {activeUserModalTab === 'Library Stats' && (
+              <div className="user-info-sections" style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
+                <div className="user-info-section user-info-stats" style={{ flex: 1, minWidth: '220px' }}>
+                  <h4 className="section-title" style={{ marginBottom: '18px', fontWeight: 600, fontSize: '1.1rem' }}>Library Stats</h4>
+                  <div className="stats-grid">
+                    <div className="stats-row"><span className="stats-label">Total Borrows:</span> <span className="stats-value">{
+                      borrowRecords.filter(r => userMatchesBorrow(r, selectedUser)).length
+                    }</span></div>
+                    <div className="stats-row"><span className="stats-label">Currently Borrowed:</span> <span className="stats-value">{
+                      borrowRecords.filter(r => userMatchesBorrow(r, selectedUser) && !r.Return_Date).length
+                    }</span></div>
+                    <div className="stats-row"><span className="stats-label">Overdue Items:</span> <span className="stats-value">{
+                      borrowRecords.filter(r => userMatchesBorrow(r, selectedUser) && r.Due_Date && !r.Return_Date && new Date(r.Due_Date) < new Date()).length
+                    }</span></div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {activeUserModalTab === 'Current Borrows' && (
+              <div style={{ marginTop: '12px' }}>
+                {/* debug removed */}
+                <h4 style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '12px' }}>User Borrows & Fines</h4>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                  <button
+                    onClick={() => setUserBorrowFilter('current')}
+                    style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e5e7eb', background: userBorrowFilter === 'current' ? '#eef2ff' : '#fff' }}
+                  >Current</button>
+                  <button
+                    onClick={() => setUserBorrowFilter('all')}
+                    style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e5e7eb', background: userBorrowFilter === 'all' ? '#eef2ff' : '#fff' }}
+                  >All</button>
+                  <button
+                    onClick={() => setUserBorrowFilter('overdue')}
+                    style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e5e7eb', background: userBorrowFilter === 'overdue' ? '#eef2ff' : '#fff' }}
+                  >Overdue</button>
+                </div>
+
+                <div style={{ maxHeight: '320px', overflowY: 'auto', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb', padding: '12px', marginBottom: '18px' }}>
+                  {(() => {
+                    const matched = borrowRecords.filter(r => userMatchesBorrow(r, selectedUser));
+                    let display = matched;
+                    if (userBorrowFilter === 'current') display = matched.filter(r => !r.Return_Date);
+                    if (userBorrowFilter === 'overdue') display = matched.filter(r => r.Due_Date && !r.Return_Date && new Date(r.Due_Date) < new Date());
+
+                    if (display.length === 0) {
+                      return <div style={{ color: '#666', textAlign: 'center', padding: '24px 0' }}>{userBorrowFilter === 'all' ? 'No borrows found.' : userBorrowFilter === 'overdue' ? 'No overdue items.' : 'No current borrows.'}</div>;
+                    }
+
+                    return (
+                      <table className="data-table" style={{ width: '100%', fontSize: '0.98rem' }}>
+                        <thead>
+                          <tr>
+                                  <th>Borrow ID</th>
+                                  <th>Asset Title</th>
+                                  <th>Type</th>
+                                  <th>Borrow Date</th>
+                                  <th>Due Date</th>
+                                  <th>Return Date</th>
+                                  <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {display.map(borrow => (
+                            <tr key={borrow.Borrow_ID}>
+                              <td>{borrow.Borrow_ID}</td>
+                              <td>{borrow.Title || borrow.Asset_Title || borrow.Asset_ID}</td>
+                              <td>{borrow.Asset_Type}</td>
+                              <td>{formatDateForDisplay(borrow.Borrow_Date)}</td>
+                              <td>{formatDateForDisplay(borrow.Due_Date)}</td>
+                              <td>{borrow.Return_Date ? formatDateForDisplay(borrow.Return_Date) : '-'}</td>
+                                    <td style={{ whiteSpace: 'nowrap' }}>
+                                      {(!borrow.Return_Date) && (
+                                        <button
+                                          onClick={() => handleReturnBorrow(borrow.Borrow_ID)}
+                                          style={{ marginRight: '8px', padding: '6px 8px', borderRadius: '6px', background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer' }}
+                                        >Return</button>
+                                      )}
+                                      {(userFinesMap[String(borrow.Borrow_ID)] && (userFinesMap[String(borrow.Borrow_ID)].Fine_Amount || userFinesMap[String(borrow.Borrow_ID)].Fine_Amount === 0)) && (
+                                        <button
+                                          onClick={() => handleWaiveFine(borrow.Borrow_ID)}
+                                          style={{ padding: '6px 8px', borderRadius: '6px', background: '#f97316', color: '#fff', border: 'none', cursor: 'pointer' }}
+                                        >Waive Fine</button>
+                                      )}
+                                    </td>
+                                  </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    );
+                  })()}
+                </div>
+                <div style={{ marginBottom: '8px' }}>
+                  <h5 style={{ fontWeight: 600, fontSize: '1rem', marginBottom: '8px' }}>Fines & Overdue Summary</h5>
+                  {userFines.length === 0 ? (
+                    <div style={{ color: '#666', textAlign: 'center', padding: '12px 0' }}>No fines or overdue items.</div>
+                  ) : (
+                    <table className="data-table" style={{ width: '100%', fontSize: '0.97rem' }}>
+                      <thead>
+                        <tr>
+                          <th>Borrow ID</th>
+                          <th>Title</th>
+                          <th>Type</th>
+                          <th>Borrow Date</th>
+                          <th>Due Date</th>
+                          <th>Return Date</th>
+                          <th>Days Overdue</th>
+                          <th>Fine Amount</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {userFines.map(fine => (
+                          <tr key={fine.Borrow_ID} style={fine.Status === 'Pending' ? { background: '#fee2e2' } : {}}>
+                            <td>{fine.Borrow_ID}</td>
+                            <td>{fine.Item_Title}</td>
+                            <td>{fine.Asset_Type}</td>
+                            <td>{formatDateForDisplay(fine.Borrow_Date)}</td>
+                            <td>{formatDateForDisplay(fine.Due_Date)}</td>
+                            <td>{fine.Return_Date ? formatDateForDisplay(fine.Return_Date) : '-'}</td>
+                            <td>{fine.Days_Overdue}</td>
+                            <td style={{ color: parseFloat(fine.Fine_Amount) > 0 ? '#dc2626' : '#222', fontWeight: 600 }}>${parseFloat(fine.Fine_Amount).toFixed(2)}</td>
+                            <td>{fine.Status}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="user-modal-actions" style={{ marginTop: '32px', display: 'flex', justifyContent: 'flex-end', gap: '16px' }}>
+            <button
+              className="edit-btn"
+              onClick={() => {
+                openEditUserModal(selectedUser);
+              }}
+              style={{
+                padding: '10px 24px',
+                fontSize: '1rem',
+                borderRadius: '8px',
+                background:
+                  mapRoleValueToName(selectedUser.role) === 'Admin' ? '#6366f1' :
+                  mapRoleValueToName(selectedUser.role) === 'Librarian' ? '#10b981' : '#3b82f6',
+                color: '#fff',
+                fontWeight: 600
+              }}
+            >
+              Edit User
+            </button>
+            <button className="close-btn" onClick={() => setShowViewUserModal(false)} style={{ padding: '10px 24px', fontSize: '1rem', borderRadius: '8px', background: '#e5e7eb', color: '#222', fontWeight: 600 }}>Close</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+
+
+
+
       {/* Notification Panel */}
       {/* {showNotifications && (
         <NotificationPanel onClose={() => setShowNotifications(false)} />
       )} */}
     </div>
   )
+
+  
 }
 
 export default Admin

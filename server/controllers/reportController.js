@@ -625,11 +625,104 @@ const getLibrarianBooks = (req, res) => {
   });
 };
 
+// Custom Report Generator
+const getCustomReport = (req, res) => {
+  const { startDate, endDate, assetType, userId } = req.query;
+  
+  let query = `
+    SELECT 
+      b.Borrow_ID,
+      CONCAT(u.First_Name, ' ', COALESCE(u.Last_Name, '')) as Borrower_Name,
+      u.User_Email,
+      COALESCE(bk.Title, cd.Title, ab.Title, m.Title, 
+        CONCAT('Tech-', t.Model_Num), CONCAT('Room-', sr.Room_Number)) as Item_Title,
+      CASE 
+        WHEN bk.Asset_ID IS NOT NULL THEN 'Book'
+        WHEN cd.Asset_ID IS NOT NULL THEN 'CD'
+        WHEN ab.Asset_ID IS NOT NULL THEN 'Audiobook'
+        WHEN m.Asset_ID IS NOT NULL THEN 'Movie'
+        WHEN t.Asset_ID IS NOT NULL THEN 'Technology'
+        WHEN sr.Asset_ID IS NOT NULL THEN 'Study Room'
+        ELSE 'Unknown'
+      END as Asset_Type,
+      b.Borrow_Date,
+      b.Due_Date,
+      b.Return_Date
+    FROM borrow b
+    JOIN user u ON b.Borrower_ID = u.User_ID
+    JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
+    JOIN asset a ON r.Asset_ID = a.Asset_ID
+    LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
+    LEFT JOIN cd ON a.Asset_ID = cd.Asset_ID
+    LEFT JOIN audiobook ab ON a.Asset_ID = ab.Asset_ID
+    LEFT JOIN movie m ON a.Asset_ID = m.Asset_ID
+    LEFT JOIN technology t ON a.Asset_ID = t.Asset_ID
+    LEFT JOIN studyroom sr ON a.Asset_ID = sr.Asset_ID
+    WHERE 1=1
+  `;
+  
+  const params = [];
+  
+  if (startDate) {
+    query += ' AND b.Borrow_Date >= ?';
+    params.push(startDate);
+  }
+  
+  if (endDate) {
+    query += ' AND b.Borrow_Date <= ?';
+    params.push(endDate);
+  }
+  
+  if (assetType && assetType !== '') {
+    switch(assetType) {
+      case 'books':
+        query += ' AND bk.Asset_ID IS NOT NULL';
+        break;
+      case 'cds':
+        query += ' AND cd.Asset_ID IS NOT NULL';
+        break;
+      case 'audiobooks':
+        query += ' AND ab.Asset_ID IS NOT NULL';
+        break;
+      case 'movies':
+        query += ' AND m.Asset_ID IS NOT NULL';
+        break;
+      case 'technology':
+        query += ' AND t.Asset_ID IS NOT NULL';
+        break;
+      case 'study-rooms':
+        query += ' AND sr.Asset_ID IS NOT NULL';
+        break;
+    }
+  }
+  
+  if (userId && userId !== '') {
+    query += ' AND (u.User_ID = ? OR u.Username = ? OR u.Student_ID = ?)';
+    params.push(userId, userId, userId);
+  }
+  
+  query += ' ORDER BY b.Borrow_Date DESC LIMIT 100';
+  
+  db.query(query, params, (err, results) => {
+    if (err) {
+      console.error('Error generating custom report:', err);
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Failed to generate custom report', details: err.message }));
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(results));
+  });
+};
+
 module.exports = {
   getMostBorrowedAssets,
   getActiveBorrowers,
   getOverdueItems,
   getInventorySummary,
+  getCustomReport,
   getLibrarianSummary,
   getLibrarianTransactions,
   getLibrarianDailyActivity,
