@@ -111,6 +111,23 @@ export function AssetCard({ assetType, getAsset, onAssetChange, setError }) {
     const { closeOverlay } = useOverlay();
     const { setLoading } = useLoading();
     const assetSelected = getAsset();
+    const attributes = assetTypeMap[assetType]?.attributes || [];
+    const getDisplayName = (asset, type) => {
+        if (!asset) return ''
+        switch (type) {
+            case 'books':
+            case 'cds':
+            case 'audiobooks':
+            case 'movies':
+                return asset.Title || asset.ISBN || `#${asset.Asset_ID}`
+            case 'technology':
+                return asset.Model_Num || asset.Type || asset.Description || `#${asset.Asset_ID}`
+            case 'study-rooms':
+                return asset.Room_Number ? `Room ${asset.Room_Number}` : `Room #${asset.Asset_ID}`
+            default:
+                return asset.Title || asset.Model_Num || asset.Room_Number || `#${asset.Asset_ID}`
+        }
+    }
     const handleBorrow = async() => {
         setLoading({ isLoading: true })
         try {
@@ -168,6 +185,7 @@ export function AssetCard({ assetType, getAsset, onAssetChange, setError }) {
     return (
         <div key={assetSelected} className='asset-card-content '>
             <div className='asset-card-header'>
+                <div className="asset-card-header-title">{getDisplayName(assetSelected, assetType)}</div>
                 <svg width="24" height="24" viewBox="0 0 24 24" className='asset-close-button' aria-label='close' onClick={ () => {
                         closeOverlay()}
                     }>
@@ -214,6 +232,16 @@ export function AssetCard({ assetType, getAsset, onAssetChange, setError }) {
                             </div>
                         </div>
                         <div className='asset-card-asset-details asset-card-section-col'>
+                            {/* Render asset attributes (Description, Title, etc.) in the overlay first */}
+                            <div className="asset-attributes">
+                                {attributes.map(attr => (
+                                    <div key={attr.key} className="asset-attribute-row">
+                                        <span className="asset-attribute-label">{attr.label}:</span>
+                                        <span className="asset-attribute-value">{(assetSelected && (assetSelected[attr.key] !== undefined && assetSelected[attr.key] !== null)) ? assetSelected[attr.key] : '-'}</span>
+                                    </div>
+                                ))}
+                            </div>
+
                             <span className='asset-card-button-section'>
                                 <span className='asset-card-button-helper'><small>Available Copies: {assetSelected.Available_Copies || assetSelected.Availability}/{assetSelected.Copies || 1}</small></span>
                                 <span className='asset-card-button-container'>

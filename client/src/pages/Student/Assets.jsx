@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import './Assets.css'
 import { useSearchParams } from 'react-router-dom'
 import { ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
 import { useOverlay } from '../../components/FeedbackUI/OverlayContext'
@@ -220,6 +221,23 @@ export function Assets() {
         }
     }
     const columns = getAssetTableColumns()
+    // Compute a display name for each asset type with sensible fallbacks
+    const getDisplayName = (item, assetType) => {
+        if (!item) return ''
+        switch (assetType) {
+            case 'books':
+            case 'cds':
+            case 'audiobooks':
+            case 'movies':
+                return item.Title || item.ISBN || `#${item.Asset_ID}`
+            case 'technology':
+                return item.Model_Num || item.Type || item.Description || `#${item.Asset_ID}`
+            case 'study-rooms':
+                return item.Room_Number ? `Room ${item.Room_Number}` : `Room #${item.Asset_ID}`
+            default:
+                return item.Title || item.Model_Num || item.Room_Number || `#${item.Asset_ID}`
+        }
+    }
     const data = getCurrentAssetData()
     const dataRef = useRef();
     dataRef.current = data;
@@ -333,6 +351,7 @@ export function Assets() {
                                 setError={setError} />)
                         }}>
                             <div className="card-header">
+                                <div className="card-title">{getDisplayName(item, activeAssetTab)}</div>
                                 <span className="card-number">#{index + 1}</span>
 
                             </div>
@@ -376,10 +395,10 @@ export function Assets() {
                             </div>
 
                             <div className="card-body">
-                                {columns.slice(1).map(col => (
-                                    <div key={col.key} className="card-field">
-                                        <span className="field-label">{col.label}:</span>
-                                        <span className="field-value">
+                                {columns.slice(1).filter(col => ['Title','Available_Copies','Availability'].includes(col.key)).map(col => (
+                                    <div key={col.key} className="outer-card-field outer-attribute-row">
+                                        <span className="outer-attribute-label">{col.label}:</span>
+                                        <span className="outer-attribute-value">
                                             {renderCellContent(item, col, index)}
                                         </span>
                                     </div>
