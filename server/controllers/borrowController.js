@@ -496,12 +496,12 @@ exports.userReturnAsset = async (req, res) => {
     return res.writeHead(401, { 'Content-Type': 'application/json' })
       && res.end(JSON.stringify({ message: 'Unauthorized return' }));
   }
-}
-const newReq = {
-  ...req,
-  params: { id: borrowID },
-};
-return returnAsset(newReq, res);
+
+  const newReq = {
+    ...req,
+    params: { id: borrowID },
+  };
+  return exports.returnAsset(newReq, res);
 };
 
 // Renew asset
