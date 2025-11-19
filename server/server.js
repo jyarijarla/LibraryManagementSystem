@@ -170,9 +170,9 @@ const routes = [
   { method: 'GET', path: '/api/reports/librarian/:id/books', handler: reportController.getLibrarianBooks, auth: true, roles: ROLE_GROUPS.STAFF },
 
   // Notification routes
-  { method: 'GET', path: '/api/notifications', handler: notificationController.getAdminNotifications, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/notifications/counts', handler: notificationController.getNotificationCounts, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/notifications/critical', handler: notificationController.getCriticalNotifications, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/notifications', handler: notificationController.getAdminNotifications, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/notifications/counts', handler: notificationController.getNotificationCounts, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/notifications/critical', handler: notificationController.getCriticalNotifications, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'POST', path: '/api/notifications/low-stock-alerts', handler: notificationController.createLowStockAlert, auth: true, roles: ROLE_GROUPS.STAFF },
 
   // Fine Management routes

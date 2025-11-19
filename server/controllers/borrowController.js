@@ -58,6 +58,12 @@ exports.borrowAsset = async (req, res) => {
       );
       newBorrowID = borrowInsertQuery.insertId;
       console.log("Borrow ID assigned:", newBorrowID);
+
+      // Update rentable availability to 0 (Borrowed)
+      await connection.query(
+        `UPDATE rentable SET Availability = 0 WHERE Rentable_ID = ?`,
+        [selRentable]
+      );
     }
     catch (error) {
       console.log("Insert failed:", error);
@@ -253,15 +259,8 @@ exports.waitlistAsset = async (req, res) => {
   }
 }
 // Issue any asset (book, CD, audiobook, movie, technology, study-room)
-exports.issueAsset = (req, res) => {
-  const { memberId, assetId, assetType, issueDate, dueDate } = req.body;
-
-  // Validate required fields
-  if (!memberId || !assetId || !issueDate || !dueDate) {
-    return res.writeHead(400, { 'Content-Type': 'application/json' })
-      && res.end(JSON.stringify({ message: 'Missing required fields' }));
-  }
-
+// Issue any asset (book, CD, audiobook, movie, technology, study-room)
+exports.issueAsset = async (req, res) => {
   // Map asset type to table name
   const assetTypeMap = {
     'books': 'book_inventory',
@@ -271,6 +270,12 @@ exports.issueAsset = (req, res) => {
     'technology': 'technology_inventory',
     'study-rooms': 'study_room_inventory'
   };
+  const { memberId, assetId, assetType, issueDate, dueDate, quantity = 1 } = req.body;
+
+  if (!memberId || !assetId || !issueDate || !dueDate) {
+    return res.writeHead(400, { 'Content-Type': 'application/json' })
+      && res.end(JSON.stringify({ message: 'All fields are required' }));
+  }
 
   const viewName = assetTypeMap[assetType] || 'book_inventory';
 
@@ -285,82 +290,65 @@ exports.issueAsset = (req, res) => {
       `
     : `SELECT Available_Copies, Asset_ID, Copies FROM ${viewName} WHERE Asset_ID = ?`;
 
-  // Check if asset is available using the appropriate data source
-  db.query(
-    availabilityQuery,
-    [assetId],
-    (err, assetResults) => {
-      if (err) {
-        console.error('Error checking asset availability:', err);
-        return res.writeHead(500, { 'Content-Type': 'application/json' })
-          && res.end(JSON.stringify({ message: 'Database error', error: err.message }));
-      }
+  // Use a transaction for multi-copy issue
+  const connection = await db.promise().getConnection();
+  try {
+    await connection.beginTransaction();
 
-      if (assetResults.length === 0) {
-        return res.writeHead(404, { 'Content-Type': 'application/json' })
-          && res.end(JSON.stringify({ message: 'Asset not found' }));
-      }
+    // 1. Check Availability
+    const [assetResults] = await connection.query(availabilityQuery, [assetId]);
 
-      if (assetResults[0].Available_Copies <= 0) {
-        return res.writeHead(400, { 'Content-Type': 'application/json' })
-          && res.end(JSON.stringify({ message: 'Asset is not available' }));
-      }
-
-      // Get an available rentable_id for this asset (Availability = 1 means Available)
-      db.query(
-        'SELECT Rentable_ID FROM rentable WHERE Asset_ID = ? AND Availability = 1 LIMIT 1',
-        [assetId],
-        (err, rentableResults) => {
-          if (err || rentableResults.length === 0) {
-            console.error('Error finding available rentable:', err);
-            return res.writeHead(400, { 'Content-Type': 'application/json' })
-              && res.end(JSON.stringify({ message: 'No available copies found for this asset' }));
-          }
-
-          const rentableId = rentableResults[0].Rentable_ID;
-
-          // Get librarian ID from authenticated user (if available)
-          const librarianId = req.user?.id || null;
-
-          // Insert borrow record with Processed_By field
-          db.query(
-            'INSERT INTO borrow (Borrower_ID, Rentable_ID, Borrow_Date, Due_Date, Processed_By) VALUES (?, ?, ?, ?, ?)',
-            [memberId, rentableId, issueDate, dueDate, librarianId],
-            (err, insertResult) => {
-              if (err) {
-                console.error('Error inserting borrow record:', err);
-                return res.writeHead(500, { 'Content-Type': 'application/json' })
-                  && res.end(JSON.stringify({ message: 'Failed to issue asset', error: err.message }));
-              }
-
-              const sendResponse = () => {
-                res.writeHead(201, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                  message: 'Asset issued successfully',
-                  borrowId: insertResult.insertId
-                }));
-              };
-
-              if (assetType === 'study-rooms') {
-                db.query(
-                  'UPDATE study_room SET Availability = 0 WHERE Asset_ID = ?',
-                  [assetResults[0].Asset_ID],
-                  (updateErr) => {
-                    if (updateErr) {
-                      console.error('Error updating study room availability:', updateErr);
-                    }
-                    sendResponse();
-                  }
-                );
-              } else {
-                sendResponse();
-              }
-            }
-          );
-        }
-      );
+    if (assetResults.length === 0) {
+      throw Object.assign(new Error('Asset not found'), { status: 404 });
     }
-  );
+
+    if (assetResults[0].Available_Copies < quantity) {
+      throw Object.assign(new Error(`Not enough copies available. Requested: ${quantity}, Available: ${assetResults[0].Available_Copies}`), { status: 400 });
+    }
+
+    // 2. Get available rentable_ids
+    const [rentableResults] = await connection.query(
+      'SELECT Rentable_ID FROM rentable WHERE Asset_ID = ? AND Availability = 1 LIMIT ?',
+      [assetId, parseInt(quantity)]
+    );
+
+    if (rentableResults.length < quantity) {
+      throw Object.assign(new Error('Mismatch in available copies count'), { status: 500 });
+    }
+
+    const librarianId = req.user?.id || null;
+    const rentablesToIssue = rentableResults.map(r => r.Rentable_ID);
+
+    // 3. Create Borrow Records
+    const borrowValues = rentablesToIssue.map(rid => [memberId, rid, issueDate, dueDate, librarianId]);
+    await connection.query(
+      'INSERT INTO borrow (Borrower_ID, Rentable_ID, Borrow_Date, Due_Date, Processed_By) VALUES ?',
+      [borrowValues]
+    );
+
+    // 4. Update Availability
+    if (assetType === 'study-rooms') {
+      await connection.query('UPDATE study_room SET Availability = 0 WHERE Asset_ID = ?', [assetId]);
+    } else {
+      await connection.query('UPDATE rentable SET Availability = 0 WHERE Rentable_ID IN (?)', [rentablesToIssue]);
+    }
+
+    await connection.commit();
+
+    res.writeHead(201, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      message: `Successfully issued ${quantity} cop${quantity > 1 ? 'ies' : 'y'}`,
+      count: quantity
+    }));
+
+  } catch (error) {
+    await connection.rollback();
+    console.error('Error issuing asset:', error);
+    res.writeHead(error.status || 500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ message: error.message || 'Failed to issue asset' }));
+  } finally {
+    connection.release();
+  }
 };
 
 // Get all borrow records (all asset types)
@@ -469,6 +457,47 @@ exports.returnAsset = async (req, res) => {
     await connection.query(
       `UPDATE rentable SET Availability = 1 WHERE Rentable_ID = ?`, [rentableId]
     );
+
+    // Auto-resolve low stock alert if stock is now sufficient
+    try {
+      // Get Asset_ID and Type
+      const [assetInfo] = await connection.query(
+        `SELECT r.Asset_ID, a.Asset_Type 
+         FROM rentable r 
+         JOIN asset a ON r.Asset_ID = a.Asset_ID 
+         WHERE r.Rentable_ID = ?`,
+        [rentableId]
+      );
+
+      if (assetInfo.length > 0) {
+        const { Asset_ID, Asset_Type } = assetInfo[0];
+
+        // Get current available count
+        const [countResult] = await connection.query(
+          `SELECT COUNT(*) as count FROM rentable WHERE Asset_ID = ? AND Availability = 1`,
+          [Asset_ID]
+        );
+        const availableCount = countResult[0].count;
+
+        // Determine threshold
+        let threshold = 1; // Default
+        if (Asset_Type === 'books') threshold = 2;
+        // Fetch from config if needed, but hardcoding for speed/reliability as per current setup
+        // ideally we'd fetch 'LOW_STOCK_THRESHOLD_' + Asset_Type.toUpperCase()
+
+        // If stock is healthy, remove alert
+        if (availableCount > threshold) {
+          await connection.query(
+            `DELETE FROM low_stock_alerts WHERE Asset_ID = ?`,
+            [Asset_ID]
+          );
+          console.log(`Auto-resolved low stock alert for Asset ${Asset_ID} (Count: ${availableCount})`);
+        }
+      }
+    } catch (resolveErr) {
+      console.error('Error auto-resolving low stock alert:', resolveErr);
+      // Don't fail the return transaction just because alert cleanup failed
+    }
 
     await connection.commit();
     res.writeHead(200, { 'Content-Type': 'application/json' });

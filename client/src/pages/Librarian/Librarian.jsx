@@ -9,7 +9,7 @@ import {
   Package, CheckCircle, Plus, Edit2, Trash2,
   Barcode, Music, Shield, Hash, Tag, Info, MapPin,
   Disc, Headphones, Film, Laptop, Building2, BookOpenCheck,
-  Image, Upload, Save, XCircle, ChevronDown
+  Image, Upload, Save, XCircle, ChevronDown, Bell
 } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 import '../Admin/Admin.css'
@@ -101,7 +101,7 @@ const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOp
     { label: 'Fines & Payments', icon: DollarSign, id: 'fines' },
     { label: 'Reservations', icon: Clock, id: 'reservations' },
     { label: 'Reports', icon: BarChart3, id: 'reports' },
-    {label: 'Events', icon: Calendar, id: 'calendar'}
+    { label: 'Events', icon: Calendar, id: 'calendar' }
   ]
 
   return (
@@ -175,9 +175,24 @@ const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOp
 }
 
 // TopNavbar Component
-const TopNavbar = ({ sidebarOpen, setSidebarOpen, onLogout }) => {
+const TopNavbar = ({ sidebarOpen, setSidebarOpen, onLogout, notifications = [] }) => {
   const [searchQuery, setSearchQuery] = useState('')
   const [dateRange, setDateRange] = useState('today')
+  const [showNotifications, setShowNotifications] = useState(false)
+  const notificationRef = useRef(null)
+
+  // Close notifications when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+        setShowNotifications(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const unreadCount = notifications.length
 
   return (
     <nav className="bg-white border-b border-gray-200 shadow-sm z-30">
@@ -212,6 +227,78 @@ const TopNavbar = ({ sidebarOpen, setSidebarOpen, onLogout }) => {
 
         {/* Right Section */}
         <div className="flex items-center gap-4">
+          {/* Notifications */}
+          <div className="relative" ref={notificationRef}>
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="p-2 text-gray-500 hover:bg-gray-100 rounded-full relative transition-colors"
+            >
+              <Bell className="w-6 h-6" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center border-2 border-white">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* Notification Dropdown */}
+            <AnimatePresence>
+              {showNotifications && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-50"
+                >
+                  <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+                    <h3 className="font-semibold text-gray-900">Notifications</h3>
+                    <span className="text-xs text-gray-500">{unreadCount} New</span>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className="p-8 text-center text-gray-500">
+                        <CheckCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                        <p className="text-sm">All caught up!</p>
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-gray-50">
+                        {notifications.map((notification, index) => (
+                          <div key={index} className="p-4 hover:bg-gray-50 transition-colors">
+                            <div className="flex items-start gap-3">
+                              <div className={`p-2 rounded-full shrink-0 ${notification.notification_type === 'low_stock' ? 'bg-orange-100 text-orange-600' :
+                                notification.notification_type === 'overdue' ? 'bg-red-100 text-red-600' :
+                                  'bg-blue-100 text-blue-600'
+                                }`}>
+                                {notification.notification_type === 'low_stock' ? <Package className="w-4 h-4" /> :
+                                  notification.notification_type === 'overdue' ? <AlertCircle className="w-4 h-4" /> :
+                                    <Info className="w-4 h-4" />}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-gray-900">
+                                  {notification.notification_type === 'low_stock' ? 'Low Stock Alert' :
+                                    notification.notification_type === 'overdue' ? 'Overdue Item' :
+                                      'Notification'}
+                                </p>
+                                <p className="text-xs text-gray-600 mt-1">
+                                  {notification.item_title} ({notification.item_type})
+                                </p>
+                                {notification.notification_type === 'low_stock' && (
+                                  <p className="text-xs text-orange-600 mt-1 font-medium">
+                                    Restock needed
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           {/* Date Range Selector */}
           <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
             <Calendar className="w-5 h-5 text-gray-500" />
@@ -292,6 +379,32 @@ function Librarian() {
   const [defaultBorrowDays, setDefaultBorrowDays] = useState(14)
   const [lowStockThresholds, setLowStockThresholds] = useState(DEFAULT_LOW_STOCK_THRESHOLDS)
 
+  // Notification State
+  const [notifications, setNotifications] = useState([])
+
+  const fetchNotifications = async () => {
+    try {
+      const response = await fetch(`${API_URL}/notifications`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setNotifications(data)
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error)
+    }
+  }
+
+  useEffect(() => {
+    fetchNotifications()
+    // Poll for notifications every 5 minutes
+    const interval = setInterval(fetchNotifications, 5 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [])
+
   // Search States
   const [searchTerm, setSearchTerm] = useState('')
   const [assetAvailabilityFilter, setAssetAvailabilityFilter] = useState('all') // all, available, low, out
@@ -306,7 +419,8 @@ function Librarian() {
     assetTitle: '',
     assetType: 'books',
     issueDate: '',
-    dueDate: ''
+    dueDate: '',
+    quantity: 1
   }
   const [issueForm, setIssueForm] = useState(initialIssueForm)
 
@@ -1583,7 +1697,8 @@ function Librarian() {
             const date = new Date()
             date.setDate(date.getDate() + defaultBorrowDays)
             return date.toISOString().split('T')[0]
-          })()
+          })(),
+          quantity: form.quantity || 1
         })
       })
 
@@ -1597,6 +1712,9 @@ function Librarian() {
       setTimeout(() => setSuccessMessage(''), 3000)
 
       await fetchAssets(form.assetType)
+      await fetchAssets(form.assetType)
+      await fetchNotifications()
+      fetchDashboardStats()
 
       if (options.refreshMemberId) {
         const fallbackMember = memberProfile?.member?.User_ID === options.refreshMemberId
@@ -1657,6 +1775,9 @@ function Librarian() {
         setSuccessMessage(`Return completed successfully! ${fineAmount > 0 ? `Fine recorded: $${fineAmount.toFixed(2)}` : ''}`)
         setTimeout(() => setSuccessMessage(''), 3000)
         await fetchData()
+        await fetchData()
+        await fetchNotifications()
+        fetchDashboardStats()
       }
 
       return true
@@ -1697,6 +1818,8 @@ function Librarian() {
       setTimeout(() => setSuccessMessage(''), 3000)
 
       await fetchData()
+      await fetchNotifications()
+      fetchDashboardStats()
     } catch (error) {
       setError(error.message)
       setTimeout(() => setError(''), 5000)
@@ -3925,6 +4048,44 @@ function Librarian() {
                           </div>
                         </div>
                       )}
+
+                      {/* Quantity Input */}
+                      {issueForm.assetId && selectedAssetType !== 'study-rooms' && (
+                        <div className="mt-4">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Quantity to Issue
+                          </label>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="number"
+                              min="1"
+                              max={
+                                // Find the selected asset to check available copies
+                                (() => {
+                                  const asset = getIssueAssetData().find(a => a.Asset_ID === issueForm.assetId)
+                                  return asset ? getAvailableCountForAsset(asset, selectedAssetType) : 1
+                                })()
+                              }
+                              value={issueForm.quantity}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || 1
+                                const asset = getIssueAssetData().find(a => a.Asset_ID === issueForm.assetId)
+                                const max = asset ? getAvailableCountForAsset(asset, selectedAssetType) : 1
+                                setIssueForm(prev => ({ ...prev, quantity: Math.min(Math.max(1, val), max) }))
+                              }}
+                              className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                            />
+                            <span className="text-sm text-gray-500">
+                              (Max: {
+                                (() => {
+                                  const asset = getIssueAssetData().find(a => a.Asset_ID === issueForm.assetId)
+                                  return asset ? getAvailableCountForAsset(asset, selectedAssetType) : 1
+                                })()
+                              })
+                            </span>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center justify-end gap-3 mt-6">
@@ -5018,6 +5179,7 @@ function Librarian() {
           sidebarOpen={sidebarOpen}
           setSidebarOpen={setSidebarOpen}
           onLogout={handleLogout}
+          notifications={notifications}
         />
 
         {/* Content Area */}
