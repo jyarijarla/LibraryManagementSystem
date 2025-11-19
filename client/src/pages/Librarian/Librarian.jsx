@@ -100,7 +100,8 @@ const LibrarianSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOp
     { label: 'Transactions', icon: FileText, id: 'transactions' },
     { label: 'Fines & Payments', icon: DollarSign, id: 'fines' },
     { label: 'Reservations', icon: Clock, id: 'reservations' },
-    { label: 'Reports', icon: BarChart3, id: 'reports' }
+    { label: 'Reports', icon: BarChart3, id: 'reports' },
+    {label: 'Events', icon: Calendar, id: 'calendar'}
   ]
 
   return (
