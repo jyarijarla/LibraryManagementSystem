@@ -11,6 +11,12 @@ const NONCE_EXPIRY_MS = 300000; // 5 minutes
 const REQUEST_TIMESTAMP_TOLERANCE_MS = 60000; // 1 minute tolerance
 const SECRET_PEPPER = process.env.SECRET_PEPPER || crypto.randomBytes(32).toString('hex');
 
+// Role-based rate limits (stricter for non-admin roles)
+const ROLE_RATE_LIMITS = {
+  'student': 30,      // Students get 30 requests/min max
+  'librarian': 100,   // Librarians get 100 requests/min
+  'admin': 200        // Admins get full limit
+};
 // Allowed roles in the system (any other role is instantly rejected)
 const VALID_ROLES = ['student', 'librarian', 'admin'];
 
@@ -44,40 +50,40 @@ function validateRequestIntegrity(req) {
   const nonce = req.headers['x-request-nonce'];
   const timestamp = req.headers['x-request-timestamp'];
   const signature = req.headers['x-request-signature'];
-  
+
   // Allow requests without security headers in development (for gradual migration)
   // In production, set ENFORCE_REQUEST_SIGNING=true
   const enforceStrict = process.env.ENFORCE_REQUEST_SIGNING === 'true';
-  
+
   if (!nonce || !timestamp || !signature) {
     if (enforceStrict) {
-      return { 
-        valid: false, 
-        reason: 'Missing security headers. Please use official client application.' 
+      return {
+        valid: false,
+        reason: 'Missing security headers. Please use official client application.'
       };
     }
     // Allow without headers for now, but log for monitoring
     console.log(`[SECURITY] Request without signing headers: ${req.method} ${req.url}`);
     return { valid: true };
   }
-  
+
   // If headers are present, validate them strictly
   const requestTime = parseInt(timestamp, 10);
   const currentTime = Date.now();
-  
+
   if (isNaN(requestTime)) {
     return { valid: false, reason: 'Invalid request timestamp' };
   }
-  
+
   if (Math.abs(currentTime - requestTime) > REQUEST_TIMESTAMP_TOLERANCE_MS) {
     return { valid: false, reason: 'Request timestamp expired. Please retry.' };
   }
-  
+
   // Check if nonce has been used (prevent replay attacks)
   if (usedNonces.has(nonce)) {
     return { valid: false, reason: 'Duplicate request detected. Request already processed.' };
   }
-  
+
   // Verify HMAC signature using client-side key derivation
   const dataToSign = `${req.method}:${req.url}:${timestamp}:${nonce}`;
   const clientKey = crypto.createHash('sha256').update('library-management-secure-client-v1').digest('hex');
@@ -85,17 +91,17 @@ function validateRequestIntegrity(req) {
     .createHmac('sha256', clientKey)
     .update(dataToSign)
     .digest('hex');
-    
+
   if (signature !== expectedSignature) {
-    return { 
-      valid: false, 
-      reason: 'Request signature verification failed. Possible tampering detected.' 
+    return {
+      valid: false,
+      reason: 'Request signature verification failed. Possible tampering detected.'
     };
   }
-  
+
   // Mark nonce as used
   usedNonces.set(nonce, currentTime);
-  
+
   return { valid: true };
 }
 
@@ -109,52 +115,52 @@ function authenticateRequest(req, res) {
   }
 
   const token = authHeader.replace('Bearer ', '').trim();
-  
+
   try {
     // Create fingerprint from current request
-    const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || 
-                     req.socket.remoteAddress || 
-                     'unknown';
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0] ||
+      req.socket.remoteAddress ||
+      'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
-    
+
     // Additional security: Check for common Postman/API tool signatures
     const suspiciousAgents = ['postman', 'insomnia', 'httpclient', 'curl', 'wget', 'python-requests', 'axios/', 'node-fetch'];
-    const isSuspicious = suspiciousAgents.some(agent => 
+    const isSuspicious = suspiciousAgents.some(agent =>
       userAgent.toLowerCase().includes(agent)
     );
-    
+
     // Check for automated tools but don't block legitimate browsers
     const isLikelyBrowser = /mozilla|chrome|safari|firefox|edge|opera/i.test(userAgent);
-    
+
     if (isSuspicious && !isLikelyBrowser) {
       console.log(`[SECURITY ALERT] API tool blocked: ${userAgent} from IP: ${clientIp}`);
-      sendJson(res, 403, { 
+      sendJson(res, 403, {
         message: 'Automated access detected. Please use the official web application.',
         code: 'AUTOMATED_TOOL_DETECTED'
       });
       return null;
     }
-    
+
     // Log any non-browser access for monitoring
     if (!isLikelyBrowser) {
       console.log(`[SECURITY WARNING] Non-browser access: ${userAgent} from IP: ${clientIp}`);
     }
-    
+
     const fingerprint = createFingerprint(clientIp, userAgent);
 
     // Verify token with fingerprint check
     const payload = verifyToken(token, { fingerprint });
-    
+
     // CRITICAL: Validate role is in allowed list (prevent fake roles in token)
     if (!VALID_ROLES.includes(payload.role)) {
       console.log(`[SECURITY ALERT] INVALID ROLE IN TOKEN: "${payload.role}" from IP: ${clientIp}`);
-      sendJson(res, 403, { 
+      sendJson(res, 403, {
         message: 'Invalid role detected. Access denied.',
         code: 'INVALID_ROLE'
       });
       return null;
     }
-    
+
     // Check if token is blacklisted
     if (payload.jti && tokenBlacklist.has(payload.jti)) {
       sendJson(res, 401, { message: 'Token has been revoked' });
@@ -174,7 +180,7 @@ function authenticateRequest(req, res) {
           }
 
           const user = results[0];
-          
+
           // Verify role matches using database query to prevent hardcoded role bypass
           db.query(
             'SELECT role_name FROM role_type WHERE role_id = ?',
@@ -185,9 +191,9 @@ function authenticateRequest(req, res) {
                 resolve(null);
                 return;
               }
-              
+
               const dbRole = roleResults[0].role_name;
-              
+
               // CRITICAL: Verify role from database matches token AND is valid
               if (dbRole !== payload.role) {
                 console.log(`[SECURITY ALERT] ROLE MISMATCH: Token says "${payload.role}" but DB says "${dbRole}" for user ${payload.userId}`);
@@ -195,7 +201,7 @@ function authenticateRequest(req, res) {
                 resolve(null);
                 return;
               }
-              
+
               // Double-check role is valid even if it matches
               if (!VALID_ROLES.includes(dbRole)) {
                 console.log(`[SECURITY ALERT] INVALID ROLE IN DATABASE: "${dbRole}" for user ${payload.userId}`);
@@ -218,7 +224,7 @@ function authenticateRequest(req, res) {
       );
     });
   } catch (error) {
-    const errorMessage = error.message.includes('fingerprint') 
+    const errorMessage = error.message.includes('fingerprint')
       ? 'Security validation failed. Token cannot be used from this device.'
       : 'Invalid or expired token';
     sendJson(res, 401, { message: errorMessage });

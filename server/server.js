@@ -139,12 +139,17 @@ const routes = [
   { method: 'GET', path: '/api/dashboard/stats', handler: borrowController.getDashboardStats, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'POST', path: '/api/borrow', handler: borrowController.borrowAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   { method: 'PUT', path: '/api/borrow/return/:id', handler: borrowController.returnAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+  { method: "GET", path: '/api/borrow-records/user', handler: borrowController.getUserBorrows, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+  { method: 'PUT', path: '/api/borrow/return/:id', handler: borrowController.userReturnAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
 
   // Hold routes
   { method: 'GET', path: '/api/holds', handler: holdController.getAllHolds, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'POST', path: '/api/holds', handler: holdController.createHold, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'PUT', path: '/api/holds/:id/cancel', handler: holdController.cancelHold, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'POST', path: '/api/hold', handler: borrowController.borrowAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+  { method: 'POST', path: '/api/hold', handler: borrowController.holdAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+
+  // Waitlist routes
+  { method: 'POST', path: '/api/waitlist', handler: borrowController.waitlistAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
 
   // Report routes
   { method: 'GET', path: '/api/reports/most-borrowed', handler: reportController.getMostBorrowedAssets, auth: true, roles: ROLE_GROUPS.STAFF },

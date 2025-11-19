@@ -79,12 +79,22 @@ async function borrowAsset(assetID) {
     return response.data;
 }
 async function holdAsset(assetID) {
-    const response = await axios.post(`${API_URL}/borrow`,
+    const response = await axios.post(`${API_URL}/hold`,
         { userID: localStorage.getItem("userId"), assetID: assetID },{
             headers: {
                 'Authorization': `Bearer ${localStorage.getItem('token')}`
                 }
         })
+    return response.data;
+}
+async function waitlistAsset(assetID) {
+    const response = await axios.post(`${API_URL}/waitlist`,
+        {userID: localStorage.getItem("userId"), assetID: assetID },{
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+                }
+        }
+    )
     return response.data;
 }
 async function returnAsset(borrowID) {
@@ -96,7 +106,7 @@ async function returnAsset(borrowID) {
         })
     return response.data;
 }
-export function AssetCard({ assetType, getAsset, onAssetChange }) {
+export function AssetCard({ assetType, getAsset, onAssetChange, setError }) {
     console.log("Re-rendered")
     const { closeOverlay } = useOverlay();
     const { setLoading } = useLoading();
@@ -109,6 +119,7 @@ export function AssetCard({ assetType, getAsset, onAssetChange }) {
             await onAssetChange();
         } catch (error) {
             console.error("Borrow failed", error);
+            setError('Borrow failed')
         } finally {
             setLoading({ isLoading: false })
         }
@@ -121,6 +132,7 @@ export function AssetCard({ assetType, getAsset, onAssetChange }) {
             await onAssetChange();
         } catch (error) {
             console.error("Hold failed", error);
+            setError('Hold failed')
         } finally {
             setLoading({ isLoading: false })
         }
@@ -132,9 +144,26 @@ export function AssetCard({ assetType, getAsset, onAssetChange }) {
             await onAssetChange();
         } catch (error) {
             console.error("Return failed", error)
+            setError('Hold failed')
         } finally {
             setLoading({ isLoading: false })
         }
+    }
+    const handleWaitlist = async() => {
+        setLoading({ isLoading: true })
+        try {
+            await waitlistAsset(assetSelected.Asset_ID);
+            await onAssetChange();
+        } catch (error) {
+            console.error("Waitlist failed", error)
+            setError('Waitlist failed')
+        } finally {
+            setLoading({ isLoading: false })
+        }
+    }
+    const fetchBorrowsOn = async (assetID) => {
+        console.log(`Fetching user's borrows for ${assetID}`);
+        const response = await fetch(`${API_URL}/borrow`)
     }
     return (
         <div key={assetSelected} className='asset-card-content '>
@@ -198,7 +227,7 @@ export function AssetCard({ assetType, getAsset, onAssetChange }) {
                             </span>
                             <span className='asset-card-button-section'>
                                 <span className='asset-card-button-container'>
-                                    <button className='asset-card-button'>Waitlist</button>
+                                    <button className='asset-card-button' onClick={handleWaitlist}>Waitlist</button>
                                 </span>
                             </span>
                             <span className='asset-card-button-section'>
