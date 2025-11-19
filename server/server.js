@@ -139,6 +139,10 @@ const routes = [
   // Hold routes
   { method: 'POST', path: '/api/hold', handler: borrowController.holdAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
 
+  // Waitlist routes
+  { method: 'POST', path: '/api/waitlist', handler: borrowController.waitlistAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
+
+
   // Report routes
   { method: 'GET', path: '/api/reports/most-borrowed', handler: reportController.getMostBorrowedAssets, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/most-borrowed-assets', handler: reportController.getMostBorrowedAssets, auth: true, roles: ROLE_GROUPS.STAFF },

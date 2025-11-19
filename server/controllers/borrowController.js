@@ -150,7 +150,7 @@ exports.holdAsset = async (req, res) => {
       await connection.commit();
       res.writeHead(201, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ 
-        message: 'Hold added successfully',
+        message: 'Waitlist added successfully',
         holdID: newHoldID,
       }));
     }
@@ -166,7 +166,41 @@ exports.holdAsset = async (req, res) => {
     }
 }
 exports.waitlistAsset = async (req, res) => {
-    
+    const { assetID } = req.body
+    if(!assetID) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      return res.end(JSON.stringify({ message: "Missing required fields"}));
+    }
+    const userID = req.user.id;
+    const connection = await db.promise().getConnection();
+    try {
+      connection.beginTransaction();
+
+      const [assetCheck] = await connection.query(
+        `SELECT * FROM asset WHERE Asset_ID = ? LIMIT 1`, [assetID]
+      )
+      if(assetCheck.length === 0) {
+        throw Object.assign(new Error("Asset not found"), {status: 404})
+      }
+      const [waitlistInsertQuery] = await connection.query(
+        'INSERT INTO waitlist (Waitlister_ID, Asset_ID) VALUES (?, ?)',
+        [userID, assetID]
+      )
+      newWaitlistID = waitlistInsertQuery.insertId;
+
+      await connection.commit();
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: "Waitlist entry created", id: newWaitlistID }));
+    } catch (error) {
+      //waitlist failed
+      await connection.rollback();
+      console.log("Error in waitlistAsset:", error);
+      res.writeHead(error.status || 500, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({message: error.message, status: error.status || 500}))
+    }
+    finally {
+      connection.release();
+    }
 }
 // Issue any asset (book, CD, audiobook, movie, technology, study-room)
 exports.issueAsset = (req, res) => {
