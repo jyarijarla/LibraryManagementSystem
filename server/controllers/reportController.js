@@ -941,6 +941,88 @@ WHERE(br.Processed_By = ? OR br.Processed_By IS NULL)
   });
 };
 
+// Librarian Personal Report: Room Bookings
+const getLibrarianRoomBookings = async (req, res) => {
+  const librarianId = req.params.id;
+  const { from, to, roomId, status } = req.query;
+
+  try {
+    let query = `
+      SELECT 
+        br.Borrow_ID,
+        br.Borrow_Date,
+        br.Return_Date,
+        br.Due_Date,
+        CONCAT(u.First_Name, ' ', IFNULL(u.Last_Name, '')) AS member_name,
+        u.User_Email,
+        sr.Room_Number,
+        sr.Capacity,
+        CASE 
+          WHEN br.Return_Date IS NOT NULL THEN 'Completed'
+          WHEN br.Due_Date < CURDATE() AND br.Return_Date IS NULL THEN 'Overdue'
+          ELSE 'Active'
+        END AS status,
+        br.Processed_By
+      FROM borrow br
+      INNER JOIN user u ON br.Borrower_ID = u.User_ID
+      INNER JOIN rentable r ON br.Rentable_ID = r.Rentable_ID
+      INNER JOIN study_room sr ON r.Asset_ID = sr.Asset_ID
+      WHERE (br.Processed_By = ? OR br.Processed_By IS NULL)
+    `;
+
+    const params = [librarianId];
+
+    if (from && to) {
+      query += ` AND (br.Borrow_Date BETWEEN ? AND ?)`;
+      params.push(from, to);
+    }
+
+    if (roomId) {
+      query += ` AND sr.Room_Number = ?`;
+      params.push(roomId);
+    }
+
+    if (status) {
+      const statusArray = status.split(',').filter(s => s);
+      if (statusArray.length > 0) {
+        const statusConditions = [];
+        statusArray.forEach(s => {
+          if (s.toLowerCase() === 'active') {
+            statusConditions.push('(br.Return_Date IS NULL)');
+          } else if (s.toLowerCase() === 'completed') {
+            statusConditions.push('(br.Return_Date IS NOT NULL)');
+          } else if (s.toLowerCase() === 'overdue') {
+            statusConditions.push('(br.Return_Date IS NULL AND br.Due_Date < CURDATE())');
+          }
+        });
+        if (statusConditions.length > 0) {
+          query += ` AND (${statusConditions.join(' OR ')})`;
+        }
+      }
+    }
+
+    query += ` ORDER BY br.Borrow_Date DESC`;
+
+    db.query(query, params, (err, results) => {
+      if (err) {
+        console.error('Error fetching room bookings:', err);
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Failed to fetch room bookings', details: err.message }));
+        return;
+      }
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(results));
+    });
+  } catch (error) {
+    console.error('Error in getLibrarianRoomBookings:', error);
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'Failed to fetch room bookings', details: error.message }));
+  }
+};
+
 // Study room metadata (numbers, capacities, member roles)
 const getRoomReportMetadata = async (req, res) => {
   const runQuery = (sql, params = []) => new Promise((resolve, reject) => {
