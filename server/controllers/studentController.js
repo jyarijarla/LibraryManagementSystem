@@ -61,6 +61,13 @@ exports.updateStudent = (req, res) => {
   const firstName = nameParts[0];
   const lastName = nameParts.slice(1).join(' ') || null;
 
+  if (user.role === 'student' && user.id !== req.params.id) {
+    res.statusCode = 403;
+    res.end(JSON.stringify({ message: 'Forbidden' }));
+    return;
+}
+
+
   const query = `
     UPDATE user 
     SET First_Name = ?, Last_Name = ?, User_Email = ?, Username = ?, User_Phone = ?

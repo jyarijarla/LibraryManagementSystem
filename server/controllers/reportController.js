@@ -984,6 +984,6 @@ module.exports = {
   getLibrarianDailyActivity,
   getLibrarianMembers,
   getLibrarianBooks,
-  getLibrarianRoomBookings,
+ // getLibrarianRoomBookings,
   getRoomReportMetadata
 };
