@@ -1,6 +1,32 @@
 const db = require('../db');
 const { getConfigValue } = require('./configController');
 
+exports.getStudentById = async (req, res) => {
+  try {
+
+    const query = `
+    
+      SELECT * FROM user WHERE User_ID = ?
+    
+    `;
+db.query(query, [req.params.id], (err, results) => {
+      if (err) {
+        console.error('Error fetching student:', err);
+        return res.writeHead(500, { 'Content-Type': 'application/json' })
+          && res.end(JSON.stringify({ message: 'Database error', error: err.message }));
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(results));
+    });
+  } catch (error) {
+    console.error('Error in getStudentById:', error);
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ message: 'Failed to fetch student', error: error.message }));
+  }
+};
+
+
+
 // Get all students
 exports.getAllStudents = async (req, res) => {
   try {

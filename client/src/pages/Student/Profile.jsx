@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 
+
 const API_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3000/api'
   : 'https://librarymanagementsystem-z2yw.onrender.com/api'
@@ -10,31 +11,54 @@ export default function Profile() {
 
 
     const [form, setForm] = useState({First_Name: '', Last_Name: '', User_Email: '', User_Phone: '', Date_Of_Birth: ''})
-    const userID = localStorage.getItem('userID')
+    const userID = localStorage.getItem('userId')
     const token = localStorage.getItem('token')
 
     useEffect(() => {
         
+        console.log(">>> Effect running, userID=", userID);
+
+        if (!userID) return;
 
         const load = async () => {
+
+            console.log(">>> Fetching:", `${API_URL}/students/${userID}`);
+
+
             const res = await fetch(`${API_URL}/students/${userID}`, {
 
                 headers: {Authorization: `Bearer ${token}`}
 
 
             })
-            const load = await res.json()
-            if (!res.ok) {
-                alert("Update failed: " + data.message)
-                return
-}
 
-            const data = await res.json()
-            setForm(data)
+            console.log(">>> Response status:", res.status);
+
+            const result = await res.json()
+
+            console.log(">>> Response JSON:", result);
+
+            if (!res.ok) {
+
+                alert("Failed: " + result.message)
+                return
+            }
+
+
+            
+            setForm({
+  First_Name: result[0]?.First_Name ?? "",
+  Last_Name: result[0]?.Last_Name ?? "",
+  User_Email: result[0]?.User_Email ?? "",
+  User_Phone: result[0]?.User_Phone ?? "",
+  Date_Of_Birth: result[0]?.Date_Of_Birth ?? ""
+});
+
+
 
         }
         load()
-    }, [])
+    }, [userID])
 
     
 
@@ -77,21 +101,21 @@ const handleUpdate = async () => {
 
             <label>Email</label>
             <input
-                value={form.Email}
-                onChange={(e) => setForm({ ...form, Email: e.target.value })}
+                value={form.User_Email}
+                onChange={(e) => setForm({ ...form, User_Email: e.target.value })}
             />
             <label>Phone</label>
             <input
-                value={form.Phone}
-                onChange={(e) => setForm({ ...form, Phone: e.target.value})}
+                value={form.User_Phone}
+                onChange={(e) => setForm({ ...form, User_Phone: e.target.value})}
             
             />
 
-            <label>DOB</label>
+            <label>Date_Of_Birth</label>
             <input
             
-                value = {form.DOB}
-                onChange = {(e) => setForm({ ...form, DOB: e.target.value})}
+                value = {form.Date_Of_Birth.slice(0,10)} // yyyy-mm-dd
+                onChange = {(e) => setForm({ ...form, Date_Of_Birth: e.target.value})}
             />
 
             <button className="student-btn-primary" onClick={handleUpdate}>

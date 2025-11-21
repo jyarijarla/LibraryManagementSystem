@@ -120,6 +120,14 @@ const routes = [
 
   // Student routes
   { method: 'GET', path: '/api/students', handler: studentController.getAllStudents, auth: true, roles: ROLE_GROUPS.STAFF },
+  { 
+  method: 'GET',
+  path: '/api/students/:id',
+  handler: studentController.getStudentById,
+  auth: true,
+  roles: ROLE_GROUPS.ANY_AUTH
+  },
+
 
           // specifically for editing profile
   { method: 'PUT', path: '/api/students/:id', handler: studentController.updateStudent, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
