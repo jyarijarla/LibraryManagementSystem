@@ -122,7 +122,7 @@ const routes = [
   { method: 'GET', path: '/api/students', handler: studentController.getAllStudents, auth: true, roles: ROLE_GROUPS.STAFF },
 
           // specifically for editing profile
-  { method: 'PUT', path: '/api/students/:id', handler: studentController.updateStudent, auth: true, roles: ROLE_GROUPS.ANY_AUTH }
+  { method: 'PUT', path: '/api/students/:id', handler: studentController.updateStudent, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
 
   { method: 'PUT', path: '/api/students/:id', handler: studentController.updateStudent, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'DELETE', path: '/api/students/:id', handler: studentController.deleteStudent, auth: true, roles: ROLE_GROUPS.STAFF },
