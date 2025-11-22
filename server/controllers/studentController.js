@@ -79,28 +79,28 @@ exports.getAllStudents = async (req, res) => {
 
 // Update student
 exports.updateStudent = (req, res) => {
-  const { id } = req.params;
-  const { name, email, studentId, phone } = req.body;
+  const { First_Name,
+    Last_Name,
+    User_Email,
+    User_Phone,
+    Date_Of_Birth } = req.body;
+   const { id } = req.params;
 
-  // Split name into first and last
-  const nameParts = name.trim().split(' ');
-  const firstName = nameParts[0];
-  const lastName = nameParts.slice(1).join(' ') || null;
+  //if (user.role === 'student' && user.id !== req.params.id) {
+   // res.statusCode = 403;
+    //res.end(JSON.stringify({ message: 'Forbidden' }));
+    //return;
+//}
 
-  if (user.role === 'student' && user.id !== req.params.id) {
-    res.statusCode = 403;
-    res.end(JSON.stringify({ message: 'Forbidden' }));
-    return;
-}
-
+const cleanDate = Date_Of_Birth ? Date_Of_Birth.slice(0, 10) : null;
 
   const query = `
     UPDATE user 
-    SET First_Name = ?, Last_Name = ?, User_Email = ?, Username = ?, User_Phone = ?
+    SET First_Name = ?, Last_Name = ?, User_Email = ?, User_Phone = ?, Date_Of_Birth = ?
     WHERE User_ID = ? AND Role = 1
   `;
 
-  db.query(query, [firstName, lastName, email, studentId, phone || null, id], (err, result) => {
+  db.query(query, [First_Name, Last_Name, User_Email, User_Phone || null, cleanDate, id], (err, result) => {
     if (err) {
       console.error('Error updating student:', err);
       return res.writeHead(500, { 'Content-Type': 'application/json' })
