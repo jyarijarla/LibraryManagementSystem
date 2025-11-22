@@ -268,7 +268,7 @@ exports.issueAsset = async (req, res) => {
     'audiobooks': 'audiobook_inventory',
     'movies': 'movie_inventory',
     'technology': 'technology_inventory',
-    'study-rooms': 'study_room_inventory'
+    'study-rooms': 'study_room'
   };
   const { memberId, assetId, assetType, issueDate, dueDate, quantity = 1 } = req.body;
 
