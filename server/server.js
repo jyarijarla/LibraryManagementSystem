@@ -120,6 +120,18 @@ const routes = [
 
   // Student routes
   { method: 'GET', path: '/api/students', handler: studentController.getAllStudents, auth: true, roles: ROLE_GROUPS.STAFF },
+  { 
+  method: 'GET',
+  path: '/api/students/:id',
+  handler: studentController.getStudentById,
+  auth: true,
+  roles: ROLE_GROUPS.ANY_AUTH
+  },
+
+
+          // specifically for editing profile
+  { method: 'PUT', path: '/api/students/:id', handler: studentController.updateStudent, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+
   { method: 'PUT', path: '/api/students/:id', handler: studentController.updateStudent, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'DELETE', path: '/api/students/:id', handler: studentController.deleteStudent, auth: true, roles: ROLE_GROUPS.STAFF },
 
@@ -165,7 +177,7 @@ const routes = [
   { method: 'GET', path: '/api/reports/librarian/:id/summary', handler: reportController.getLibrarianSummary, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/librarian/:id/transactions', handler: reportController.getLibrarianTransactions, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/librarian/:id/daily-activity', handler: reportController.getLibrarianDailyActivity, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'GET', path: '/api/reports/librarian/:id/room-bookings', handler: reportController.getLibrarianRoomBookings, auth: true, roles: ROLE_GROUPS.STAFF },
+ // { method: 'GET', path: '/api/reports/librarian/:id/room-bookings', handler: reportController.getLibrarianRoomBookings, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/librarian/:id/room-bookings/meta', handler: reportController.getRoomReportMetadata, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/librarian/:id/members', handler: reportController.getLibrarianMembers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/librarian/:id/books', handler: reportController.getLibrarianBooks, auth: true, roles: ROLE_GROUPS.STAFF },
