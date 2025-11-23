@@ -457,6 +457,11 @@ body {
   gap: 0.5rem;
 }
 
+.student-preview-ui {
+  display: flex;
+  flex-direction: column;
+}
+
 /* --- Status Badges --- */
 .status-badge {
   padding: 0.25rem 0.75rem;

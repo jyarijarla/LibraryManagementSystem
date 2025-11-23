@@ -525,7 +525,7 @@ exports.returnAsset = async (req, res) => {
 
 // Return asset
 exports.userReturnAsset = async (req, res) => {
-  const { borrowID, fineAmount = 0 } = req.body;
+  const { borrowID } = req.params;
   const userID = req.user.id
 
   const [validBorrower] = await db.promise().query(
