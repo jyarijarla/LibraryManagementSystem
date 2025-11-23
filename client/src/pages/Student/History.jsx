@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
-import useBorrowerData from './BorrowerHook';
+import useBorrowerData from './BorrowerHooks';
 import {
     ShieldCheck,
     AlertCircle,

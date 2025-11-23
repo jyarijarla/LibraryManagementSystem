@@ -112,11 +112,12 @@ const API_URL = window.location.hostname === 'localhost'
 function DashboardOverview() {
     const navigate = useNavigate()
     const [stats, setStats] = useState(null)
-    const [loading, setLoading] = useState(true)
+    const { setLoading } = useLoading();
 
     useEffect(() => {
         const fetchStats = async () => {
             try {
+                setLoading({ isLoading: true })
                 const token = localStorage.getItem('token');
                 const response = await fetch(`${API_URL}/dashboard/student/stats`, {
                     headers: {
@@ -132,14 +133,12 @@ function DashboardOverview() {
             } catch (error) {
                 console.error('Error fetching stats:', error);
             } finally {
-                setLoading(false);
+                setLoading({ isLoading: false });
             }
         };
 
         fetchStats();
     }, []);
-
-    if (loading) return <div className="student-loading">Loading dashboard...</div>
 
     // Safe access to stats
     const summary = stats?.summary || { borrowed: 0, overdue: 0, bookings: 0, reservations: 0, fines: 0 }
