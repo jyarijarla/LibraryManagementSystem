@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLoading } from '../../components/FeedbackUI/LoadingContext'
 import {
     ShieldCheck,
     AlertCircle,
@@ -21,13 +22,13 @@ const API_URL = window.location.hostname === 'localhost'
     : 'https://librarymanagementsystem-z2yw.onrender.com/api';
 
 const History = () => {
+    const { setLoading } = useLoading();
     const [activeTab, setActiveTab] = useState('fines');
     const [fines, setFines] = useState([]);
     const [loans, setLoans] = useState([]);
     const [holds, setHolds] = useState([]);
     const [history, setHistory] = useState([]);
-
-    const [loading, setLoading] = useState(true);
+    
     const [error, setError] = useState(null);
     const [processingId, setProcessingId] = useState(null);
     const [successMessage, setSuccessMessage] = useState('');
@@ -38,7 +39,7 @@ const History = () => {
     }, []);
 
     const fetchAllData = async () => {
-        setLoading(true);
+        setLoading({ isLoading: true });
         try {
             const token = localStorage.getItem('token');
             const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -80,9 +81,28 @@ const History = () => {
             console.error('Error fetching report data:', err);
             setError(err.message);
         } finally {
-            setLoading(false);
+            setLoading({ isLoading: false })
         }
     };
+
+    {/*const handleReturn = async (borrowID) => {
+        setLoading({ isLoading: true })
+        try {
+            await axios.put(`${API_URL}/borrow/return/${borrowID}`, 
+                { userID: localStorage.getItem("userId") }, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                }
+            )
+            fetchAllData();
+        } catch (error) {
+            console.error('Error returning asset:', error);
+            setError(err.message);
+        } finally {
+            setLoading({ isLoading: false })
+        }
+    }*/}
 
     const handlePayFine = async (fine) => {
         setProcessingId(fine.Borrow_ID);
@@ -123,8 +143,6 @@ const History = () => {
             (item.Author && item.Author.toLowerCase().includes(searchTerm.toLowerCase()))
         );
     };
-
-    if (loading) return <div className="student-loading">Loading reports...</div>;
 
     const unpaidFines = fines.filter(f => f.Status !== 'Paid' && f.Status !== 'Waived' && parseFloat(f.Fine_Amount) > 0);
     const paidFines = fines.filter(f => f.Status === 'Paid' || f.Status === 'Waived');
@@ -390,11 +408,14 @@ const History = () => {
                                                     <h4>{loan.Asset_Title}</h4>
                                                     <p>{loan.Asset_Type} • Due: {new Date(loan.Due_Date).toLocaleDateString()}</p>
                                                 </div>
-                                                <div className="student-preview-status">
-                                                    {loan.Overdue_Days > 0 && (
-                                                        <span className="status-badge overdue">Overdue by {loan.Overdue_Days} days</span>
-                                                    )}
-                                                    <span className="status-badge active">Borrowed</span>
+                                                <div className='student-preview-ui'>
+                                                    <div className="student-preview-status">
+                                                        {loan.Overdue_Days > 0 && (
+                                                            <span className="status-badge overdue">Overdue by {loan.Overdue_Days} days</span>
+                                                        )}
+                                                        <span className="status-badge active">Borrowed</span>
+                                                    </div>
+                                                    {/*<button onClick={handleReturn(loan.Borrow_ID)}>Test</button>*/}
                                                 </div>
                                             </div>
                                         ))
