@@ -194,6 +194,122 @@ const getBorrowingTrends = (req, res) => {
   });
 };
 
+/**
+ * Helper to build dynamic WHERE clauses for reports
+ */
+const buildDynamicFilters = (reqQuery, aliases = {}) => {
+  const {
+    actions,
+    fineStatuses,
+    memberNames,
+    assetTitles,
+    assetTypes,
+    status,
+    overdueBucket,
+    roomId
+  } = reqQuery;
+
+  const br = aliases.borrow || 'br';
+  const u = aliases.user || 'u';
+  const f = aliases.fine || 'f';
+  const bk = aliases.book || 'bk';
+  const cd = aliases.cd || 'cd';
+  const ab = aliases.audiobook || 'ab';
+  const mv = aliases.movie || 'mv';
+  const t = aliases.tech || 't';
+  const sr = aliases.room || 'sr';
+
+  let sql = '';
+  const params = [];
+
+  // Parse arrays
+  const actionArray = actions ? actions.split(',').filter(a => a) : [];
+  const fineStatusArray = fineStatuses ? fineStatuses.split(',').filter(f => f) : [];
+  const memberNameArray = memberNames ? memberNames.split(',').filter(m => m) : [];
+  const assetTitleArray = assetTitles ? assetTitles.split(',').filter(t => t) : [];
+  const assetTypeArray = assetTypes ? assetTypes.split(',').filter(t => t) : [];
+  const statusArray = status ? status.split(',').filter(s => s) : [];
+
+  // Status Filter
+  if (statusArray.length > 0) {
+    const conditions = [];
+    statusArray.forEach(s => {
+      if (s.toLowerCase() === 'active') conditions.push(`(${br}.Return_Date IS NULL AND (${br}.Due_Date >= CURDATE() OR ${br}.Due_Date IS NULL))`);
+      else if (s.toLowerCase() === 'completed') conditions.push(`(${br}.Return_Date IS NOT NULL)`);
+      else if (s.toLowerCase() === 'overdue') conditions.push(`(${br}.Return_Date IS NULL AND ${br}.Due_Date < CURDATE())`);
+    });
+    if (conditions.length) sql += ` AND (${conditions.join(' OR ')})`;
+  }
+
+  // Action Filter
+  if (actionArray.length > 0) {
+    const conditions = [];
+    actionArray.forEach(a => {
+      if (a === 'issued') conditions.push(`(${br}.Return_Date IS NULL AND ${br}.Renew_Date IS NULL)`);
+      else if (a === 'returned') conditions.push(`(${br}.Return_Date IS NOT NULL)`);
+      else if (a === 'renewed') conditions.push(`(${br}.Renew_Date IS NOT NULL)`);
+      else if (a === 'overdue') conditions.push(`(${br}.Due_Date < CURDATE() AND ${br}.Return_Date IS NULL)`);
+    });
+    if (conditions.length) sql += ` AND (${conditions.join(' OR ')})`;
+  }
+
+  // Fine Status Filter
+  if (fineStatusArray.length > 0) {
+    const conditions = [];
+    fineStatusArray.forEach(s => {
+      if (s === 'paid') conditions.push(`(${f}.Paid = 1)`);
+      else if (s === 'unpaid') conditions.push(`(${f}.Paid = 0 AND ${f}.Amount_Due > 0)`);
+    });
+    if (conditions.length) sql += ` AND (${conditions.join(' OR ')})`;
+  }
+
+  // Overdue Bucket
+  if (overdueBucket) {
+    if (overdueBucket === '1-7') sql += ` AND (${br}.Return_Date IS NULL AND DATEDIFF(CURDATE(), ${br}.Due_Date) BETWEEN 1 AND 7)`;
+    else if (overdueBucket === '8-30') sql += ` AND (${br}.Return_Date IS NULL AND DATEDIFF(CURDATE(), ${br}.Due_Date) BETWEEN 8 AND 30)`;
+    else if (overdueBucket === '30+') sql += ` AND (${br}.Return_Date IS NULL AND DATEDIFF(CURDATE(), ${br}.Due_Date) > 30)`;
+  }
+
+  // Room ID
+  if (roomId) {
+    sql += ` AND ${sr}.Room_Number = ?`;
+    params.push(roomId);
+  }
+
+  // Member Names
+  if (memberNameArray.length > 0) {
+    const conditions = memberNameArray.map(() => `CONCAT(${u}.First_Name, ' ', IFNULL(${u}.Last_Name, '')) = ?`);
+    sql += ` AND (${conditions.join(' OR ')})`;
+    params.push(...memberNameArray);
+  }
+
+  // Asset Titles
+  if (assetTitleArray.length > 0) {
+    const conditions = assetTitleArray.map(() => `(
+      ${bk}.Title = ? OR ${cd}.Title = ? OR ${ab}.Title = ? OR ${mv}.Title = ? OR
+      CONCAT('Tech: ', ${t}.Model_Num) = ? OR CONCAT('Room: ', ${sr}.Room_Number) = ?
+    )`);
+    sql += ` AND (${conditions.join(' OR ')})`;
+    assetTitleArray.forEach(t => params.push(t, t, t, t, t, t));
+  }
+
+  // Asset Types
+  if (assetTypeArray.length > 0) {
+    const conditions = [];
+    assetTypeArray.forEach(type => {
+      if (type === 'Book') conditions.push(`${bk}.Asset_ID IS NOT NULL`);
+      else if (type === 'CD') conditions.push(`${cd}.Asset_ID IS NOT NULL`);
+      else if (type === 'Audiobook') conditions.push(`${ab}.Asset_ID IS NOT NULL`);
+      else if (type === 'Movie') conditions.push(`${mv}.Asset_ID IS NOT NULL`);
+      else if (type === 'Technology') conditions.push(`${t}.Asset_ID IS NOT NULL`);
+      else if (type === 'Study Room') conditions.push(`${sr}.Asset_ID IS NOT NULL`);
+    });
+    if (conditions.length) sql += ` AND (${conditions.join(' OR ')})`;
+  }
+
+  return { sql, params };
+};
+
 // Librarian Personal Report: Summary Statistics
 const getLibrarianSummary = async (req, res) => {
   const librarianId = req.params.id;
@@ -214,18 +330,32 @@ const getLibrarianSummary = async (req, res) => {
       console.warn('Failed to fetch fine config, using defaults');
     }
 
-    // Adjust 'to' date to handle timezone differences (DB is ahead) and include full day
+    // Adjust 'to' date to handle timezone differences
     if (to) {
       const date = new Date(to);
       date.setDate(date.getDate() + 1);
       to = date.toISOString().split('T')[0] + ' 23:59:59';
     }
 
-    /**
-     * We report issued/returned/renewed within the selected window, broken down by asset type.
-     * Processed_By is optional; include rows with matching librarian or NULL (legacy data).
-     * For unpaid fines, we show ALL current unpaid fines (system-wide, not filtered by librarian) since they are a current liability.
-     */
+    // Common Joins for Subqueries
+    const getJoins = (b, f, r, u, bk, cd, ab, mv, t, sr) => `
+      LEFT JOIN fine ${f} ON ${b}.Borrow_ID = ${f}.Borrow_ID
+      JOIN rentable ${r} ON ${b}.Rentable_ID = ${r}.Rentable_ID
+      INNER JOIN user ${u} ON ${b}.Borrower_ID = ${u}.User_ID
+      LEFT JOIN book ${bk} ON ${r}.Asset_ID = ${bk}.Asset_ID
+      LEFT JOIN cd ${cd} ON ${r}.Asset_ID = ${cd}.Asset_ID
+      LEFT JOIN audiobook ${ab} ON ${r}.Asset_ID = ${ab}.Asset_ID
+      LEFT JOIN movie ${mv} ON ${r}.Asset_ID = ${mv}.Asset_ID
+      LEFT JOIN technology ${t} ON ${r}.Asset_ID = ${t}.Asset_ID
+      LEFT JOIN study_room ${sr} ON ${r}.Asset_ID = ${sr}.Asset_ID
+    `;
+
+    // Build dynamic filters for main query (br)
+    const mainFilters = buildDynamicFilters(req.query, { borrow: 'br', fine: 'f', user: 'u', book: 'bk', cd: 'cd', audiobook: 'ab', movie: 'mv', tech: 't', room: 'sr' });
+
+    // Build dynamic filters for subqueries (b)
+    const subFilters = buildDynamicFilters(req.query, { borrow: 'b', fine: 'f', user: 'u', book: 'bk', cd: 'cd', audiobook: 'ab', movie: 'mv', tech: 't', room: 'sr' });
+
     const query = `
       SELECT 
         COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? THEN 1 END) AS assets_issued_total,
@@ -240,32 +370,42 @@ const getLibrarianSummary = async (req, res) => {
               (LEAST(DATEDIFF(CURDATE(), b.Due_Date), ?) * ?) - f.Amount_Due
           END
         ), 0)
-        FROM fine f
-        JOIN borrow b ON f.Borrow_ID = b.Borrow_ID
+        FROM borrow b
+        ${getJoins('b', 'f', 'r', 'u', 'bk', 'cd', 'ab', 'mv', 't', 'sr')}
         WHERE f.Last_Updated BETWEEN ? AND ?
         AND f.Amount_Due < (
           CASE 
             WHEN b.Return_Date IS NOT NULL THEN LEAST(DATEDIFF(b.Return_Date, b.Due_Date), ?) * ?
             ELSE LEAST(DATEDIFF(CURDATE(), b.Due_Date), ?) * ?
           END
-        )) AS fines_collected,
+        )
+        ${subFilters.sql}
+        ) AS fines_collected,
         
-         (SELECT COALESCE(SUM(f2.Amount_Due), 0)
-          FROM fine f2
-          JOIN borrow b2 ON f2.Borrow_ID = b2.Borrow_ID
-          WHERE f2.Paid = 0) AS fines_unpaid,
+         (SELECT COALESCE(SUM(f.Amount_Due), 0)
+          FROM borrow b
+          ${getJoins('b', 'f', 'r', 'u', 'bk', 'cd', 'ab', 'mv', 't', 'sr')}
+          WHERE f.Paid = 0
+          ${subFilters.sql}
+          ) AS fines_unpaid,
          
         (SELECT COUNT(*) 
-         FROM borrow b3 
-         WHERE b3.Return_Date IS NULL 
-         AND b3.Due_Date < CURDATE()
-         AND (b3.Processed_By = ? OR b3.Processed_By IS NULL)) AS overdue_books,
+         FROM borrow b
+         ${getJoins('b', 'f', 'r', 'u', 'bk', 'cd', 'ab', 'mv', 't', 'sr')}
+         WHERE b.Return_Date IS NULL 
+         AND b.Due_Date < CURDATE()
+         AND (b.Processed_By = ? OR b.Processed_By IS NULL)
+         ${subFilters.sql}
+         ) AS overdue_books,
          
         (SELECT COUNT(*) 
-         FROM borrow b2 
-         WHERE b2.Return_Date IS NULL 
-         AND b2.Borrow_Date <= ?
-         AND (b2.Processed_By = ? OR b2.Processed_By IS NULL)) AS active_loans,
+         FROM borrow b
+         ${getJoins('b', 'f', 'r', 'u', 'bk', 'cd', 'ab', 'mv', 't', 'sr')}
+         WHERE b.Return_Date IS NULL 
+         AND b.Borrow_Date <= ?
+         AND (b.Processed_By = ? OR b.Processed_By IS NULL)
+         ${subFilters.sql}
+         ) AS active_loans,
          
         COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND bk.Asset_ID IS NOT NULL THEN 1 END) AS books_issued,
         COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND cd.Asset_ID IS NOT NULL THEN 1 END) AS cds_issued,
@@ -274,55 +414,63 @@ const getLibrarianSummary = async (req, res) => {
         COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND t.Asset_ID IS NOT NULL THEN 1 END) AS technology_issued,
         COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND sr.Asset_ID IS NOT NULL THEN 1 END) AS study_rooms_issued
       FROM borrow br
-      LEFT JOIN fine f ON br.Borrow_ID = f.Borrow_ID
-      JOIN rentable r ON br.Rentable_ID = r.Rentable_ID
-      LEFT JOIN book bk ON r.Asset_ID = bk.Asset_ID
-      LEFT JOIN cd ON r.Asset_ID = cd.Asset_ID
-      LEFT JOIN audiobook ab ON r.Asset_ID = ab.Asset_ID
-      LEFT JOIN movie mv ON r.Asset_ID = mv.Asset_ID
-      LEFT JOIN technology t ON r.Asset_ID = t.Asset_ID
-      LEFT JOIN study_room sr ON r.Asset_ID = sr.Asset_ID
+      ${getJoins('br', 'f', 'r', 'u', 'bk', 'cd', 'ab', 'mv', 't', 'sr')}
       WHERE (br.Processed_By = ? OR br.Processed_By IS NULL)
         AND (
           (br.Borrow_Date BETWEEN ? AND ?)
           OR (br.Return_Date BETWEEN ? AND ?)
           OR (br.Renew_Date BETWEEN ? AND ?)
         )
+        ${mainFilters.sql}
     `;
 
-    db.query(
-      query,
-      [
-        from, to,               // issued window
-        from, to,               // returned window
-        from, to,               // renewals window
-        maxDays, fineRate, maxDays, fineRate, from, to, maxDays, fineRate, maxDays, fineRate, // fines collected (new logic)
-        // librarianId,            // fines_unpaid subquery librarian (REMOVED)
-        librarianId,            // overdue_books subquery librarian
-        to, librarianId,        // active_loans subquery + librarian
-        from, to,               // books issued window
-        from, to,               // cds issued
-        from, to,               // audiobooks issued
-        from, to,               // movies issued
-        from, to,               // technology issued
-        from, to,               // study rooms issued
-        librarianId,            // WHERE clause librarian filter
-        from, to,               // filter window for WHERE clause
-        from, to,
-        from, to
-      ],
-      (err, results) => {
-        if (err) {
-          console.error('Error fetching librarian summary:', err);
-          res.statusCode = 500;
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ error: 'Failed to fetch summary', details: err.message }));
-          return;
-        }
-        res.statusCode = 200;
+    const queryParams = [
+      from, to,               // issued window
+      from, to,               // returned window
+      from, to,               // renewals window
+
+      // fines_collected subquery
+      maxDays, fineRate, maxDays, fineRate, from, to, maxDays, fineRate, maxDays, fineRate,
+      ...subFilters.params,
+
+      // fines_unpaid subquery
+      ...subFilters.params,
+
+      // overdue_books subquery
+      librarianId,
+      ...subFilters.params,
+
+      // active_loans subquery
+      to, librarianId,
+      ...subFilters.params,
+
+      from, to,               // books issued window
+      from, to,               // cds issued
+      from, to,               // audiobooks issued
+      from, to,               // movies issued
+      from, to,               // technology issued
+      from, to,               // study rooms issued
+
+      // Main query WHERE
+      librarianId,
+      from, to,
+      from, to,
+      from, to,
+      ...mainFilters.params
+    ];
+
+    db.query(query, queryParams, (err, results) => {
+      if (err) {
+        console.error('Error fetching librarian summary:', err);
+        res.statusCode = 500;
         res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify(results[0] || {}));
+        res.end(JSON.stringify({ error: 'Failed to fetch summary', details: err.message }));
+        return;
       }
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(results[0] || {}));
+    }
     );
   } catch (error) {
     console.error('Error in getLibrarianSummary:', error);
@@ -935,11 +1083,13 @@ const getRoomReportMetadata = (req, res) => {
 // Librarian Report: Members Autocomplete
 const getLibrarianMembers = (req, res) => {
   const query = `
-    SELECT DISTINCT 
-      CONCAT(First_Name, ' ', IFNULL(Last_Name, '')) as name 
+    SELECT 
+      User_ID,
+      CONCAT(First_Name, ' ', IFNULL(Last_Name, '')) as member_name,
+      'Student' as role
     FROM user 
     WHERE Role = 1 
-    ORDER BY name
+    ORDER BY member_name
   `;
 
   db.query(query, (err, results) => {
@@ -952,7 +1102,7 @@ const getLibrarianMembers = (req, res) => {
     }
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify(results.map(r => r.name)));
+    res.end(JSON.stringify(results));
   });
 };
 

@@ -775,7 +775,7 @@ function LibrarianReport() {
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="bg-white rounded-xl shadow-sm p-4 mb-6 border border-gray-100"
+        className="bg-white rounded-xl shadow-sm p-4 mb-6 border border-gray-100 relative z-20"
       >
         <div className="flex items-center justify-between mb-4">
           <button
@@ -1037,7 +1037,7 @@ function LibrarianReport() {
                       {showMemberDropdown && membersList.length > 0 && (
                         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                           {membersList
-                            .filter(member => member.member_name.toLowerCase().includes(memberSearchText.toLowerCase()))
+                            .filter(member => member.member_name && member.member_name.toLowerCase().includes(memberSearchText.toLowerCase()))
                             .map(member => (
                               <button
                                 key={member.User_ID}
