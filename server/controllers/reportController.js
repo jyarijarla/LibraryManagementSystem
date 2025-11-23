@@ -197,7 +197,7 @@ const getBorrowingTrends = (req, res) => {
 // Librarian Personal Report: Summary Statistics
 const getLibrarianSummary = async (req, res) => {
   const librarianId = req.params.id;
-  const { from, to } = req.query;
+  let { from, to } = req.query;
 
   try {
     // Get fine config
@@ -214,6 +214,13 @@ const getLibrarianSummary = async (req, res) => {
       console.warn('Failed to fetch fine config, using defaults');
     }
 
+    // Adjust 'to' date to handle timezone differences (DB is ahead) and include full day
+    if (to) {
+      const date = new Date(to);
+      date.setDate(date.getDate() + 1);
+      to = date.toISOString().split('T')[0] + ' 23:59:59';
+    }
+
     /**
      * We report issued/returned/renewed within the selected window, broken down by asset type.
      * Processed_By is optional; include rows with matching librarian or NULL (legacy data).
@@ -225,11 +232,23 @@ const getLibrarianSummary = async (req, res) => {
         COUNT(CASE WHEN br.Return_Date BETWEEN ? AND ? THEN 1 END) AS assets_returned_total,
         COUNT(CASE WHEN br.Renew_Date BETWEEN ? AND ? THEN 1 END) AS renewals,
         
-        COALESCE(SUM(CASE 
-          WHEN br.Return_Date BETWEEN ? AND ? AND br.Return_Date > br.Due_Date
-          THEN (LEAST(DATEDIFF(br.Return_Date, br.Due_Date), ?) * ?) - COALESCE(f.Amount_Due, 0)
-          ELSE 0 
-        END), 0) AS fines_collected,
+        (SELECT COALESCE(SUM(
+          CASE 
+            WHEN b.Return_Date IS NOT NULL THEN 
+              (LEAST(DATEDIFF(b.Return_Date, b.Due_Date), ?) * ?) - f.Amount_Due
+            ELSE 
+              (LEAST(DATEDIFF(CURDATE(), b.Due_Date), ?) * ?) - f.Amount_Due
+          END
+        ), 0)
+        FROM fine f
+        JOIN borrow b ON f.Borrow_ID = b.Borrow_ID
+        WHERE f.Last_Updated BETWEEN ? AND ?
+        AND f.Amount_Due < (
+          CASE 
+            WHEN b.Return_Date IS NOT NULL THEN LEAST(DATEDIFF(b.Return_Date, b.Due_Date), ?) * ?
+            ELSE LEAST(DATEDIFF(CURDATE(), b.Due_Date), ?) * ?
+          END
+        )) AS fines_collected,
         
          (SELECT COALESCE(SUM(f2.Amount_Due), 0)
           FROM fine f2
@@ -277,7 +296,7 @@ const getLibrarianSummary = async (req, res) => {
         from, to,               // issued window
         from, to,               // returned window
         from, to,               // renewals window
-        from, to, maxDays, fineRate,     // fines collected window + rate
+        maxDays, fineRate, maxDays, fineRate, from, to, maxDays, fineRate, maxDays, fineRate, // fines collected (new logic)
         // librarianId,            // fines_unpaid subquery librarian (REMOVED)
         librarianId,            // overdue_books subquery librarian
         to, librarianId,        // active_loans subquery + librarian
