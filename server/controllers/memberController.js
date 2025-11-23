@@ -255,6 +255,33 @@ exports.getMemberProfile = async (req, res) => {
   });
 };
 
+// Get all users (admins, librarians, students)
+exports.getAllUsers = (req, res) => {
+  const query = `
+    SELECT
+      u.User_ID as id,
+      COALESCE(u.Student_ID, u.Username) as studentId,
+      u.First_Name as firstname,
+      u.Last_Name as lastname,
+      u.User_Email as email,
+      u.User_Phone as phone,
+      u.Role as role
+    FROM user u
+    ORDER BY u.User_ID DESC
+  `;
+
+  db.query(query, (err, results) => {
+    if (err) {
+      console.error('Error fetching users:', err);
+      return res.writeHead(500, { 'Content-Type': 'application/json' }) &&
+        res.end(JSON.stringify({ message: 'Failed to fetch users', error: err.message }));
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(results));
+  });
+};
+
 // Add new member
 exports.addMember = (req, res) => {
   const { firstName, lastName, email, phone, username, dateOfBirth, status, password } = req.body;

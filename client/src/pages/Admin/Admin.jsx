@@ -449,8 +449,8 @@ const [userToDelete, setUserToDelete] = useState(null);
         await fetchAssets(activeAssetTab)
       } else if (activeTab === 'students') {
         await fetchStudents()
-      } else if (activeTab === 'users') {
-        await fetchStudents()
+          } else if (activeTab === 'users') {
+            await fetchUsers()
       } else if (activeTab === 'records') {
         await fetchBorrowRecords()
       } else if (activeTab === 'reports') {
@@ -545,6 +545,35 @@ const [userToDelete, setUserToDelete] = useState(null);
     } catch (error) {
       console.error('❌ Error fetching students:', error)
       // Don't throw
+    }
+  }
+
+  const fetchUsers = async () => {
+    try {
+      console.log('Fetching users...')
+      const response = await fetch(`${API_URL}/users`, {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+      if (!response.ok) throw new Error('Failed to fetch users')
+      const data = await response.json()
+      console.log(`✅ Received ${data.length} users`)
+      // Map to the shape used by the students UI (firstname, lastname, studentId, id, email, role, phone)
+      const mapped = data.map(u => ({
+        id: u.id,
+        studentId: u.studentId,
+        firstname: u.firstname || '',
+        lastname: u.lastname || '',
+        email: u.email || '',
+        role: u.role,
+        phone: u.phone || ''
+      }))
+      const sortedData = mapped.sort((a, b) => (a.id || 0) - (b.id || 0))
+      setStudents(sortedData)
+    } catch (error) {
+      console.error('❌ Error fetching users:', error)
     }
   }
 

@@ -144,6 +144,9 @@ const routes = [
   { method: 'DELETE', path: '/api/members/:id', handler: memberController.deleteMember, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/members/:id/activity', handler: memberController.getMemberActivity, auth: true, roles: ROLE_GROUPS.STAFF },
 
+  // Users - return all users (admins, librarians, students)
+  { method: 'GET', path: '/api/users', handler: memberController.getAllUsers, auth: true, roles: ROLE_GROUPS.STAFF },
+
   // Borrow routes
   { method: 'GET', path: '/api/borrow-records', handler: borrowController.getAllRecords, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'POST', path: '/api/borrow/issue', handler: borrowController.issueAsset, auth: true, roles: ROLE_GROUPS.STAFF },
