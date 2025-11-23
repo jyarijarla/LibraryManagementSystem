@@ -14,13 +14,24 @@ const mockLogs = [
  * GET /api/audit-logs
  */
 exports.getLogs = (req, res) => {
-    // In a real implementation, we would query the database:
-    // const query = 'SELECT * FROM system_logs ORDER BY Timestamp DESC LIMIT 100';
-    // db.query(query, ...);
-
-    // For now, return mock data
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(mockLogs));
+    const query = 'SELECT * FROM system_logs ORDER BY Timestamp DESC LIMIT 100';
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Error fetching audit logs:', err);
+            // Fallback to mock data if table doesn't exist
+            if (err.code === 'ER_NO_SUCH_TABLE') {
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/json');
+                return res.end(JSON.stringify(mockLogs));
+            }
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            return res.end(JSON.stringify({ error: 'Database error' }));
+        }
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(results));
+    });
 };
 
 /**
@@ -28,13 +39,15 @@ exports.getLogs = (req, res) => {
  * Internal helper, not an endpoint
  */
 exports.createLog = (userId, action, details, ipAddress) => {
-    console.log(`[AUDIT LOG] User: ${userId}, Action: ${action}, Details: ${JSON.stringify(details)}, IP: ${ipAddress}`);
+    // console.log(`[AUDIT LOG] User: ${userId}, Action: ${action}, Details: ${JSON.stringify(details)}, IP: ${ipAddress}`);
 
-    // In a real implementation:
-    /*
     const query = 'INSERT INTO system_logs (User_ID, Action, Details, IP_Address) VALUES (?, ?, ?, ?)';
     db.query(query, [userId, action, JSON.stringify(details), ipAddress], (err) => {
-      if (err) console.error('Failed to write audit log:', err);
+        if (err) {
+            // Silent fail for now if table doesn't exist, but log to console
+            if (err.code !== 'ER_NO_SUCH_TABLE') {
+                console.error('Failed to write audit log:', err);
+            }
+        }
     });
-    */
 };

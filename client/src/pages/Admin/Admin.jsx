@@ -15,6 +15,7 @@ import { LineChart, Line, BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianG
 import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
 import UserDropdown from '../../components/UserDropdown';
 import UserProfileDrawer from './UserProfileDrawer';
+import AdminReport from './AdminReport';
 import './Admin.css'
 
 // Use local server for development, production for deployed app
@@ -1635,7 +1636,7 @@ function Admin() {
               {activeTab === 'rooms' && renderAssets()} {/* Reuse assets view for rooms for now */}
               {activeTab === 'roles' && renderRoles()}
               {activeTab === 'settings' && renderSettings()}
-              {activeTab === 'reports' && renderPlaceholder('Reports & Analytics', BarChart3)}
+              {activeTab === 'reports' && <AdminReport />}
               {activeTab === 'logs' && renderLogs()}
             </motion.div>
           </AnimatePresence>
