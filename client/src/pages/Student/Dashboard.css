@@ -438,23 +438,41 @@ body {
   border-color: var(--border-color);
 }
 
+.student-preview-info {
+  flex: 1;
+  min-width: 0;
+  /* Allow truncation */
+  padding-right: 1rem;
+}
+
 .student-preview-info h4 {
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-primary);
   margin: 0 0 0.25rem 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .student-preview-info p {
   font-size: 0.8rem;
   color: var(--text-secondary);
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .student-preview-status {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.5rem;
+  width: 200px;
+  /* Fixed width to prevent layout shift */
+  flex-shrink: 0;
+  text-align: right;
 }
 
 /* --- Status Badges --- */

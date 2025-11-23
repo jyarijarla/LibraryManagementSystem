@@ -14,6 +14,7 @@ const eventController = require('./controllers/eventController');
 const fineController = require('./controllers/fineController');
 const holdController = require('./controllers/holdController');
 const configController = require('./controllers/configController');
+const auditController = require('./controllers/auditController');
 const { authenticateRequest, enforceRoles, revokeToken } = require('./middleware/authMiddleware');
 
 const ROLES = {
@@ -127,10 +128,15 @@ const routes = [
   // Member routes
   { method: 'GET', path: '/api/members', handler: memberController.getAllMembers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/members/:id', handler: memberController.getMemberProfile, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/members/:id/details', handler: memberController.getMemberDetails, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'POST', path: '/api/members/bulk-action', handler: memberController.bulkAction, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
   { method: 'POST', path: '/api/members', handler: memberController.addMember, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'PUT', path: '/api/members/:id', handler: memberController.updateMember, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'DELETE', path: '/api/members/:id', handler: memberController.deleteMember, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'GET', path: '/api/members/:id/activity', handler: memberController.getMemberActivity, auth: true, roles: ROLE_GROUPS.STAFF },
+
+  { method: 'PUT', path: '/api/members/:id', handler: memberController.updateMember, auth: true, roles: ROLE_GROUPS.ADMIN },
+  { method: 'PUT', path: '/api/members/:id/block', handler: memberController.toggleBlockStatus, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'PUT', path: '/api/members/:id/activate', handler: memberController.toggleActivationStatus, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'DELETE', path: '/api/members/:id', handler: memberController.deleteMember, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/roles', handler: memberController.getRoles, auth: true, roles: ROLE_GROUPS.STAFF },
 
   // Borrow routes
   { method: 'GET', path: '/api/borrow-records', handler: borrowController.getAllRecords, auth: true, roles: ROLE_GROUPS.STAFF },
@@ -160,6 +166,7 @@ const routes = [
   { method: 'GET', path: '/api/reports/active-borrowers', handler: reportController.getActiveBorrowers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/overdue-items', handler: reportController.getOverdueItems, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/inventory-summary', handler: reportController.getInventorySummary, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/reports/borrowing-trends', handler: reportController.getBorrowingTrends, auth: true, roles: ROLE_GROUPS.STAFF },
 
   // Librarian Report routes
   { method: 'GET', path: '/api/reports/librarian/:id/summary', handler: reportController.getLibrarianSummary, auth: true, roles: ROLE_GROUPS.STAFF },
@@ -194,6 +201,9 @@ const routes = [
 
   // Upload route
   { method: 'POST', path: '/api/upload', handler: uploadController.handleUpload, auth: true, roles: ROLE_GROUPS.STAFF },
+
+  // Audit Log routes
+  { method: 'GET', path: '/api/audit-logs', handler: auditController.getLogs, auth: true, roles: ROLE_GROUPS.STAFF },
 ];
 
 // Helper to set CORS headers

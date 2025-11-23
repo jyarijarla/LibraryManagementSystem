@@ -1,473 +1,518 @@
-import UserDropdown from '../../components/UserDropdown';
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import './Admin.css'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  Home, BookOpen, RefreshCw, Users, DollarSign,
+  FileText, LogOut, Search, Calendar, User,
+  TrendingUp, TrendingDown, BookMarked, AlertCircle,
+  Library, UserPlus, Clock, Menu, X, BarChart3,
+  Package, CheckCircle, Plus, Edit2, Trash2,
+  Barcode, Music, Shield, Hash, Tag, Info, MapPin,
+  Disc, Headphones, Film, Laptop, Building2, BookOpenCheck,
+  Image, Upload, Save, XCircle, ChevronDown, Bell, Settings, Lock, Activity, Layers, Eye, Ban, MoreVertical, Key, Power
+} from 'lucide-react'
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
-import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
-// import NotificationPanel from '../../components/NotificationPanel/NotificationPanel'
+import UserDropdown from '../../components/UserDropdown';
+import UserProfileDrawer from './UserProfileDrawer';
+import './Admin.css'
 
 // Use local server for development, production for deployed app
-const API_URL = window.location.hostname === 'localhost' 
+const API_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3000/api'
   : 'https://librarymanagementsystem-z2yw.onrender.com/api'
 
 // Helper function to get image path for an asset
 const getAssetImagePath = (assetType, assetId, extension = 'png') => {
-  // Returns image path with specified extension
-  // Default to .png, but can be .jpg, .jpeg, .gif, .webp, etc.
   return `/assets/${assetType}/${assetId}.${extension}`
 }
 
-// Helper to get username from user object
-const getUsername = (user) => user.username || user.studentId || '-';
-
-// Helper to match a borrow record to a user robustly (by ID first, then by name)
+// Helper to match a borrow record to a user robustly
 const userMatchesBorrow = (borrow, user) => {
   if (!borrow || !user) return false;
-
-  // Helper to pick first non-null field from a list
   const pick = (obj, keys) => {
     for (const k of keys) {
       if (obj[k] !== undefined && obj[k] !== null) return obj[k];
     }
     return undefined;
   };
-
-  // Try several possible ID fields on the borrow record
   const borrowId = pick(borrow, ['Borrower_ID', 'BorrowerId', 'Borrower_Id', 'User_ID', 'UserId', 'BorrowerID']);
   const userId = pick(user, ['id', 'User_ID', 'userId', 'UserId']);
 
   if (borrowId != null && userId != null) {
     try {
       if (String(borrowId) === String(userId)) return true;
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) { }
   }
-
-  // Try matching by full name using various possible name fields
   const userFullName = `${user.firstname || user.First_Name || ''} ${user.lastname || user.Last_Name || ''}`.trim();
   const borrowFullName = pick(borrow, ['Borrower_Name']) || ((borrow.First_Name || borrow.FirstName || borrow.first_name) ? `${borrow.First_Name || borrow.FirstName || borrow.first_name} ${borrow.Last_Name || borrow.LastName || borrow.last_name || ''}`.trim() : undefined);
 
   if (userFullName && borrowFullName) {
     return userFullName === borrowFullName;
   }
-
   return false;
 }
+
+// Modern Stat Card Component
+const StatCard = ({ title, value, change, isIncrease, icon: Icon, gradient, delay = 0, onClick }) => {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay }}
+      className="bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 p-6 cursor-pointer"
+      onClick={onClick}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex-1">
+          <p className="text-sm font-medium text-gray-600 mb-1">{title}</p>
+          <h3 className="text-3xl font-bold text-gray-900">{value}</h3>
+          {change && (
+            <div className="flex items-center mt-2">
+              {isIncrease ? (
+                <TrendingUp className="w-4 h-4 text-green-500 mr-1" />
+              ) : (
+                <TrendingDown className="w-4 h-4 text-red-500 mr-1" />
+              )}
+              <span className={`text-sm font-medium ${isIncrease ? 'text-green-600' : 'text-red-600'}`}>
+                {change}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className={`p-4 rounded-lg ${gradient}`}>
+          <Icon className="w-6 h-6 text-white" />
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+// NavItem Component
+const NavItem = ({ icon: Icon, label, isActive, onClick }) => {
+  return (
+    <button
+      onClick={onClick}
+      className={`
+        w-full flex items-center px-6 py-3 text-sm font-medium transition-all duration-200
+        ${isActive
+          ? 'bg-indigo-600 text-white border-l-4 border-sky-400'
+          : 'text-gray-300 hover:bg-slate-700 hover:text-white'
+        }
+      `}
+    >
+      <Icon className="w-5 h-5 mr-3" />
+      <span>{label}</span>
+    </button>
+  )
+}
+
+// AdminSidebar Component
+const AdminSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOpen }) => {
+  const navItems = [
+    { label: 'Dashboard', icon: Home, id: 'overview' },
+    { label: 'User Management', icon: Users, id: 'users' },
+    { label: 'Roles & Permissions', icon: Shield, id: 'roles' },
+    { label: 'Asset Management', icon: BookOpen, id: 'assets' },
+    { label: 'Room Management', icon: Building2, id: 'rooms' },
+    { label: 'Policy & Settings', icon: Settings, id: 'settings' },
+    { label: 'Reports & Analytics', icon: BarChart3, id: 'reports' },
+    { label: 'Audit Logs', icon: FileText, id: 'logs' }
+  ]
+
+  return (
+    <>
+      {/* Mobile overlay */}
+      <div
+        className={`
+          fixed inset-0 bg-black bg-opacity-50 z-40 transition-opacity duration-300 md:hidden
+          ${sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}
+        `}
+        onClick={() => setSidebarOpen(false)}
+      ></div>
+
+      {/* Sidebar */}
+      <aside
+        className={`
+          fixed top-0 left-0 h-full w-64 bg-slate-900 z-50 transition-transform duration-300 ease-in-out
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+          md:relative md:translate-x-0
+        `}
+      >
+        {/* Logo/Brand */}
+        <div className="px-6 py-5 border-b border-slate-800 flex items-center gap-3">
+          <Library className="w-8 h-8 text-indigo-500" />
+          <div>
+            <h1 className="text-2xl font-bold text-white">Admin</h1>
+            <p className="text-xs text-gray-400">System Control</p>
+          </div>
+        </div>
+
+        {/* Navigation */}
+        <nav className="mt-6 px-4 space-y-2 overflow-y-auto h-[calc(100vh-8rem)]">
+          {navItems.map((item) => {
+            const Icon = item.icon
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActivePage(item.id)
+                  if (window.innerWidth < 768) setSidebarOpen(false)
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${activePage === item.id ? 'bg-slate-800 text-white' : 'text-gray-400 hover:bg-slate-800 hover:text-white'
+                  }`}
+              >
+                <Icon className={`w-5 h-5 ${activePage === item.id ? 'text-indigo-500' : 'text-gray-400'}`} />
+                {item.label}
+              </button>
+            )
+          })}
+        </nav>
+
+        {/* Logout button at bottom */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-800">
+          <button
+            onClick={() => {
+              localStorage.removeItem('token')
+              localStorage.removeItem('user')
+              localStorage.removeItem('userId')
+              localStorage.removeItem('role')
+              window.location.href = '/login'
+            }}
+            className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-300 hover:bg-slate-800 hover:text-white rounded-lg transition-all duration-200"
+          >
+            <LogOut className="w-5 h-5 mr-3" />
+            <span>Logout</span>
+          </button>
+        </div>
+      </aside>
+    </>
+  )
+}
+
+// AdminTopNavbar Component
+const AdminTopNavbar = ({ sidebarOpen, setSidebarOpen, notifications = [] }) => {
+  const [showNotifications, setShowNotifications] = useState(false)
+  const notificationRef = useRef(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+        setShowNotifications(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const unreadCount = notifications.length
+
+  return (
+    <nav className="bg-white border-b border-gray-200 shadow-sm z-30">
+      <div className="px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center flex-1 gap-4">
+          <button
+            className="md:hidden text-gray-600 hover:text-gray-900 focus:outline-none"
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+          >
+            {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+          <h2 className="text-xl font-semibold text-gray-800 hidden md:block">System Administration</h2>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="relative" ref={notificationRef}>
+            <button
+              onClick={() => setShowNotifications(!showNotifications)}
+              className="p-2 text-gray-500 hover:bg-gray-100 rounded-full relative transition-colors"
+            >
+              <Bell className="w-6 h-6" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center border-2 border-white">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3 px-3 py-2 bg-indigo-50 rounded-lg border border-indigo-100">
+            <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center">
+              <Shield className="w-5 h-5 text-white" />
+            </div>
+            <div className="hidden md:block">
+              <p className="text-sm font-semibold text-gray-900">Administrator</p>
+              <p className="text-xs text-gray-500">Super User</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </nav>
+  )
+}
+
 function Admin() {
-        // Modal state for showing all users in Reports tab
-        const [showUserListModal, setShowUserListModal] = useState(false);
-      // Custom report state (for Reports tab)
-      const [customReportType, setCustomReportType] = useState('table');
-      const [customReportData, setCustomReportData] = useState([]);
-      const [customReportFilters, setCustomReportFilters] = useState({
-        startDate: '',
-        endDate: '',
-        assetType: '',
-        userId: ''
-      });
-      const [customReportLoading, setCustomReportLoading] = useState(false);
-      const [customReportError, setCustomReportError] = useState('');
-    // Modal state for dashboard overview cards
-    const [overviewModal, setOverviewModal] = useState(null);
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  
-  // Get initial tab from URL or default to 'overview'
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'overview')
   const [activeAssetTab, setActiveAssetTab] = useState(searchParams.get('assetTab') || 'books')
-  
-  // State for all asset types
+
+  // Data States
   const [books, setBooks] = useState([])
   const [cds, setCds] = useState([])
   const [audiobooks, setAudiobooks] = useState([])
   const [movies, setMovies] = useState([])
   const [technology, setTechnology] = useState([])
   const [studyRooms, setStudyRooms] = useState([])
-  
   const [students, setStudents] = useState([])
   const [borrowRecords, setBorrowRecords] = useState([])
+
+  // Loading & Error States
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [showAssetModal, setShowAssetModal] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
+
+  // Modal States
+  const [showAssetModal, setShowAssetModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [itemToDelete, setItemToDelete] = useState(null)
   const [isEditMode, setIsEditMode] = useState(false)
-  const [imageRefreshKey, setImageRefreshKey] = useState(Date.now()) // Cache buster for images
-  // User Management modal states
-  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
-  const [showEditUserModal, setShowEditUserModal] = useState(false);
-  const [showDeleteUserModal, setShowDeleteUserModal] = useState(false);
-  const [showViewUserModal, setShowViewUserModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null);
-  // Tab state for user view modal
-  const [activeUserModalTab, setActiveUserModalTab] = useState('Personal Info');
-  // Fines state for selected user
-  const [userFines, setUserFines] = useState([]);
-  // Borrow filter for user modal: 'current' | 'all' | 'overdue'
-  const [userBorrowFilter, setUserBorrowFilter] = useState('current');
-  // Map of fines by borrow id for quick lookup
-  const [userFinesMap, setUserFinesMap] = useState({});
+  const [imageRefreshKey, setImageRefreshKey] = useState(Date.now())
 
-  // Helpers: current admin id (for processedBy)
-  const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-  const currentUserId = currentUser.id || currentUser.User_ID || null;
+  // User Management Modals
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false)
+  const [showEditUserModal, setShowEditUserModal] = useState(false)
+  const [showDeleteUserModal, setShowDeleteUserModal] = useState(false)
+  const [showViewUserModal, setShowViewUserModal] = useState(false)
+  const [selectedUser, setSelectedUser] = useState(null)
+  const [activeUserModalTab, setActiveUserModalTab] = useState('Personal Info')
+  const [userFines, setUserFines] = useState([])
 
-  // Keep a map of fines when userFines changes
-  useEffect(() => {
-    const map = {};
-    (userFines || []).forEach(f => {
-      if (f && f.Borrow_ID) map[String(f.Borrow_ID)] = f;
-    });
-    setUserFinesMap(map);
-  }, [userFines]);
-
-  // Fetch fines when modal opens or selectedUser changes
-  useEffect(() => {
-    if (showViewUserModal && selectedUser && selectedUser.id) {
-      // Ensure we have latest borrow records when viewing a user
-      try {
-        fetchBorrowRecords();
-      } catch (e) {
-        console.error('Failed to refresh borrow records:', e);
-      }
-
-      // Debug log: show selectedUser and borrowRecords overview
-      console.log('ViewUserModal opened for user:', selectedUser);
-      // fetch fines for this user
-      fetch(`${API_URL}/fines/user/${selectedUser.id}`)
-        .then(res => res.ok ? res.json() : [])
-        .then(data => setUserFines(Array.isArray(data) ? data : []))
-        .catch(() => setUserFines([]));
-    } else {
-      setUserFines([]);
-    }
-  }, [showViewUserModal, selectedUser]);
-
-  // Return a borrow (admin action)
-  const handleReturnBorrow = async (borrowId) => {
-    if (!borrowId) return;
-    if (!window.confirm(`Mark borrow #${borrowId} as returned?`)) return;
-    setLoading(true);
-    try {
-      // Optimistic UI update: mark the borrow as returned locally so it disappears from 'current' immediately
-      setBorrowRecords(prev => prev.map(r => r.Borrow_ID === borrowId ? { ...r, Return_Date: new Date().toISOString() } : r));
-
-      const response = await fetch(`${API_URL}/borrow-records/${borrowId}/return`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to return borrow');
-      // Show success popup
-      setSuccessMessage(`Borrow ${borrowId} marked returned`);
-      // Refresh data
-      await fetchBorrowRecords();
-      if (selectedUser && selectedUser.id) {
-        // refresh fines as well
-        const finesRes = await fetch(`${API_URL}/fines/user/${selectedUser.id}`);
-        if (finesRes.ok) {
-          const finesData = await finesRes.json();
-          setUserFines(Array.isArray(finesData) ? finesData : []);
-        }
-      }
-    } catch (err) {
-      console.error('Return error:', err);
-      setError(err.message || 'Failed to return borrow');
-      setTimeout(() => setError(''), 4000);
-    } finally {
-      setLoading(false);
-      setTimeout(() => setSuccessMessage(''), 2000);
-    }
-  };
-
-  // Waive fine for a borrow (admin action)
-  const handleWaiveFine = async (borrowId) => {
-    if (!borrowId) return;
-    if (!window.confirm(`Waive fine for borrow #${borrowId}?`)) return;
-    setLoading(true);
-    try {
-      const body = { reason: 'Waived by admin', processedBy: currentUserId };
-      const response = await fetch(`${API_URL}/fines/${borrowId}/waive`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify(body)
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Failed to waive fine');
-      setSuccessMessage(`Fine waived for borrow ${borrowId}`);
-      // Refresh fines and borrow records
-      await fetchBorrowRecords();
-      if (selectedUser && selectedUser.id) {
-        const finesRes = await fetch(`${API_URL}/fines/user/${selectedUser.id}`);
-        if (finesRes.ok) {
-          const finesData = await finesRes.json();
-          setUserFines(Array.isArray(finesData) ? finesData : []);
-        }
-      }
-    } catch (err) {
-      console.error('Waive error:', err);
-      setError(err.message || 'Failed to waive fine');
-      setTimeout(() => setError(''), 4000);
-    } finally {
-      setLoading(false);
-      setTimeout(() => setSuccessMessage(''), 2000);
-    }
-  };
-
-  // Form data shared by Create + Edit modals
+  // Forms
+  const [assetForm, setAssetForm] = useState({})
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
   const [userForm, setUserForm] = useState({
-    studentId: "", // used for username
-    firstname: "",
-    lastname: "",
-    email: "",
-    role: "Student",
-    password: "",
-    dateOfBirth: "",
-    phone: ""
-  });
+    studentId: "", firstname: "", lastname: "", email: "", role: "Student", password: "", dateOfBirth: "", phone: ""
+  })
 
-  // Normalize various date formats to YYYY-MM-DD for <input type="date"> value
-  const formatDateForInput = (val) => {
-    if (!val) return ''
-    // If already in YYYY-MM-DD form
-    if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val)) return val
-    // If it's an ISO string like 2025-11-18T00:00:00.000Z, take first 10 chars
-    if (typeof val === 'string' && val.length >= 10 && /\d{4}-\d{2}-\d{2}/.test(val.slice(0,10))) return val.slice(0,10)
-    // If it's a Date object or other string, try to create Date and format
-    const d = new Date(val)
-    if (isNaN(d)) return ''
-    const yyyy = d.getFullYear()
-    const mm = String(d.getMonth() + 1).padStart(2, '0')
-    const dd = String(d.getDate()).padStart(2, '0')
-    return `${yyyy}-${mm}-${dd}`
-  }
-
-  // Format YYYY-MM-DD or Date-like value to localized date string without timezone shift
-  const formatDateForDisplay = (val) => {
-    if (!val) return '-'
-    // If already in YYYY-MM-DD
-    const m = String(val).match(/^(\d{4})-(\d{2})-(\d{2})$/)
-    if (m) {
-      const yyyy = parseInt(m[1], 10)
-      const mm = parseInt(m[2], 10) - 1
-      const dd = parseInt(m[3], 10)
-      // Construct a local Date at midnight so toLocaleDateString preserves the calendar date
-      return new Date(yyyy, mm, dd).toLocaleDateString()
-    }
-    // Fallback to Date parsing using UTC
-    const d = new Date(val)
-    if (isNaN(d)) return '-'
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).toLocaleDateString()
-  }
-
-  // Parse user-entered date strings into YYYY-MM-DD.
-  // Accepts 'YYYY-MM-DD' or 'MM/DD/YYYY' or 'M/D/YYYY'. Returns YYYY-MM-DD or null.
-  const normalizeUserDOB = (input) => {
-    if (!input) return null
-    const s = String(input).trim()
-    // Already YYYY-MM-DD
-    const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-    if (isoMatch) return s
-
-    // MM/DD/YYYY or M/D/YYYY
-    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-    if (m) {
-      let mm = parseInt(m[1], 10)
-      let dd = parseInt(m[2], 10)
-      const yyyy = parseInt(m[3], 10)
-      if (mm < 1 || mm > 12) return null
-      if (dd < 1 || dd > 31) return null
-      mm = String(mm).padStart(2, '0')
-      dd = String(dd).padStart(2, '0')
-      return `${yyyy}-${mm}-${dd}`
-    }
-
-    // Try Date parsing fallback (avoid timezone issues by using date parts)
-    const d = new Date(s)
-    if (!isNaN(d)) {
-      const yyyy = d.getFullYear()
-      const mm = String(d.getMonth() + 1).padStart(2, '0')
-      const dd = String(d.getDate()).padStart(2, '0')
-      return `${yyyy}-${mm}-${dd}`
-    }
-
-    return null
-  }
-
-  const mapRoleValueToName = (role) => {
-    if (role === null || role === undefined) return 'Student'
-    if (typeof role === 'number') {
-      if (role === 1) return 'Student'
-      if (role === 2) return 'Admin'
-      if (role === 3) return 'Librarian'
-      if (role === 4) return 'Teacher'
-      return 'Student'
-    }
-    // if string, return normalized capitalization
-    const s = String(role)
-    if (/admin/i.test(s)) return 'Admin'
-    if (/librarian/i.test(s)) return 'Librarian'
-    if (/teacher/i.test(s)) return 'Teacher'
-    return 'Student'
-  }
-
-  // Handle typing in the form
-  const handleInputChange = (e) => {
-    setUserForm({
-      ...userForm,
-      [e.target.name]: e.target.value,
-    });
-  };
-
-  const openEditUserModal = (user) => {
-  setSelectedUser(user);
-  setUserForm({
-    studentId: user.studentId || user.username || '',
-    firstname: user.firstname || '',
-    lastname: user.lastname || '',
-    // keep username if present; otherwise fall back to studentId
-    username: (user.username && String(user.username)) || (user.studentId && String(user.studentId)) || '',
-    email: user.email || '',
-    role: mapRoleValueToName(user.role),
-    password: '', // blank when editing
-    dateOfBirth: formatDateForInput(user.dateOfBirth),
-    phone: user.phone || ''
-  });
-  setShowEditUserModal(true);
-};
-
-const openDeleteUserModal = (user) => {
-  setSelectedUser(user);
-  setShowDeleteUserModal(true);
-};
-
-
-
-
-
-// For delete modal
-const [userToDelete, setUserToDelete] = useState(null);
-
-
-
-  // Report states
+  // Reports State
   const [mostBorrowedReport, setMostBorrowedReport] = useState([])
   const [activeBorrowersReport, setActiveBorrowersReport] = useState([])
   const [overdueItemsReport, setOverdueItemsReport] = useState([])
   const [inventorySummaryReport, setInventorySummaryReport] = useState([])
+  const [customReportType, setCustomReportType] = useState('table')
+  const [customReportData, setCustomReportData] = useState([])
+  const [customReportFilters, setCustomReportFilters] = useState({ startDate: '', endDate: '', assetType: '', userId: '' })
+  const [customReportLoading, setCustomReportLoading] = useState(false)
+  const [customReportError, setCustomReportError] = useState('')
 
-  // Form States
-  const [assetForm, setAssetForm] = useState({})
-  const [imageFile, setImageFile] = useState(null)
-  const [imagePreview, setImagePreview] = useState(null)
+  // Helpers
+  const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+  const currentUserId = currentUser.id || currentUser.User_ID || null
 
-  // Notification state
-  const [showNotifications, setShowNotifications] = useState(false)
-  const [notificationCount, setNotificationCount] = useState(0)
+  const [librarians, setLibrarians] = useState([])
+  const [roles, setRoles] = useState([])
+  const [logs, setLogs] = useState([])
+  const [configs, setConfigs] = useState([])
 
-  // Function to change tab and update URL
-  const changeTab = (tab) => {
-    setActiveTab(tab)
-    const params = new URLSearchParams(searchParams)
-    params.set('tab', tab)
-    if (tab === 'assets') {
-      params.set('assetTab', activeAssetTab)
-    }
-    setSearchParams(params)
-  }
+  const [borrowingTrends, setBorrowingTrends] = useState([])
+  const [users, setUsers] = useState([])
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedUserIds, setSelectedUserIds] = useState([])
 
-  // Function to change asset tab and update URL
-  const changeAssetTab = (assetTab) => {
-    setActiveAssetTab(assetTab)
-    const params = new URLSearchParams(searchParams)
-    params.set('tab', 'assets')
-    params.set('assetTab', assetTab)
-    setSearchParams(params)
-  }
-
-  useEffect(() => {
-    fetchData()
-    fetchNotificationCount()
-    // Refresh notification count every 30 seconds
-    const interval = setInterval(fetchNotificationCount, 30000)
-    return () => clearInterval(interval)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, activeAssetTab])
-
-  const handleLogout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    localStorage.removeItem('userId')
-    localStorage.removeItem('role')
-    navigate('/login')
-  }
-
-  const fetchNotificationCount = async () => {
-    try {
-      const response = await fetch(`${API_URL}/notifications/counts`)
-      if (response.ok) {
-        const data = await response.json()
-        const total = data.overdue_count + data.due_soon_count + data.low_stock_count
-        setNotificationCount(total)
-      }
-    } catch (error) {
-      console.error('Error fetching notification count:', error)
-    }
-  }
-
+  // Fetch Data
   const fetchData = async () => {
     setLoading(true)
     setError('')
     try {
-      if (activeTab === 'overview') {
-        // Fetch all data for overview - don't fail if one fails
-        console.log('Fetching overview data...')
-        await Promise.allSettled([
-          fetchAssets('books').catch(e => console.error('Books error:', e)),
-          fetchAssets('cds').catch(e => console.error('CDs error:', e)),
-          fetchAssets('audiobooks').catch(e => console.error('Audiobooks error:', e)),
-          fetchAssets('movies').catch(e => console.error('Movies error:', e)),
-          fetchAssets('technology').catch(e => console.error('Technology error:', e)),
-          fetchAssets('study-rooms').catch(e => console.error('Study rooms error:', e)),
-          fetchStudents().catch(e => console.error('Students error:', e)),
-          fetchBorrowRecords().catch(e => console.error('Borrow records error:', e))
-        ])
-        console.log('Overview data fetch completed')
-      } else if (activeTab === 'assets') {
-        await fetchAssets(activeAssetTab)
-      } else if (activeTab === 'students') {
-        await fetchStudents()
-      } else if (activeTab === 'users') {
-        await fetchStudents()
-      } else if (activeTab === 'records') {
-        await fetchBorrowRecords()
-      } else if (activeTab === 'reports') {
+      // Always fetch basic stats for sidebar/overview
+      await Promise.allSettled([
+        fetchAssets('books'),
+        fetchAssets('cds'),
+        fetchAssets('audiobooks'),
+        fetchAssets('movies'),
+        fetchAssets('technology'),
+        fetchAssets('study-rooms'),
+        fetchStudents(),
+        fetchLibrarians(),
+        fetchBorrowRecords(),
+        fetchLogs(),
+        fetchBorrowingTrends(),
+        fetchUsers()
+      ])
+
+      if (activeTab === 'reports') {
         await fetchReports()
       }
     } catch (err) {
-      console.error('Error in fetchData:', err)
-      setError(err.message || 'Failed to fetch data')
+      console.error('Error fetching data:', err)
+      setError('Failed to load some data')
     } finally {
       setLoading(false)
     }
   }
-  
+
+  useEffect(() => {
+    fetchData()
+  }, [activeTab])
+
+  // Asset Fetcher
+  const fetchAssets = async (assetType) => {
+    try {
+      const response = await fetch(`${API_URL}/assets/${assetType}`)
+      if (response.ok) {
+        const data = await response.json()
+        const sortedData = data.sort((a, b) => a.Asset_ID - b.Asset_ID)
+        switch (assetType) {
+          case 'books': setBooks(sortedData); break;
+          case 'cds': setCds(sortedData); break;
+          case 'audiobooks': setAudiobooks(sortedData); break;
+          case 'movies': setMovies(sortedData); break;
+          case 'technology': setTechnology(sortedData); break;
+          case 'study-rooms': setStudyRooms(sortedData); break;
+          default: break;
+        }
+      }
+    } catch (error) {
+      console.error(`Error fetching ${assetType}:`, error)
+    }
+  }
+
+  const fetchStudents = async () => {
+    try {
+      const response = await fetch(`${API_URL}/students`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setStudents(data.sort((a, b) => (a.id || 0) - (b.id || 0)))
+      }
+    } catch (error) {
+      console.error('Error fetching students:', error)
+    }
+  }
+
+  const fetchBorrowRecords = async () => {
+    try {
+      const response = await fetch(`${API_URL}/borrow-records`)
+      if (response.ok) {
+        const data = await response.json()
+        setBorrowRecords(data.sort((a, b) => a.Borrow_ID - b.Borrow_ID))
+      }
+    } catch (error) {
+      console.error('Error fetching records:', error)
+    }
+  }
+
+  const fetchLibrarians = async () => {
+    try {
+      // Role 3 is Librarian
+      const response = await fetch(`${API_URL}/members?role=3`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setLibrarians(data.members || data)
+      }
+    } catch (error) {
+      console.error('Error fetching librarians:', error)
+    }
+  }
+
+  const fetchBorrowingTrends = async () => {
+    try {
+      const response = await fetch(`${API_URL}/reports/borrowing-trends`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setBorrowingTrends(data)
+      }
+    } catch (error) {
+      console.error('Error fetching borrowing trends:', error)
+    }
+  }
+
+  const fetchUsers = async () => {
+    try {
+      const response = await fetch(`${API_URL}/members?status=${statusFilter}&role=all&limit=1000`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setUsers(data.members || [])
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error)
+    }
+  }
+
+  const updateUserStatus = async (userId, newStatus) => {
+    try {
+      const response = await fetch(`${API_URL}/members/${userId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ status: newStatus })
+      })
+
+      if (response.ok) {
+        fetchUsers() // Refresh list
+        // Show success notification (optional)
+      } else {
+        const error = await response.json()
+        alert(error.message || 'Failed to update status')
+      }
+    } catch (error) {
+      console.error('Error updating status:', error)
+      alert('Failed to update status')
+    }
+  }
+
+  useEffect(() => {
+    fetchUsers()
+  }, [statusFilter])
+
+  const fetchLogs = async () => {
+    try {
+      const res = await fetch(`${API_URL}/audit-logs`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      })
+      if (res.ok) setLogs(await res.json())
+    } catch (e) { console.error(e) }
+  }
+
+  const fetchRoles = async () => {
+    try {
+      const res = await fetch(`${API_URL}/roles`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      })
+      if (res.ok) setRoles(await res.json())
+    } catch (e) { console.error(e) }
+  }
+
+  const fetchConfigs = async () => {
+    try {
+      const res = await fetch(`${API_URL}/config`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      })
+      if (res.ok) setConfigs(await res.json())
+    } catch (e) { console.error(e) }
+  }
+
+
+
   const fetchReports = async () => {
     try {
       const [mostBorrowed, activeBorrowers, overdueItems, inventorySummary] = await Promise.all([
-        fetch(`${API_URL}/reports/most-borrowed`).then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch(`${API_URL}/reports/active-borrowers`).then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch(`${API_URL}/reports/overdue-items`).then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch(`${API_URL}/reports/inventory-summary`).then(r => r.ok ? r.json() : []).catch(() => [])
+        fetch(`${API_URL}/reports/most-borrowed`).then(r => r.ok ? r.json() : []),
+        fetch(`${API_URL}/reports/active-borrowers`).then(r => r.ok ? r.json() : []),
+        fetch(`${API_URL}/reports/overdue-items`).then(r => r.ok ? r.json() : []),
+        fetch(`${API_URL}/reports/inventory-summary`).then(r => r.ok ? r.json() : [])
       ])
       setMostBorrowedReport(Array.isArray(mostBorrowed) ? mostBorrowed : [])
       setActiveBorrowersReport(Array.isArray(activeBorrowers) ? activeBorrowers : [])
@@ -475,1681 +520,1176 @@ const [userToDelete, setUserToDelete] = useState(null);
       setInventorySummaryReport(Array.isArray(inventorySummary) ? inventorySummary : [])
     } catch (error) {
       console.error('Error fetching reports:', error)
-      // Set empty arrays as fallback
-      setMostBorrowedReport([])
-      setActiveBorrowersReport([])
-      setOverdueItemsReport([])
-      setInventorySummaryReport([])
     }
   }
 
-  const fetchAssets = async (assetType) => {
-    try {
-      console.log(`Fetching assets: ${assetType} from ${API_URL}/assets/${assetType}`)
-      const response = await fetch(`${API_URL}/assets/${assetType}`)
-      console.log(`Response status: ${response.status}`)
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error(`Failed to fetch ${assetType}:`, errorText)
-        throw new Error(`Failed to fetch ${assetType}: ${response.status}`)
-      }
-      const data = await response.json()
-      console.log(`Received ${data.length} ${assetType}`, data)
-      
-      // Log images
-      data.forEach(item => {
-        if (item.Image_URL) {
-          console.log(`Asset ${item.Asset_ID} has image:`, item.Image_URL)
-        }
-      })
-      
-      // Sort by Asset_ID in ascending order
-      const sortedData = data.sort((a, b) => a.Asset_ID - b.Asset_ID)
-      
-      switch(assetType) {
-        case 'books': setBooks(sortedData); break;
-        case 'cds': setCds(sortedData); break;
-        case 'audiobooks': setAudiobooks(sortedData); break;
-        case 'movies': setMovies(sortedData); break;
-        case 'technology': setTechnology(sortedData); break;
-        case 'study-rooms': setStudyRooms(sortedData); break;
-        default: break;
-      }
-    } catch (error) {
-      console.error(`Error fetching ${assetType}:`, error)
-      // Don't throw - let it fail silently for individual assets
-    }
-  }
-
- 
-
-
-  const fetchStudents = async () => {
-    try {
-      console.log('Fetching students...')
-      const response = await fetch(`${API_URL}/students`, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-      if (!response.ok) throw new Error('Failed to fetch students')
-      const data = await response.json()
-      console.log(`✅ Received ${data.length} students`)
-      // Sort by id in ascending order
-      const sortedData = data.sort((a, b) => (a.id || 0) - (b.id || 0))
-      setStudents(sortedData)
-    } catch (error) {
-      console.error('❌ Error fetching students:', error)
-      // Don't throw
-    }
-  }
-
-  const fetchBorrowRecords = async () => {
-    try {
-      console.log('Fetching borrow records...')
-      const response = await fetch(`${API_URL}/borrow-records`)
-      if (!response.ok) throw new Error('Failed to fetch records')
-      const data = await response.json()
-      console.log(`✅ Received ${data.length} borrow records`)
-      // Sort by Borrow_ID in ascending order
-      const sortedData = data.sort((a, b) => a.Borrow_ID - b.Borrow_ID)
-      setBorrowRecords(sortedData)
-    } catch (error) {
-      console.error('❌ Error fetching records:', error)
-      // Don't throw
-    }
-  }
-
+  // Handlers
   const handleAddAsset = async (e) => {
     e.preventDefault()
     setLoading(true)
-    setError('')
-    setSuccessMessage('') // Clear previous messages
     try {
       let imageUrl = assetForm.Image_URL || ''
-      
-      // If editing and no new image, keep existing
-      if (isEditMode && !imageFile && assetForm.Image_URL) {
-        imageUrl = assetForm.Image_URL
-      }
-      
-      // Upload image if a new file is selected
       if (imageFile) {
-        // First get the Asset_ID (either from edit mode or will be generated)
-        const assetId = isEditMode ? assetForm.Asset_ID : null
-        
-        console.log('Uploading image:', imageFile.name, 'for asset type:', activeAssetTab)
         const formData = new FormData()
         formData.append('image', imageFile)
         formData.append('assetType', activeAssetTab)
-        
-        // If we don't have assetId yet (adding new), we'll upload after creation
-        if (assetId) {
-          formData.append('assetId', assetId)
-          
-          // Show uploading message
-          setSuccessMessage('Uploading image...')
-          
-                  // Add timeout to upload request (5 minutes for large files)
-        const uploadController = new AbortController()
-        const uploadTimeout = setTimeout(() => uploadController.abort(), 300000)
-          
-          try {
-            const uploadResponse = await fetch(`${API_URL}/upload`, {
-              method: 'POST',
-              body: formData,
-              signal: uploadController.signal
-            })
-            
-            clearTimeout(uploadTimeout)
-            
-            if (uploadResponse.ok) {
-              const uploadData = await uploadResponse.json()
-              imageUrl = uploadData.imageUrl
-              console.log('Image uploaded successfully, URL:', imageUrl)
-            } else {
-              const errorText = await uploadResponse.text()
-              console.error('Upload failed:', errorText)
-              throw new Error('Failed to upload image')
-            }
-          } catch (uploadError) {
-            clearTimeout(uploadTimeout)
-            if (uploadError.name === 'AbortError') {
-              throw new Error('Upload timed out. Please try with a smaller image.')
-            }
-            throw uploadError
-          }
+        if (isEditMode) formData.append('assetId', assetForm.Asset_ID)
+
+        const uploadRes = await fetch(`${API_URL}/upload`, { method: 'POST', body: formData })
+        if (uploadRes.ok) {
+          const data = await uploadRes.json()
+          imageUrl = data.imageUrl
         }
       }
-      
-      // Create/update the asset in database
-      const url = isEditMode 
+
+      const url = isEditMode
         ? `${API_URL}/assets/${activeAssetTab}/${assetForm.Asset_ID}`
-        : `${API_URL}/assets/${activeAssetTab}`;
-      
-      const method = isEditMode ? 'PUT' : 'POST';
-      
-      // Prepare asset data - handle movie-specific field mapping
-      let assetData = { ...assetForm, Image_URL: imageUrl }
-      
-      // For movies, remove Copies/Available_Copies fields when editing
-      // (they are managed through the rentables table, not the movie table)
+        : `${API_URL}/assets/${activeAssetTab}`
+
+      const assetData = { ...assetForm, Image_URL: imageUrl }
       if (activeAssetTab === 'movies' && isEditMode) {
         delete assetData.Copies
         delete assetData.Available_Copies
       }
-      
+
       const response = await fetch(url, {
-        method: method,
+        method: isEditMode ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(assetData)
       })
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.log(errorData)
-        throw new Error(errorData.details || `Failed to ${isEditMode ? 'update' : 'add'} asset`)
-      }
-      
-      const result = await response.json()
-      const newAssetId = result.assetId
-      
-      console.log(`Asset ${isEditMode ? 'updated' : 'created'} with ID:`, newAssetId)
-      
-      // Now upload image for new assets
-      if (!isEditMode && imageFile && newAssetId) {
-        console.log('Uploading image for new Asset ID:', newAssetId)
-        setSuccessMessage('Uploading image...')
-        
-        const formData = new FormData()
-        formData.append('image', imageFile)
-        formData.append('assetType', activeAssetTab)
-        formData.append('assetId', newAssetId)
-        
-        // Add timeout to upload request (60 seconds)
-        const uploadController = new AbortController()
-        const uploadTimeout = setTimeout(() => uploadController.abort(), 60000)
-        
-        try {
-          const uploadResponse = await fetch(`${API_URL}/upload`, {
-            method: 'POST',
-            body: formData,
-            signal: uploadController.signal
-          })
-          
-          clearTimeout(uploadTimeout)
-          
-          if (uploadResponse.ok) {
-            const uploadData = await uploadResponse.json()
-            console.log('Image uploaded successfully:', uploadData.imageUrl)
-            
-            // Update the asset with the image URL
-            await fetch(`${API_URL}/assets/${activeAssetTab}/${newAssetId}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ...assetForm, Asset_ID: newAssetId, Image_URL: uploadData.imageUrl })
-            })
-          } else {
-            console.warn('Image upload failed, but asset was saved')
-          }
-        } catch (uploadError) {
-          clearTimeout(uploadTimeout)
-          if (uploadError.name === 'AbortError') {
-            console.warn('Upload timed out, but asset was saved')
-          } else {
-            console.warn('Image upload failed, but asset was saved:', uploadError)
-          }
-        }
-      }
-      
-      // Refresh the data first
+
+      if (!response.ok) throw new Error('Failed to save asset')
+
       await fetchAssets(activeAssetTab)
-      
-      // Force image refresh by updating cache key
       setImageRefreshKey(Date.now())
-      
-      // Then close modal and clear form
       setShowAssetModal(false)
       setAssetForm({})
       setImageFile(null)
-      setImagePreview(null)
-      
-      // Show success message
-      const assetTypeName = activeAssetTab.slice(0, -1).charAt(0).toUpperCase() + activeAssetTab.slice(1, -1)
-      setSuccessMessage(`${assetTypeName} ${isEditMode ? 'updated' : 'added'} successfully!`)
-      
-      // Clear success message after 3 seconds
-      setTimeout(() => {
-        setSuccessMessage('')
-      }, 3000)
-    } catch (error) {
-      setError(error.message)
-      console.error('Error saving asset:', error)
-
+      setSuccessMessage(`Asset ${isEditMode ? 'updated' : 'added'} successfully`)
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (err) {
+      setError(err.message)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDeleteAsset = async () => {
+    if (!itemToDelete) return
+    setLoading(true)
+    try {
+      const response = await fetch(`${API_URL}/assets/${activeAssetTab}/${itemToDelete.Asset_ID}`, { method: 'DELETE' })
+      if (!response.ok) throw new Error('Failed to delete asset')
+      await fetchAssets(activeAssetTab)
+      setShowDeleteModal(false)
+      setSuccessMessage('Asset deleted successfully')
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleCreateUser = async (e) => {
+    e.preventDefault()
+    try {
+      const payload = { ...userForm, studentId: userForm.studentId }
+      const response = await fetch(`${API_URL}/students`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem('token')}` },
+        body: JSON.stringify(payload)
+      })
+      if (!response.ok) throw new Error('Failed to create user')
+      setShowCreateUserModal(false)
+      fetchStudents()
+      setSuccessMessage('User created successfully')
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+
+
+  const [activeActionMenuId, setActiveActionMenuId] = useState(null)
+  const [userToDelete, setUserToDelete] = useState(null)
+  const [showProfileDrawer, setShowProfileDrawer] = useState(false)
+  const [selectedProfileUserId, setSelectedProfileUserId] = useState(null)
+
+  // Handlers
+  const handleToggleBlock = async (user) => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${API_URL}/members/${user.User_ID}/block`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          isBlocked: !user.Is_Blocked,
+          reason: user.Is_Blocked ? null : 'Manual block by admin'
+        })
+      })
+
+      if (response.ok) {
+        fetchUsers()
+        setActiveActionMenuId(null)
+      } else {
+        console.error('Failed to toggle block status')
+      }
+    } catch (error) {
+      console.error('Error toggling block status:', error)
+    }
+  }
+
+  const handleToggleActive = async (user) => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${API_URL}/members/${user.User_ID}/activate`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          isActive: !user.Is_Active
+        })
+      })
+
+      if (response.ok) {
+        fetchUsers()
+        setActiveActionMenuId(null)
+      } else {
+        console.error('Failed to toggle activation status')
+      }
+    } catch (error) {
+      console.error('Error toggling activation status:', error)
+    }
+  }
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return
+    try {
+      const response = await fetch(`${API_URL}/members/${userToDelete.User_ID}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${localStorage.getItem('token')}` }
+      })
+      if (!response.ok) throw new Error('Failed to delete user')
+      setShowDeleteUserModal(false)
+      setUserToDelete(null)
+      fetchUsers()
+      setSuccessMessage('User deleted successfully')
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+
+  const handleBulkAction = async (action) => {
+    if (selectedUserIds.length === 0) return
+    if (!window.confirm(`Are you sure you want to ${action} ${selectedUserIds.length} users?`)) return
+
+    try {
+      const response = await fetch(`${API_URL}/members/bulk-action`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ userIds: selectedUserIds, action })
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        setSuccessMessage(result.message)
+        setTimeout(() => setSuccessMessage(''), 3000)
+        setSelectedUserIds([])
+        fetchUsers()
+      } else {
+        throw new Error('Failed to perform bulk action')
+      }
+    } catch (error) {
+      setError(error.message)
     }
   }
 
   const handleImageChange = (e) => {
     const file = e.target.files[0]
     if (file) {
-      // Increased max size to 100MB
-      const maxSize = 100 * 1024 * 1024; // 100MB
-      if (file.size > maxSize) {
-        setError('Image file is too large. Please select an image smaller than 100MB.');
-        return;
-      }
-
-      // Check if it's an image
-      if (!file.type.startsWith('image/')) {
-        setError('Please select a valid image file.');
-        return;
-      }
-
       setImageFile(file)
       const reader = new FileReader()
-      reader.onloadend = () => {
-        setImagePreview(reader.result)
-      }
-      reader.onerror = () => {
-        setError('Failed to read image file.');
-      }
+      reader.onloadend = () => setImagePreview(reader.result)
       reader.readAsDataURL(file)
-      
-      // Clear any previous errors
-      setError('')
     }
   }
 
-  const removeImage = () => {
-    setImageFile(null)
-    setImagePreview(null)
-    setAssetForm({ ...assetForm, Image_URL: '' })
+  const mapRoleValueToName = (role) => {
+    if (role === 1) return 'Student'
+    if (role === 2) return 'Admin'
+    if (role === 3) return 'Librarian'
+    return 'Student'
   }
 
-  const openAddAssetModal = () => {
-    setAssetForm({})
-    setImageFile(null)
-    setImagePreview(null)
-    setIsEditMode(false)
-    setShowAssetModal(true)
-  }
-
-  const openEditAssetModal = (item) => {
-    setAssetForm(item)
-    setImageFile(null)
-    setImagePreview(item.Image_URL || null)
-    setIsEditMode(true)
-    setShowAssetModal(true)
-  }
-
-  const openDeleteModal = (item) => {
-    setItemToDelete(item)
-    setShowDeleteModal(true)
-  }
-
-  const handleDeleteAsset = async () => {
-    if (!itemToDelete) return
-    
-    setLoading(true)
-    setError('')
+  const formatLogDetails = (details) => {
     try {
-      const response = await fetch(`${API_URL}/assets/${activeAssetTab}/${itemToDelete.Asset_ID}`, {
-        method: 'DELETE'
-      })
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete asset')
-      }
-      
-      // Refresh the data first
-      await fetchAssets(activeAssetTab)
-      
-      // Then close modal and clear state
-      setShowDeleteModal(false)
-      setItemToDelete(null)
-      
-      // Show success message
-      setSuccessMessage('Asset deleted successfully!')
-      setTimeout(() => setSuccessMessage(''), 3000)
-    } catch (error) {
-      setError(error.message)
-      console.error('Error deleting asset:', error)
-    } finally {
-      setLoading(false)
+      const parsed = JSON.parse(details)
+      return Object.entries(parsed).map(([key, value]) => {
+        // Capitalize key
+        const label = key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim()
+        return `${label}: ${value}`
+      }).join(', ')
+    } catch (e) {
+      return details
     }
   }
 
-const handleCreateUser = async (e) => {
-  e.preventDefault();
-  console.log("Submitting new user:", userForm);
-
-  try {
-    // Normalize DOB before sending (accept user entered formats)
-    const normalizedDOB = normalizeUserDOB(userForm.dateOfBirth) || normalizeUserDOB(formatDateForInput(userForm.dateOfBirth))
-    if (!normalizedDOB) throw new Error('Please enter a valid Date of Birth (MM/DD/YYYY or YYYY-MM-DD)')
-
-    // Always send username as studentId
-    const payload = {
-      ...userForm,
-      dateOfBirth: normalizedDOB,
-      studentId: userForm.studentId // this is the username
+  const getActionColor = (action) => {
+    const colors = {
+      'LOGIN': 'bg-green-100 text-green-700',
+      'LOGIN_FAILED': 'bg-red-100 text-red-700',
+      'LOGOUT': 'bg-gray-100 text-gray-700',
+      'CREATE_USER': 'bg-blue-100 text-blue-700',
+      'UPDATE_USER': 'bg-indigo-100 text-indigo-700',
+      'DELETE_USER': 'bg-red-100 text-red-700',
+      'ADD_ASSET': 'bg-purple-100 text-purple-700',
+      'UPDATE_ASSET': 'bg-indigo-100 text-indigo-700',
+      'DELETE_ASSET': 'bg-red-100 text-red-700',
+      'CHECKOUT': 'bg-orange-100 text-orange-700',
+      'RETURN': 'bg-teal-100 text-teal-700',
     }
-
-    const response = await fetch(`${API_URL}/students`, {
-      method: "POST",
-      headers: { 
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${localStorage.getItem('token')}`
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('Create student server response:', data);
-      throw new Error(data.error || data.message || 'Failed to create user');
-    }
-
-    setShowCreateUserModal(false);
-    fetchStudents(); // refresh the list
-    setUserForm({ studentId: "", firstname: "", lastname: "", email: "", role: "Student", password: "", dateOfBirth: "", phone: "" });
-  } catch (err) {
-    setError(err.message);
-    console.error("Create error response:", err.message);
-  }
-};
-
-
-const handleEditUser = async (e) => {
-  e.preventDefault();
-
-  try {
-    // Normalize DOB before sending
-    const normalizedDOB = normalizeUserDOB(userForm.dateOfBirth) || normalizeUserDOB(formatDateForInput(userForm.dateOfBirth))
-    if (userForm.dateOfBirth && !normalizedDOB) throw new Error('Please enter a valid Date of Birth (MM/DD/YYYY or YYYY-MM-DD)')
-
-    // Only use studentId for username
-    const coercedUsername = (userForm.studentId && String(userForm.studentId).trim()) || '';
-    if (!coercedUsername) throw new Error('Username is required and cannot be empty');
-    const payload = { ...userForm, dateOfBirth: normalizedDOB, studentId: coercedUsername };
-
-    const response = await fetch(`${API_URL}/students/${selectedUser.id}`, {
-      method: "PUT",
-      headers: { 
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${localStorage.getItem('token')}`
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to update user');
-
-    // Apply updated values to the selectedUser and the edit form so the View modal
-    // (which may be open underneath the Edit modal) shows the changes immediately.
-    const updatedFields = {
-      firstname: (payload && payload.firstname) || userForm.firstname,
-      lastname: (payload && payload.lastname) || userForm.lastname,
-      email: (payload && payload.email) || userForm.email,
-      studentId: (payload && payload.studentId) || userForm.studentId || '',
-      username: (payload && payload.studentId) || userForm.username || '',
-      phone: (payload && payload.phone) || userForm.phone || '',
-      dateOfBirth: normalizedDOB || userForm.dateOfBirth || '',
-      role: (payload && payload.role) || userForm.role
-    };
-
-    setSelectedUser(prev => ({ ...(prev || {}), ...updatedFields }));
-    setUserForm(prev => ({ ...prev, ...updatedFields }));
-
-    setShowEditUserModal(false);
-    fetchStudents();
-  } catch (err) {
-    setError(err.message);
-    console.error("Edit error response:", err.message);
-  }
-};
-
-
-const handleDeleteUser = async () => {
-  if (!selectedUser) return;
-
-  try {
-    const response = await fetch(`${API_URL}/students/${selectedUser.id}`, {
-      method: "DELETE",
-      headers: {
-        "Authorization": `Bearer ${localStorage.getItem('token')}`
-      }
-    });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to delete user');
-
-    setShowDeleteUserModal(false);
-    fetchStudents();
-  } catch (err) {
-    setError(err.message);
-    console.error("Delete error response:", err.message);
-  }
-};
-
-  // Copy helper for modal values
-  const copyToClipboard = async (text) => {
-    if (!text) return;
-    try {
-      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(text)
-      } else {
-        const ta = document.createElement('textarea')
-        ta.value = text
-        document.body.appendChild(ta)
-        ta.select()
-        document.execCommand('copy')
-        document.body.removeChild(ta)
-      }
-      setSuccessMessage('Copied to clipboard')
-      setTimeout(() => setSuccessMessage(''), 1800)
-    } catch (err) {
-      console.error('Copy failed', err)
-      setError('Failed to copy to clipboard')
-      setTimeout(() => setError(''), 2000)
-    }
-  }
-
-
-
-    const getAssetFormFields = () => {
-      switch(activeAssetTab) {
-        case 'books':
-          return [
-            { name: 'ISBN', type: 'text', label: 'ISBN', required: true },
-            { name: 'Title', type: 'text', label: 'Title', required: true },
-            { name: 'Author', type: 'text', label: 'Author', required: true },
-            { name: 'Page_Count', type: 'number', label: 'Page Count', required: true },
-            { name: 'Copies', type: 'number', label: 'Copies', required: true },
-            { name: 'Image_URL', type: 'text', label: 'Image Path (e.g., /assets/book.jpg)', required: false, placeholder: '/assets/placeholder.jpg' }
-          ]
-        case 'cds':
-          return [
-            { name: 'Total_Tracks', type: 'number', label: 'Total Tracks', required: true },
-            { name: 'Total_Duration_In_Minutes', type: 'number', label: 'Duration (Minutes)', required: true },
-            { name: 'Title', type: 'text', label: 'Title', required: true },
-            { name: 'Artist', type: 'text', label: 'Artist', required: true },
-            { name: 'Copies', type: 'number', label: 'Copies', required: true },
-            { name: 'Image_URL', type: 'text', label: 'Image Path (e.g., /assets/cd.jpg)', required: false, placeholder: '/assets/placeholder.jpg' }
-          ]
-        case 'audiobooks':
-          return [
-            { name: 'ISBN', type: 'text', label: 'ISBN', required: true },
-            { name: 'Title', type: 'text', label: 'Title', required: true },
-            { name: 'Author', type: 'text', label: 'Author', required: true },
-            { name: 'length', type: 'number', label: 'Length (Minutes)', required: true },
-            { name: 'Copies', type: 'number', label: 'Copies', required: true },
-            { name: 'Image_URL', type: 'text', label: 'Image Path (e.g., /assets/audiobook.jpg)', required: false, placeholder: '/assets/placeholder.jpg' }
-          ]
-        case 'movies':
-          return [
-            { name: 'Title', type: 'text', label: 'Title', required: true },
-            { name: 'Release_Year', type: 'number', label: 'Release Year', required: true },
-            { name: 'Age_Rating', type: 'text', label: 'Age Rating', required: true },
-            { name: 'Copies', type: 'number', label: 'Copies', required: true },
-            { name: 'Image_URL', type: 'text', label: 'Image Path (e.g., /assets/movie.jpg)', required: false, placeholder: '/assets/placeholder.jpg' }
-          ]
-        case 'technology':
-          return [
-            { name: 'Model_Num', type: 'number', label: 'Model Number', required: true },
-            { name: 'Type', type: 'number', label: 'Type', required: true },
-            { name: 'Description', type: 'text', label: 'Description', required: true },
-            { name: 'Copies', type: 'number', label: 'Copies', required: true },
-            { name: 'Image_URL', type: 'text', label: 'Image Path (e.g., /assets/tech.jpg)', required: false, placeholder: '/assets/placeholder.jpg' }
-          ]
-        case 'study-rooms':
-          return [
-            { name: 'Room_Number', type: 'text', label: 'Room Number', required: true },
-            { name: 'Capacity', type: 'number', label: 'Capacity', required: true },
-            { name: 'Image_URL', type: 'text', label: 'Image Path (e.g., /assets/room.jpg)', required: false, placeholder: '/assets/placeholder.jpg' }
-          ]
-        default:
-          return []
-      }
-    }
-
-  const getAssetTableColumns = () => {
-    switch(activeAssetTab) {
-      case 'books':
-        return [
-          { key: 'rowNum', label: '#' },
-          { key: 'ISBN', label: 'ISBN' },
-          { key: 'Title', label: 'Title' },
-          { key: 'Author', label: 'Author' },
-          { key: 'Page_Count', label: 'Pages' },
-          { key: 'Copies', label: 'Total Copies' },
-          { key: 'Available_Copies', label: 'Available' }
-        ]
-      case 'cds':
-        return [
-          { key: 'rowNum', label: '#' },
-          { key: 'Title', label: 'Title' },
-          { key: 'Artist', label: 'Artist' },
-          { key: 'Total_Tracks', label: 'Tracks' },
-          { key: 'Total_Duration_In_Minutes', label: 'Duration (min)' },
-          { key: 'Copies', label: 'Total Copies' },
-          { key: 'Available_Copies', label: 'Available' }
-        ]
-      case 'audiobooks':
-        return [
-          { key: 'rowNum', label: '#' },
-          { key: 'ISBN', label: 'ISBN' },
-          { key: 'Title', label: 'Title' },
-          { key: 'Author', label: 'Author' },
-          { key: 'length', label: 'Length (min)' },
-          { key: 'Copies', label: 'Total Copies' },
-          { key: 'Available_Copies', label: 'Available' }
-        ]
-      case 'movies':
-        return [
-          { key: 'rowNum', label: '#' },
-          { key: 'Title', label: 'Title' },
-          { key: 'Release_Year', label: 'Year' },
-          { key: 'Age_Rating', label: 'Rating' },
-          { key: 'Available_Copies', label: 'Available' }
-        ]
-      case 'technology':
-        return [
-          { key: 'rowNum', label: '#' },
-          { key: 'Model_Num', label: 'Model #' },
-          { key: 'Type', label: 'Type' },
-          { key: 'Description', label: 'Description' },
-          { key: 'Copies', label: 'Quantity' }
-        ]
-      case 'study-rooms':
-        return [
-          { key: 'rowNum', label: '#' },
-          { key: 'Room_Number', label: 'Room Number' },
-          { key: 'Capacity', label: 'Capacity' },
-          { key: 'Availability', label: 'Status' }
-        ]
-      default:
-        return []
-    }
-  }
-
-  const getCurrentAssetData = () => {
-    switch(activeAssetTab) {
-      case 'books': return books
-      case 'cds': return cds
-      case 'audiobooks': return audiobooks
-      case 'movies': return movies
-      case 'technology': return technology
-      case 'study-rooms': return studyRooms
-      default: return []
-    }
+    return colors[action] || 'bg-gray-100 text-gray-700'
   }
 
   const renderOverview = () => (
-    <div className="tab-content">
-      <h2>Dashboard Overview</h2>
-      <ErrorPopup errorMessage={error} />
-
-      <div className="stats-grid">
-        <div className="stat-card" onClick={() => setOverviewModal('assets')} style={{ cursor: 'pointer' }}>
-          <div className="stat-icon blue">📚</div>
-          <div className="stat-details">
-            <h3>{books.length + cds.length + audiobooks.length + movies.length + technology.length + studyRooms.length}</h3>
-            <p>Total Assets</p>
-          </div>
-        </div>
-        <div className="stat-card" onClick={() => setOverviewModal('students')} style={{ cursor: 'pointer' }}>
-          <div className="stat-icon purple">👥</div>
-          <div className="stat-details">
-            <h3>{students.length}</h3>
-            <p>Total Students</p>
-          </div>
-        </div>
-        <div className="stat-card" onClick={() => setOverviewModal('borrowed')} style={{ cursor: 'pointer' }}>
-          <div className="stat-icon orange">📖</div>
-          <div className="stat-details">
-            <h3>{borrowRecords.filter(r => !r.Return_Date).length}</h3>
-            <p>Currently Borrowed</p>
-          </div>
+    <div className="space-y-8">
+      {/* 1. Summary Cards */}
+      <div>
+        <h2 className="text-xl font-bold text-gray-800 mb-4">System Overview</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          <StatCard title="Total Assets" value={books.length + cds.length + audiobooks.length + movies.length + technology.length + studyRooms.length} icon={Library} gradient="bg-gradient-to-r from-blue-500 to-blue-600" delay={0.1} />
+          <StatCard title="Active Members" value={students.length} icon={Users} gradient="bg-gradient-to-r from-green-500 to-green-600" delay={0.2} />
+          <StatCard title="Librarians" value={librarians.length} icon={Shield} gradient="bg-gradient-to-r from-purple-500 to-purple-600" delay={0.3} />
+          <StatCard title="Borrowed" value={borrowRecords.filter(r => !r.Return_Date).length} icon={BookOpen} gradient="bg-gradient-to-r from-orange-500 to-orange-600" delay={0.4} />
+          <StatCard title="Overdue" value={borrowRecords.filter(r => !r.Return_Date && new Date(r.Due_Date) < new Date()).length} icon={AlertCircle} gradient="bg-gradient-to-r from-red-500 to-red-600" delay={0.5} />
+          <StatCard title="Active Bookings" value={borrowRecords.filter(r => !r.Return_Date && r.Asset_Type === 'Study Room').length} icon={Clock} gradient="bg-gradient-to-r from-indigo-500 to-indigo-600" delay={0.6} />
         </div>
       </div>
 
-      {/* Overview Modals */}
-      {overviewModal === 'assets' && (
-        <div className="modal-overlay" onClick={() => setOverviewModal(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
-            <h3>All Assets</h3>
-            <ul style={{ maxHeight: '320px', overflowY: 'auto', marginBottom: '18px' }}>
-              <li><strong>Books:</strong> {books.length}</li>
-              <li><strong>CDs:</strong> {cds.length}</li>
-              <li><strong>Audiobooks:</strong> {audiobooks.length}</li>
-              <li><strong>Movies:</strong> {movies.length}</li>
-              <li><strong>Technology:</strong> {technology.length}</li>
-              <li><strong>Study Rooms:</strong> {studyRooms.length}</li>
-            </ul>
-            <div style={{ fontSize: '0.98rem', color: '#555' }}>
-              <strong>Recent Additions:</strong>
-              <ul>
-                {[...books, ...cds, ...audiobooks, ...movies, ...technology, ...studyRooms].slice(-5).map(a => (
-                  <li key={a.Asset_ID || a.Room_Number || a.Model_Num}>{a.Title || a.Room_Number || a.Model_Num || 'Asset'}</li>
-                ))}
-              </ul>
-            </div>
-            <button className="close-btn" onClick={() => setOverviewModal(null)} style={{ marginTop: '18px' }}>Close</button>
-          </div>
+      {/* 2. Quick Actions */}
+      <div>
+        <h2 className="text-xl font-bold text-gray-800 mb-4">Quick Actions</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <button onClick={() => { setActiveAssetTab('books'); setShowAssetModal(true) }} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:bg-indigo-50 transition-all">
+            <div className="p-3 bg-blue-100 rounded-full mb-2 text-blue-600"><Plus className="w-6 h-6" /></div>
+            <span className="text-sm font-medium text-gray-700">Add Asset</span>
+          </button>
+          <button onClick={() => { setShowCreateUserModal(true); setUserForm({ ...userForm, role: 'Student' }) }} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:bg-green-50 transition-all">
+            <div className="p-3 bg-green-100 rounded-full mb-2 text-green-600"><UserPlus className="w-6 h-6" /></div>
+            <span className="text-sm font-medium text-gray-700">Add User</span>
+          </button>
+          <button onClick={() => { setShowCreateUserModal(true); setUserForm({ ...userForm, role: 'Librarian' }) }} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:bg-purple-50 transition-all">
+            <div className="p-3 bg-purple-100 rounded-full mb-2 text-purple-600"><Shield className="w-6 h-6" /></div>
+            <span className="text-sm font-medium text-gray-700">Add Librarian</span>
+          </button>
+          <button onClick={() => setActiveTab('assets')} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:bg-orange-50 transition-all">
+            <div className="p-3 bg-orange-100 rounded-full mb-2 text-orange-600"><Tag className="w-6 h-6" /></div>
+            <span className="text-sm font-medium text-gray-700">Manage Types</span>
+          </button>
+          <button onClick={() => setActiveTab('rooms')} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:bg-indigo-50 transition-all">
+            <div className="p-3 bg-indigo-100 rounded-full mb-2 text-indigo-600"><Building2 className="w-6 h-6" /></div>
+            <span className="text-sm font-medium text-gray-700">Manage Rooms</span>
+          </button>
+          <button onClick={() => setActiveTab('settings')} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:bg-gray-50 transition-all">
+            <div className="p-3 bg-gray-100 rounded-full mb-2 text-gray-600"><Settings className="w-6 h-6" /></div>
+            <span className="text-sm font-medium text-gray-700">Settings</span>
+          </button>
         </div>
-      )}
-      {overviewModal === 'students' && (
-        <div className="modal-overlay" onClick={() => setOverviewModal(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
-            <h3>All Students</h3>
-            <ul style={{ maxHeight: '320px', overflowY: 'auto', marginBottom: '18px' }}>
-              {students.map(s => (
-                <li key={s.id}><strong>{s.studentId || s.username}</strong>: {s.firstname} {s.lastname} ({mapRoleValueToName(s.role)})</li>
-              ))}
-            </ul>
-            <button className="close-btn" onClick={() => setOverviewModal(null)} style={{ marginTop: '18px' }}>Close</button>
-          </div>
-        </div>
-      )}
-      {overviewModal === 'borrowed' && (
-        <div className="modal-overlay" onClick={() => setOverviewModal(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
-            <h3>Currently Borrowed Items</h3>
-            <ul style={{ maxHeight: '320px', overflowY: 'auto', marginBottom: '18px' }}>
-              {borrowRecords.filter(r => !r.Return_Date).map(r => (
-                <li key={r.Borrow_ID}><strong>{r.Title || r.Item_Title || 'Asset'}</strong> by {r.Borrower_Name} (Due: {formatDateForDisplay(r.Due_Date)})</li>
-              ))}
-            </ul>
-            <button className="close-btn" onClick={() => setOverviewModal(null)} style={{ marginTop: '18px' }}>Close</button>
-          </div>
-        </div>
-      )}
-
-      {/* Asset Type Breakdown Chart */}
-      <div style={{ marginTop: '32px', background: '#f9fafb', borderRadius: '12px', padding: '24px', maxWidth: '600px' }}>
-        <h3 style={{ marginBottom: '18px' }}>Asset Type Breakdown</h3>
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={[
-            { type: 'Books', count: books.length },
-            { type: 'CDs', count: cds.length },
-            { type: 'Audiobooks', count: audiobooks.length },
-            { type: 'Movies', count: movies.length },
-            { type: 'Technology', count: technology.length },
-            { type: 'Study Rooms', count: studyRooms.length }
-          ]}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="type" />
-            <YAxis allowDecimals={false} />
-            <Tooltip />
-            <Bar dataKey="count" fill="#6366f1" />
-          </BarChart>
-        </ResponsiveContainer>
       </div>
-    </div>
-  )
 
-  const renderCellContent = (item, col, rowIndex) => {
-    if (col.key === 'rowNum') {
-      return rowIndex + 1
-    }
-    
-    if (col.key === 'Availability') {
-      return (
-        <span className={`status-badge ${item[col.key] === 'Available' ? 'available' : 'unavailable'}`}>
-          {item[col.key] || 'Available'}
-        </span>
-      )
-    }
-    
-    if (col.key === 'Available_Copies') {
-      return (
-        <span className={`availability-indicator ${item[col.key] > 0 ? 'in-stock' : 'out-of-stock'}`}>
-          {item[col.key] === null ? '-' : item[col.key]}
-        </span>
-      )
-    }
-    
-    return item[col.key]
-  }
-
-  const renderAssets = () => {
-    const columns = getAssetTableColumns()
-    const data = getCurrentAssetData()
-    
-    // Get appropriate button text
-    const getAddButtonText = () => {
-      if (activeAssetTab === 'study-rooms') {
-        return '+ Reserve Study Room'
-      }
-      return `+ Add ${activeAssetTab.slice(0, -1)}`
-    }
-
-    return (
-      <div className="tab-content">
-        <div className="section-header">
-          <h2>{activeAssetTab.charAt(0).toUpperCase() + activeAssetTab.slice(1)}</h2>
-          <button className="add-button" onClick={openAddAssetModal}>
-            {getAddButtonText()}
-          </button>
-        </div>
-
-        <ErrorPopup errorMessage={error} />
-
-        {/* Sub-tabs for different asset types */}
-        <div className="asset-tabs">
-          <button 
-            className={`asset-tab ${activeAssetTab === 'books' ? 'active' : ''}`}
-            onClick={() => changeAssetTab('books')}
-          >
-            📚 Books
-          </button>
-          <button 
-            className={`asset-tab ${activeAssetTab === 'cds' ? 'active' : ''}`}
-            onClick={() => changeAssetTab('cds')}
-          >
-            💿 CDs
-          </button>
-          <button 
-            className={`asset-tab ${activeAssetTab === 'audiobooks' ? 'active' : ''}`}
-            onClick={() => changeAssetTab('audiobooks')}
-          >
-            🎧 Audiobooks
-          </button>
-          <button 
-            className={`asset-tab ${activeAssetTab === 'movies' ? 'active' : ''}`}
-            onClick={() => changeAssetTab('movies')}
-          >
-            🎬 Movies
-          </button>
-          <button 
-            className={`asset-tab ${activeAssetTab === 'technology' ? 'active' : ''}`}
-            onClick={() => changeAssetTab('technology')}
-          >
-            💻 Technology
-          </button>
-          <button 
-            className={`asset-tab ${activeAssetTab === 'study-rooms' ? 'active' : ''}`}
-            onClick={() => changeAssetTab('study-rooms')}
-          >
-            🚪 Study Rooms
-          </button>
-        </div>
-
-        <div className="cards-container">
-          {data.length === 0 ? (
-            <div className="empty-state">
-              <span className="empty-icon">📭</span>
-              <p>No {activeAssetTab} found</p>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* 3. System Alerts */}
+        <div className="lg:col-span-1 space-y-6">
+          <h2 className="text-xl font-bold text-gray-800">System Alerts</h2>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="p-4 border-b border-gray-100 bg-gray-50 font-medium text-gray-700">Critical Attention Needed</div>
+            <div className="divide-y divide-gray-100">
+              {borrowRecords.filter(r => !r.Return_Date && new Date(r.Due_Date) < new Date()).slice(0, 3).map(r => (
+                <div key={r.Borrow_ID} className="p-4 flex items-start gap-3 hover:bg-red-50 transition-colors">
+                  <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">Overdue Item</p>
+                    <p className="text-xs text-gray-500 mt-1">{r.Item_Title} (Due: {new Date(r.Due_Date).toLocaleDateString()})</p>
+                  </div>
+                </div>
+              ))}
+              {/* Mock Alerts for demo */}
+              <div className="p-4 flex items-start gap-3 hover:bg-yellow-50 transition-colors">
+                <AlertCircle className="w-5 h-5 text-yellow-500 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Low Stock Warning</p>
+                  <p className="text-xs text-gray-500 mt-1">"The Great Gatsby" is running low on copies.</p>
+                </div>
+              </div>
+              <div className="p-4 flex items-start gap-3 hover:bg-blue-50 transition-colors">
+                <Info className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-gray-900">System Update</p>
+                  <p className="text-xs text-gray-500 mt-1">New version available (v2.1.0)</p>
+                </div>
+              </div>
             </div>
-          ) : (
-            data.map((item, index) => (
-              <div key={item.Asset_ID} className="asset-card">
-                <div className="card-header">
-                  <span className="card-number">#{index + 1}</span>
-                  <div className="card-actions">
-                    <button 
-                      className="icon-btn edit-icon" 
-                      onClick={() => openEditAssetModal(item)}
-                      title="Edit"
-                    >
-                      ✏️
-                    </button>
-                    <button 
-                      className="icon-btn delete-icon" 
-                      onClick={() => openDeleteModal(item)}
-                      title="Delete"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-                
-                {/* Image Section */}
-                <div className="card-image">
-                  <img 
-                    src={
-                      item.Image_URL 
-                        ? `${item.Image_URL}?t=${imageRefreshKey}` 
-                        : `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'png')}?t=${imageRefreshKey}`
-                    }
-                    alt={item.Title || item.Room_Number || 'Asset'}
-                    onLoad={(e) => {
-                      e.target.style.display = 'block';
-                      const placeholder = e.target.nextElementSibling;
-                      if (placeholder) placeholder.style.display = 'none';
-                    }}
-                    onError={(e) => {
-                      // Try other common extensions if PNG fails
-                      const currentSrc = e.target.src;
-                      if (currentSrc.includes('.png')) {
-                        e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'jpg')}?t=${imageRefreshKey}`;
-                      } else if (currentSrc.includes('.jpg')) {
-                        e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'jpeg')}?t=${imageRefreshKey}`;
-                      } else if (currentSrc.includes('.jpeg')) {
-                        e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'gif')}?t=${imageRefreshKey}`;
-                      } else if (currentSrc.includes('.gif')) {
-                        e.target.src = `${getAssetImagePath(activeAssetTab, item.Asset_ID, 'webp')}?t=${imageRefreshKey}`;
-                      } else {
-                        // All extensions failed, show placeholder
-                        e.target.style.display = 'none';
-                        const placeholder = e.target.nextElementSibling;
-                        if (placeholder) placeholder.style.display = 'flex';
-                      }
-                    }}
-                  />
-                  <div className="image-placeholder-card">
-                    <span>N/A</span>
-                  </div>
-                </div>
-                
-                <div className="card-body">
-                  {columns.slice(1).map(col => (
-                    <div key={col.key} className="card-field">
-                      <span className="field-label">{col.label}:</span>
-                      <span className="field-value">
-                        {renderCellContent(item, col, index)}
+            <div className="p-3 bg-gray-50 text-center">
+              <button className="text-sm text-indigo-600 font-medium hover:text-indigo-800">View All Alerts</button>
+            </div>
+          </div>
+        </div>
+
+        {/* 4. Recent Activity */}
+        <div className="lg:col-span-2 space-y-6">
+          <h2 className="text-xl font-bold text-gray-800">Recent Activity</h2>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Time</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">User</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Action</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Details</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {logs.slice(0, 5).map(log => (
+                  <tr key={log.Log_ID} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">{new Date(log.Timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center">
+                        <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 mr-3">
+                          <User className="h-4 w-4" />
+                        </div>
+                        <span className="text-sm font-medium text-gray-900">User #{log.User_ID}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${getActionColor(log.Action)}`}>
+                        {log.Action.replace(/_/g, ' ')}
                       </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  const renderStudents = () => (
-    <div className="tab-content">
-      <div className="section-header">
-        <h2>Students</h2>
-      </div>
-
-      <ErrorPopup errorMessage={error} />
-
-      <div className="table-container">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Student ID</th>
-              <th>First Name</th>
-              <th>Last Name</th>
-              <th>Role</th>
-              <th style={{ textAlign: 'center' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {students.length === 0 ? (
-              <tr>
-                <td colSpan="5" style={{ textAlign: 'center' }}>No students found</td>
-              </tr>
-            ) : (
-              students.map((student) => (
-                <tr key={student.id}>
-                  <td><strong>{student.studentId || student.username}</strong></td>
-                  <td>{student.firstname || '-'}</td>
-                  <td>{student.lastname || '-'}</td>
-                  <td>
-                    <span className="status-badge available">{mapRoleValueToName(student.role)}</span>
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    <div className="row-action-group">
-                      <button
-                        className="icon-btn view-icon"
-                        title="View"
-                        aria-label={`View ${student.firstname || student.username || student.studentId || 'user'}`}
-                        onClick={() => {
-                          setSelectedUser(student)
-                          setShowViewUserModal(true)
-                        }}
-                      >
-                        🔍
-                      </button>
-                      <button
-                        className="icon-btn delete-icon"
-                        title="Delete"
-                        aria-label={`Delete ${student.firstname || student.username || student.studentId || 'user'}`}
-                        onClick={() => openDeleteUserModal(student)}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-
-  const renderBorrowRecords = () => (
-    <div className="tab-content">
-      <h2>Borrow Records</h2>
-      <ErrorPopup errorMessage={error} />
-
-      <div className="table-container">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>ID</th>
-              <th>Borrower</th>
-              <th>Item</th>
-              <th>Borrow Date</th>
-              <th>Due Date</th>
-              <th>Return Date</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {borrowRecords.length === 0 ? (
-              <tr>
-                <td colSpan="8" style={{ textAlign: 'center' }}>No records found</td>
-              </tr>
-            ) : (
-              borrowRecords.map((record, index) => (
-                <tr key={record.Borrow_ID}>
-                  <td>{index + 1}</td>
-                  <td>{record.Borrow_ID}</td>
-                  <td>{record.Borrower_Name}</td>
-                  <td>{record.Item_Title}</td>
-                  <td>{new Date(record.Borrow_Date).toLocaleDateString()}</td>
-                  <td>{new Date(record.Due_Date).toLocaleDateString()}</td>
-                  <td>{record.Return_Date ? new Date(record.Return_Date).toLocaleDateString() : '-'}</td>
-                  <td>
-                    <span className={`status-badge ${record.Return_Date ? 'returned' : 'borrowed'}`}>
-                      {record.Return_Date ? 'Returned' : 'Borrowed'}
-                    </span>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-
-  const renderReports = () => {
-    const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316']
-
-    // Generate custom report handler (must be outside renderReports)
-    const generateCustomReport = async () => {
-      setCustomReportLoading(true);
-      setCustomReportError('');
-      try {
-        const params = new URLSearchParams();
-        if (customReportFilters.startDate) params.append('startDate', customReportFilters.startDate);
-        if (customReportFilters.endDate) params.append('endDate', customReportFilters.endDate);
-        if (customReportFilters.assetType) params.append('assetType', customReportFilters.assetType);
-        if (customReportFilters.userId) params.append('userId', customReportFilters.userId);
-        const response = await fetch(`${API_URL}/reports/custom?${params.toString()}`);
-        if (!response.ok) throw new Error('Failed to fetch custom report');
-        const data = await response.json();
-        setCustomReportData(Array.isArray(data) ? data : []);
-      } catch (err) {
-        setCustomReportError(err.message || 'Error generating report');
-      } finally {
-        setCustomReportLoading(false);
-      }
-    };
-
-    return (
-      <div className="tab-content">
-        <h2>Library Reports</h2>
-        <ErrorPopup errorMessage={error} />
-
-        {/* Custom Report Generator */}
-        <div className="report-section" style={{ marginBottom: '32px', background: '#f3f4f6', borderRadius: '14px', padding: '32px 28px' }}>
-          <h3 style={{ marginBottom: '18px', fontWeight: 700, fontSize: '1.3rem' }}>🛠️ Generate Custom Report</h3>
-          <form style={{ display: 'flex', flexWrap: 'wrap', gap: '32px', marginBottom: '18px', alignItems: 'flex-end' }} onSubmit={e => { e.preventDefault(); generateCustomReport(); }}>
-            <div style={{ minWidth: '220px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 600 }}>Date Range</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input type="date" value={customReportFilters.startDate} onChange={e => setCustomReportFilters(f => ({ ...f, startDate: e.target.value }))} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', flex: 1 }} />
-                <span style={{ alignSelf: 'center' }}>to</span>
-                <input type="date" value={customReportFilters.endDate} onChange={e => setCustomReportFilters(f => ({ ...f, endDate: e.target.value }))} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', flex: 1 }} />
-              </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500 truncate max-w-xs font-mono">
+                      {formatLogDetails(log.Details)}
+                    </td>
+                  </tr>
+                ))}
+                {logs.length === 0 && (
+                  <tr>
+                    <td colSpan="4" className="px-6 py-8 text-center text-gray-500">No recent activity found</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <div className="p-3 bg-gray-50 text-center border-t border-gray-200">
+              <button onClick={() => setActiveTab('logs')} className="text-sm text-indigo-600 font-medium hover:text-indigo-800">View All Logs</button>
             </div>
-            <div style={{ minWidth: '220px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 600 }}>Asset Type</label>
-              <select value={customReportFilters.assetType} onChange={e => setCustomReportFilters(f => ({ ...f, assetType: e.target.value }))} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db' }}>
-                <option value="">All</option>
-                <option value="books">Books</option>
-                <option value="cds">CDs</option>
-                <option value="audiobooks">Audiobooks</option>
-                <option value="movies">Movies</option>
-                <option value="technology">Technology</option>
-                <option value="study-rooms">Study Rooms</option>
-              </select>
-            </div>
-            <div style={{ minWidth: '220px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
-              <label style={{ fontWeight: 600 }}>User</label>
-              <UserDropdown
-                users={[{ id: '', firstname: 'All', lastname: 'Students', username: '', studentId: '', role: 1 }, ...students.filter(u => u.role === 1)]}
-                value={customReportFilters.userId}
-                onChange={val => setCustomReportFilters(f => ({ ...f, userId: val }))}
-                allLabel="All Students"
-              />
-            </div>
-            <div style={{ minWidth: '220px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 600 }}>Report Type</label>
-              <select value={customReportType} onChange={e => setCustomReportType(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db' }}>
-                <option value="table">Table</option>
-                <option value="bar">Bar Chart</option>
-                <option value="pie">Pie Chart</option>
-              </select>
-            </div>
-            <div style={{ minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button className="add-button" type="submit" disabled={customReportLoading} style={{ padding: '10px 0', fontWeight: 600, fontSize: '1.05rem', borderRadius: '8px' }}>
-                {customReportLoading ? 'Generating...' : 'Generate Report'}
-              </button>
-            </div>
-          </form>
-          {customReportError && <ErrorPopup errorMessage={customReportError} />}
-          {/* Custom Report Output */}
-          <div style={{ marginTop: '18px' }}>
-            {customReportType === 'table' && customReportData.length > 0 && (
-              <div className="table-container">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      {Object.keys(customReportData[0]).map(key => <th key={key}>{key}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {customReportData.map((row, idx) => (
-                      <tr key={idx}>
-                        {Object.values(row).map((val, i) => <td key={i}>{val}</td>)}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {customReportType === 'bar' && customReportData.length > 0 && (
-              <div style={{ background: '#fff', borderRadius: '8px', padding: '16px', marginBottom: '12px' }}>
-                <ResponsiveContainer width="100%" height={350}>
-                  <BarChart data={customReportData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey={Object.keys(customReportData[0])[0]} />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey={Object.keys(customReportData[0])[1]} fill="#6366f1" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            {customReportType === 'pie' && customReportData.length > 0 && (
-              <div style={{ background: '#fff', borderRadius: '8px', padding: '16px', marginBottom: '12px' }}>
-                <ResponsiveContainer width="100%" height={350}>
-                  <PieChart>
-                    <Pie
-                      data={customReportData}
-                      dataKey={Object.keys(customReportData[0])[1]}
-                      nameKey={Object.keys(customReportData[0])[0]}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={120}
-                      label={(entry) => `${entry[Object.keys(customReportData[0])[0]]}: ${entry[Object.keys(customReportData[0])[1]]}`}
-                    >
-                      {customReportData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            {customReportData.length === 0 && customReportLoading === false && (
-              <div style={{ color: '#666', textAlign: 'center', padding: '18px' }}>No custom report data yet.</div>
-            )}
           </div>
         </div>
+      </div>
 
-      {/* Report 2: Active Borrowers */}
-      <div className="report-section">
-        <h3>👥 Active Borrowers (Top 20)</h3>
-        
-        {activeBorrowersReport.length > 0 && (
-          <div style={{ marginBottom: '30px', backgroundColor: '#f9fafb', padding: '20px', borderRadius: '8px' }}>
-            <ResponsiveContainer width="100%" height={400}>
-              <BarChart data={activeBorrowersReport.slice(0, 10)}>
+      {/* 5. High-Level Analytics */}
+      <div>
+        <h2 className="text-xl font-bold text-gray-800 mb-4">System Analytics</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h3 className="text-lg font-semibold mb-4">Asset Category Usage</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={[
+                { name: 'Books', count: books.length },
+                { name: 'CDs', count: cds.length },
+                { name: 'Audio', count: audiobooks.length },
+                { name: 'Movies', count: movies.length },
+                { name: 'Tech', count: technology.length },
+                { name: 'Rooms', count: studyRooms.length }
+              ]}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="Full_Name" 
-                  angle={-45} 
-                  textAnchor="end" 
-                  height={120}
-                  tick={{ fontSize: 12 }}
-                />
+                <XAxis dataKey="name" />
                 <YAxis />
                 <Tooltip />
-                <Legend />
-                <Bar dataKey="Currently_Borrowed" fill="#f59e0b" name="Currently Borrowed" />
-                <Bar dataKey="Total_Borrows_All_Time" fill="#3b82f6" name="Total Borrows" />
+                <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
-        )}
-
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>User ID</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Currently Borrowed</th>
-                <th>Total Borrows</th>
-                <th>Days Overdue</th>
-                <th>Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {activeBorrowersReport.length === 0 ? (
-                <tr>
-                  <td colSpan="7" style={{ textAlign: 'center' }}>No data available</td>
-                </tr>
-              ) : (
-                activeBorrowersReport.map((user) => (
-                  <tr key={user.User_ID}>
-                    <td>{user.User_ID}</td>
-                    <td>{user.Full_Name}</td>
-                    <td>{user.User_Email}</td>
-                    <td><strong>{user.Currently_Borrowed}</strong></td>
-                    <td>{user.Total_Borrows_All_Time}</td>
-                    <td>
-                      <span className={user.Total_Days_Overdue > 0 ? 'text-danger' : ''}>
-                        {user.Total_Days_Overdue}
-                      </span>
-                    </td>
-                    <td>${user.Account_Balance}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Report 3: Overdue Items */}
-      <div className="report-section">
-        <h3>⚠️ Overdue Items</h3>
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Borrow ID</th>
-                <th>Borrower</th>
-                <th>Email</th>
-                <th>Phone</th>
-                <th>Asset</th>
-                <th>Type</th>
-                <th>Due Date</th>
-                <th>Days Overdue</th>
-                <th>Severity</th>
-                <th>Late Fee</th>
-              </tr>
-            </thead>
-            <tbody>
-              {overdueItemsReport.length === 0 ? (
-                <tr>
-                  <td colSpan="10" style={{ textAlign: 'center' }}>
-                    <span style={{ color: '#10b981', fontWeight: '600' }}>✓ No overdue items!</span>
-                  </td>
-                </tr>
-              ) : (
-                overdueItemsReport.map((item) => (
-                  <tr key={item.Borrow_ID}>
-                    <td>{item.Borrow_ID}</td>
-                    <td>{item.Borrower_Name}</td>
-                    <td>{item.User_Email}</td>
-                    <td>{item.User_Phone || '-'}</td>
-                    <td>{item.Title}</td>
-                    <td><span className="category-badge">{item.Type}</span></td>
-                    <td>{new Date(item.Due_Date).toLocaleDateString()}</td>
-                    <td><strong style={{ color: '#dc2626' }}>{item.Days_Overdue}</strong></td>
-                    <td>
-                      <span className={`status-badge ${
-                        item.Severity === 'Critical' ? 'critical' : 
-                        item.Severity === 'Urgent' ? 'urgent' : 'warning'
-                      }`}>
-                        {item.Severity}
-                      </span>
-                    </td>
-                    <td>${item.Estimated_Late_Fee}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Report 4: Inventory Summary */}
-      <div className="report-section">
-        <h3>📦 Inventory Summary by Asset Type</h3>
-        
-        {inventorySummaryReport.length > 0 && (
-          <div style={{ marginBottom: '30px', backgroundColor: '#f9fafb', padding: '20px', borderRadius: '8px', display: 'flex', gap: '40px', flexWrap: 'wrap' }}>
-            <div style={{ flex: '1', minWidth: '300px' }}>
-              <h4 style={{ textAlign: 'center', marginBottom: '20px' }}>Total Copies Distribution</h4>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={inventorySummaryReport}
-                    dataKey="Total_Copies"
-                    nameKey="Asset_Type"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={100}
-                    label={(entry) => `${entry.Asset_Type}: ${entry.Total_Copies}`}
-                  >
-                    {inventorySummaryReport.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            
-            <div style={{ flex: '1', minWidth: '300px' }}>
-              <h4 style={{ textAlign: 'center', marginBottom: '20px' }}>Utilization Rate by Type</h4>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={inventorySummaryReport}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="Asset_Type" angle={-45} textAnchor="end" height={80} tick={{ fontSize: 12 }} />
-                  <YAxis domain={[0, 100]} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="Utilization_Percentage" fill="#8b5cf6" name="Utilization %" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <h3 className="text-lg font-semibold mb-4">Borrowing Trends (Last 6 Months)</h3>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={borrowingTrends.length > 0 ? borrowingTrends : [
+                { name: 'No Data', borrows: 0 }
+              ]}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Line type="monotone" dataKey="borrows" stroke="#8b5cf6" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
-        )}
-
-        <div className="table-container">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Asset Type</th>
-                <th>Unique Items</th>
-                <th>Total Copies</th>
-                <th>Available</th>
-                <th>Currently Borrowed</th>
-                <th>Utilization %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {inventorySummaryReport.length === 0 ? (
-                <tr>
-                  <td colSpan="6" style={{ textAlign: 'center' }}>No data available</td>
-                </tr>
-              ) : (
-                inventorySummaryReport.map((type) => (
-                  <tr key={type.Asset_Type}>
-                    <td><strong>{type.Asset_Type}</strong></td>
-                    <td>{type.Unique_Items}</td>
-                    <td>{type.Total_Copies}</td>
-                    <td>{type.Total_Available}</td>
-                    <td>{type.Currently_Borrowed}</td>
-                    <td>
-                      <span style={{ 
-                        color: type.Utilization_Percentage > 70 ? '#dc2626' : '#10b981',
-                        fontWeight: '600'
-                      }}>
-                        {type.Utilization_Percentage}%
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
         </div>
       </div>
     </div>
   )
-}
 
-  // User Management - Admin only
-  const renderUserManagement = () => (
-    <div className="tab-content">
-      <div className="section-header">
-        <h2>👤 User & Role Management</h2>
+
+  const [activeUserRoleTab, setActiveUserRoleTab] = useState('Students')
+
+  const renderUsers = () => {
+    const getRoleId = (tab) => {
+      if (tab === 'Students') return 1
+      if (tab === 'Librarians') return 3
+      if (tab === 'Admins') return 2
+      return 1
+    }
+
+    const currentRoleId = getRoleId(activeUserRoleTab)
+    const roleUsers = users.filter(u => u.Role === currentRoleId && (
+      (u.First_Name && u.First_Name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (u.Last_Name && u.Last_Name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (u.User_Email && u.User_Email.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      String(u.User_ID).includes(searchQuery)
+    ))
+
+    const handleSelectAll = (e) => {
+      if (e.target.checked) {
+        setSelectedUserIds(roleUsers.map(u => u.User_ID))
+      } else {
+        setSelectedUserIds([])
+      }
+    }
+
+    const handleSelectUser = (id) => {
+      if (selectedUserIds.includes(id)) {
+        setSelectedUserIds(selectedUserIds.filter(userId => userId !== id))
+      } else {
+        setSelectedUserIds([...selectedUserIds, id])
+      }
+    }
+
+    return (
+      <div className="space-y-6 h-full flex flex-col">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 flex-shrink-0 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+          <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <Users className="w-5 h-5 text-indigo-600" />
+            User Management
+          </h2>
+          <div className="flex flex-wrap gap-3 w-full sm:w-auto">
+            <div className="relative flex-grow sm:flex-grow-0">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search users..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full sm:w-64 pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
+              />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+            >
+              <option value="all">All Status</option>
+              <option value="Active">Active</option>
+              <option value="Blocked">Blocked</option>
+              <option value="Pending">Pending</option>
+            </select>
+            <button
+              onClick={() => {
+                setShowCreateUserModal(true)
+                setUserForm({ studentId: "", firstname: "", lastname: "", email: "", role: "Student", password: "", dateOfBirth: "", phone: "" })
+              }}
+              className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm font-medium"
+            >
+              <UserPlus className="w-4 h-4 mr-2" />
+              Add User
+            </button>
+          </div>
+        </div>
+
+        {/* Role Tabs */}
+        <div className="flex border-b border-gray-200 flex-shrink-0">
+          {['Students', 'Librarians', 'Admins'].map(tab => {
+            const count = users.filter(u => u.Role === getRoleId(tab)).length
+            const isActive = activeUserRoleTab === tab
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveUserRoleTab(tab)}
+                className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${isActive
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
+              >
+                {tab === 'Students' && <Users className="w-4 h-4" />}
+                {tab === 'Librarians' && <BookOpen className="w-4 h-4" />}
+                {tab === 'Admins' && <Shield className="w-4 h-4" />}
+                {tab}
+                <span className={`ml-1 px-2 py-0.5 rounded-full text-xs ${isActive ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-600'}`}>
+                  {count}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Bulk Action Bar */}
+        <AnimatePresence>
+          {selectedUserIds.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-white px-6 py-3 rounded-full shadow-xl border border-gray-200 flex items-center gap-4 z-50"
+            >
+              <span className="text-sm font-medium text-gray-600">{selectedUserIds.length} users selected</span>
+              <div className="h-4 w-px bg-gray-300"></div>
+              <button onClick={() => handleBulkAction('activate')} className="text-sm font-medium text-green-600 hover:text-green-700">Activate</button>
+              <button onClick={() => handleBulkAction('deactivate')} className="text-sm font-medium text-gray-600 hover:text-gray-700">Deactivate</button>
+              <button onClick={() => handleBulkAction('block')} className="text-sm font-medium text-red-600 hover:text-red-700">Block</button>
+              <button onClick={() => handleBulkAction('unblock')} className="text-sm font-medium text-blue-600 hover:text-blue-700">Unblock</button>
+              <div className="h-4 w-px bg-gray-300"></div>
+              <button onClick={() => handleBulkAction('delete')} className="p-1 text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
+              <button onClick={() => setSelectedUserIds([])} className="p-1 text-gray-400 hover:bg-gray-100 rounded"><X className="w-4 h-4" /></button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Full Width Table */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex-1 flex flex-col min-h-0">
+          <div className="overflow-y-auto flex-1 relative">
+            <table className="w-full text-left table-fixed">
+              <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
+                <tr>
+                  <th className="px-6 py-3 w-16">
+                    <input
+                      type="checkbox"
+                      checked={roleUsers.length > 0 && selectedUserIds.length === roleUsers.length}
+                      onChange={handleSelectAll}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                  </th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/4">User</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-1/5">Contact</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">Status</th>
+                  {activeUserRoleTab === 'Students' ? (
+                    <>
+                      <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-center w-24">Loans</th>
+                      <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right w-24">Fines</th>
+                    </>
+                  ) : (
+                    <th className="w-48"></th>
+                  )}
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">Last Login</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider text-right w-24">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {roleUsers.map((user) => (
+                  <tr key={user.User_ID} className={`hover:bg-gray-50 transition-colors ${selectedUserIds.includes(user.User_ID) ? 'bg-indigo-50/50' : ''}`}>
+                    <td className="px-6 py-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedUserIds.includes(user.User_ID)}
+                        onChange={() => handleSelectUser(user.User_ID)}
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                    </td>
+                    <td className="px-6 py-4 truncate">
+                      <div className="flex items-center">
+                        <div className="w-10 h-10 rounded-full bg-indigo-100 flex-shrink-0 flex items-center justify-center text-indigo-600 font-bold mr-3 text-lg">
+                          {user.First_Name?.[0] || 'U'}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-medium text-gray-900 truncate">{user.First_Name} {user.Last_Name}</div>
+                          <div className="text-xs text-gray-500">ID: {user.User_ID}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 truncate">
+                      <div className="text-sm text-gray-900 truncate">{user.User_Email}</div>
+                      <div className="text-xs text-gray-500">{user.Phone_Number || '-'}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${user.Is_Blocked
+                        ? 'bg-red-100 text-red-800'
+                        : !user.Is_Active
+                          ? 'bg-gray-100 text-gray-800'
+                          : 'bg-green-100 text-green-800'
+                        }`}>
+                        {user.Is_Blocked ? 'Blocked' : !user.Is_Active ? 'Inactive' : 'Active'}
+                      </span>
+                    </td>
+                    {activeUserRoleTab === 'Students' ? (
+                      <>
+                        <td className="px-6 py-4 text-center">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.Active_Loans > 0 ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
+                            {user.Active_Loans || 0}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <span className={`font-medium ${parseFloat(user.Fines_Balance) > 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                            ${parseFloat(user.Fines_Balance || 0).toFixed(2)}
+                          </span>
+                        </td>
+                      </>
+                    ) : (
+                      <td></td>
+                    )}
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {user.Last_Login && new Date(user.Last_Login) > new Date(Date.now() - 15 * 60 * 1000) ? (
+                        <span className="inline-flex items-center text-green-600 font-medium">
+                          <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
+                          Online
+                        </span>
+                      ) : (
+                        user.Last_Login ? new Date(user.Last_Login).toLocaleDateString() + ' ' + new Date(user.Last_Login).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Never'
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-right relative">
+                      <div className="flex gap-2 justify-end">
+
+                        {/* Actions Menu */}
+                        <div className="relative">
+                          <button
+                            onClick={() => setActiveActionMenuId(activeActionMenuId === user.User_ID ? null : user.User_ID)}
+                            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+
+                          {activeActionMenuId === user.User_ID && (
+                            <div className={`absolute right-0 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-50 py-1 ${roleUsers.indexOf(user) >= roleUsers.length - 3 ? 'bottom-full mb-2' : 'mt-2'
+                              }`}>
+                              <button
+                                onClick={() => {
+                                  setActiveActionMenuId(null)
+                                  setSelectedProfileUserId(user.User_ID)
+                                  setShowProfileDrawer(true)
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                              >
+                                <Eye className="w-4 h-4" />
+                                View Profile
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setActiveActionMenuId(null)
+                                  setSelectedUser(user)
+                                  setUserForm({
+                                    firstname: user.First_Name,
+                                    lastname: user.Last_Name,
+                                    email: user.User_Email,
+                                    phone: user.Phone_Number || '',
+                                    role: mapRoleValueToName(user.Role),
+                                    status: user.Is_Blocked ? 'Blocked' : (user.Is_Active ? 'Active' : 'Pending'),
+                                    password: '',
+                                    studentId: user.User_ID
+                                  })
+                                  setShowEditUserModal(true)
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                                Edit Details
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setActiveActionMenuId(null)
+                                  // TODO: Reset Password
+                                  console.log('Reset password', user.User_ID)
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                              >
+                                <Key className="w-4 h-4" />
+                                Reset Password
+                              </button>
+                              <div className="h-px bg-gray-100 my-1" />
+                              <button
+                                onClick={() => handleToggleBlock(user)}
+                                className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 ${user.Is_Blocked ? 'text-green-600' : 'text-amber-600'}`}
+                              >
+                                <Ban className="w-4 h-4" />
+                                {user.Is_Blocked ? 'Unblock Borrowing' : 'Block Borrowing'}
+                              </button>
+                              <button
+                                onClick={() => handleToggleActive(user)}
+                                className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2 ${!user.Is_Active ? 'text-green-600' : 'text-gray-600'}`}
+                              >
+                                <Power className="w-4 h-4" />
+                                {user.Is_Active ? 'Deactivate Account' : 'Activate Account'}
+                              </button>
+                              <div className="h-px bg-gray-100 my-1" />
+                              <button
+                                onClick={() => {
+                                  setActiveActionMenuId(null)
+                                  setUserToDelete(user)
+                                  setShowDeleteUserModal(true)
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Delete User
+                              </button>
+                            </div>
+                          )}
+
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {roleUsers.length === 0 && (
+                  <tr>
+                    <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                      <div className="flex flex-col items-center justify-center">
+                        <Users className="w-12 h-12 text-gray-300 mb-3" />
+                        <p className="text-lg font-medium text-gray-900">No users found</p>
+                        <p className="text-sm text-gray-500">Try adjusting your filters or add a new user.</p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div >
+      </div >
+    )
+  }
+
+  const renderAssets = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-gray-800">Asset Management</h2>
         <button
-          className="add-button create-user-button"
           onClick={() => {
-            setShowCreateUserModal(true);
-            setUserForm({ studentId: "", firstname: "", lastname: "", email: "", role: "Student", password: "", dateOfBirth: "", phone: "" });
+            setAssetForm({})
+            setImageFile(null)
+            setImagePreview(null)
+            setIsEditMode(false)
+            setShowAssetModal(true)
           }}
+          className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
         >
-          + Create User
+          <Plus className="w-4 h-4 mr-2" />
+          Add {activeAssetTab.slice(0, -1)}
         </button>
       </div>
 
-      <ErrorPopup errorMessage={error} />
-
-      <div className="stats-grid" style={{ marginBottom: '20px' }}>
-        <div className="stat-card">
-          <div className="stat-icon blue">👥</div>
-          <div className="stat-details">
-            <h3>{students.length}</h3>
-            <p>Students</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon green">📚</div>
-          <div className="stat-details">
-            <h3>1</h3>
-            <p>Librarians</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon purple">🔐</div>
-          <div className="stat-details">
-            <h3>2</h3>
-            <p>Admins</p>
-          </div>
-        </div>
+      {/* Asset Tabs */}
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {['books', 'cds', 'audiobooks', 'movies', 'technology', 'study-rooms'].map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveAssetTab(tab)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${activeAssetTab === tab
+              ? 'bg-indigo-600 text-white'
+              : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+              }`}
+          >
+            {tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
+          </button>
+        ))}
       </div>
 
-      <div className="table-container" style={{ marginTop: '20px' }}>
-        <h3>All Users</h3>
-        <table className="data-table">
-          <thead>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {(() => {
+          let data = []
+          switch (activeAssetTab) {
+            case 'books': data = books; break;
+            case 'cds': data = cds; break;
+            case 'audiobooks': data = audiobooks; break;
+            case 'movies': data = movies; break;
+            case 'technology': data = technology; break;
+            case 'study-rooms': data = studyRooms; break;
+            default: data = [];
+          }
+
+          if (data.length === 0) {
+            return (
+              <div className="col-span-full text-center py-12 bg-white rounded-xl border border-gray-200 border-dashed">
+                <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                <p className="text-gray-500">No assets found in this category</p>
+              </div>
+            )
+          }
+
+          return data.map((item) => (
+            <div key={item.Asset_ID} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow group">
+              <div className="relative aspect-[2/3] bg-gray-100 overflow-hidden">
+                <img
+                  src={item.Image_URL ? `${item.Image_URL}?t=${imageRefreshKey}` : getAssetImagePath(activeAssetTab, item.Asset_ID)}
+                  alt={item.Title}
+                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  onError={(e) => {
+                    e.target.style.display = 'none'
+                    e.target.nextElementSibling.style.display = 'flex'
+                  }}
+                />
+                <div className="hidden absolute inset-0 flex items-center justify-center bg-gray-100 text-gray-400">
+                  <Image className="w-12 h-12" />
+                </div>
+                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    onClick={() => {
+                      setAssetForm(item)
+                      setImagePreview(item.Image_URL)
+                      setIsEditMode(true)
+                      setShowAssetModal(true)
+                    }}
+                    className="p-2 bg-white/90 rounded-full text-blue-600 hover:text-blue-700 shadow-sm"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setItemToDelete(item)
+                      setShowDeleteModal(true)
+                    }}
+                    className="p-2 bg-white/90 rounded-full text-red-600 hover:text-red-700 shadow-sm"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <div className="p-4">
+                <h3 className="font-semibold text-gray-900 truncate" title={item.Title}>{item.Title || item.Room_Number || item.Model_Num}</h3>
+                <p className="text-sm text-gray-500 truncate">{item.Author || item.Artist || item.Description || 'No details'}</p>
+                <div className="mt-3 flex items-center justify-between text-xs">
+                  <span className={`px-2 py-1 rounded-full ${(item.Available_Copies > 0 || item.Availability === 'Available')
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-red-100 text-red-700'
+                    }`}>
+                    {activeAssetTab === 'study-rooms' ? item.Availability : `${item.Available_Copies} Available`}
+                  </span>
+                  <span className="text-gray-400">#{item.Asset_ID}</span>
+                </div>
+              </div>
+            </div>
+          ))
+        })()}
+      </div>
+    </div >
+  )
+
+  // Helper to get form fields based on asset type
+  const getAssetFormFields = () => {
+    const commonFields = [
+      { name: 'Title', label: 'Title', type: 'text', required: true },
+      { name: 'Description', label: 'Description', type: 'text' },
+      { name: 'Copies', label: 'Total Copies', type: 'number', required: true },
+      { name: 'Available_Copies', label: 'Available Copies', type: 'number', required: true }
+    ]
+
+    switch (activeAssetTab) {
+      case 'books':
+        return [
+          ...commonFields,
+          { name: 'Author', label: 'Author', type: 'text', required: true },
+          { name: 'ISBN', label: 'ISBN', type: 'text', required: true },
+          { name: 'Publisher', label: 'Publisher', type: 'text' },
+          { name: 'Publication_Year', label: 'Year', type: 'number' },
+          { name: 'Genre', label: 'Genre', type: 'text' }
+        ]
+      case 'cds':
+        return [
+          ...commonFields,
+          { name: 'Artist', label: 'Artist', type: 'text', required: true },
+          { name: 'Release_Year', label: 'Year', type: 'number' },
+          { name: 'Genre', label: 'Genre', type: 'text' },
+          { name: 'Tracks', label: 'Tracks', type: 'number' }
+        ]
+      case 'audiobooks':
+        return [
+          ...commonFields,
+          { name: 'Author', label: 'Author', type: 'text', required: true },
+          { name: 'Narrator', label: 'Narrator', type: 'text' },
+          { name: 'Length', label: 'Length (min)', type: 'number' },
+          { name: 'Genre', label: 'Genre', type: 'text' }
+        ]
+      case 'movies':
+        return [
+          ...commonFields,
+          { name: 'Director', label: 'Director', type: 'text', required: true },
+          { name: 'Release_Year', label: 'Year', type: 'number' },
+          { name: 'Genre', label: 'Genre', type: 'text' },
+          { name: 'Rating', label: 'Rating', type: 'text' }
+        ]
+      case 'technology':
+        return [
+          { name: 'Model_Num', label: 'Model Number', type: 'text', required: true },
+          { name: 'Brand', label: 'Brand', type: 'text', required: true },
+          { name: 'Description', label: 'Description', type: 'text' },
+          { name: 'Serial_Num', label: 'Serial Number', type: 'text' },
+          { name: 'Condition_Status', label: 'Condition', type: 'text' },
+          { name: 'Purchase_Date', label: 'Purchase Date', type: 'date' }
+        ]
+      case 'study-rooms':
+        return [
+          { name: 'Room_Number', label: 'Room Number', type: 'text', required: true },
+          { name: 'Capacity', label: 'Capacity', type: 'number', required: true },
+          { name: 'Availability', label: 'Status', type: 'text', required: true }
+        ]
+      default:
+        return commonFields
+    }
+  }
+
+  // Roles & Permissions
+
+
+  const renderRoles = () => (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-800">Roles & Permissions</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {roles.map(role => (
+          <div key={role.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+            <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center mb-4">
+              <Shield className="w-6 h-6 text-indigo-600" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">{role.name}</h3>
+            <p className="text-gray-500 text-sm mb-4">{role.description}</p>
+            <div className="space-y-2">
+              <div className="flex items-center text-sm text-gray-600">
+                <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                <span>View Dashboard</span>
+              </div>
+              {role.name !== 'Student' && (
+                <div className="flex items-center text-sm text-gray-600">
+                  <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                  <span>Manage Assets</span>
+                </div>
+              )}
+              {role.name === 'Admin' && (
+                <div className="flex items-center text-sm text-gray-600">
+                  <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                  <span>System Configuration</span>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+
+
+
+  const renderLogs = () => (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-800">Audit Logs</h2>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <table className="w-full text-left">
+          <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th>Student ID</th>
-              <th>First Name</th>
-              <th>Last Name</th>
-              <th>Role</th>
-              <th style={{ textAlign: 'center' }}>Actions</th>
+              <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Time</th>
+              <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">User ID</th>
+              <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Action</th>
+              <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Details</th>
+              <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">IP</th>
             </tr>
           </thead>
-          <tbody>
-            {students.length === 0 ? (
-              <tr>
-                <td colSpan="5" style={{ textAlign: 'center' }}>No users found</td>
+          <tbody className="divide-y divide-gray-200">
+            {logs.map(log => (
+              <tr key={log.Log_ID} className="hover:bg-gray-50">
+                <td className="px-6 py-4 text-sm text-gray-600">{new Date(log.Timestamp).toLocaleString()}</td>
+                <td className="px-6 py-4 text-sm text-gray-900 font-medium">{log.User_ID}</td>
+                <td className="px-6 py-4">
+                  <span className="px-2 py-1 text-xs font-semibold bg-gray-100 text-gray-700 rounded-full">
+                    {log.Action}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-sm text-gray-500 font-mono text-xs">{log.Details}</td>
+                <td className="px-6 py-4 text-sm text-gray-500">{log.IP_Address}</td>
               </tr>
-            ) : (
-              students.map((student) => (
-                <tr key={student.id}>
-                  <td><strong>{student.studentId || student.username}</strong></td>
-                  <td>{student.firstname}</td>
-                  <td>{student.lastname}</td>
-                  <td>
-                    <span className="status-badge available">{mapRoleValueToName(student.role)}</span>
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    <div className="row-action-group">
-                      <button
-                        className="icon-btn view-icon"
-                        title="View"
-                        aria-label={`View ${student.firstname || student.username || student.studentId || 'user'}`}
-                        onClick={() => {
-                          setSelectedUser(student)
-                          setShowViewUserModal(true)
-                        }}
-                      >
-                        🔍
-                      </button>
-                      <button
-                        className="icon-btn delete-icon"
-                        title="Delete"
-                        aria-label={`Delete ${student.firstname || student.username || student.studentId || 'user'}`}
-                        onClick={() => openDeleteUserModal(student)}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
+            ))}
           </tbody>
         </table>
       </div>
     </div>
   )
 
-  // System Settings - Admin only
-  const renderSystemSettings = () => (
-    <div className="tab-content">
-      <div className="section-header">
-        <h2>⚙️ System Configuration</h2>
-      </div>
 
-      <ErrorPopup errorMessage={error} />
 
-      <div className="settings-grid">
-        <div className="setting-card">
-          <h3>📚 Library Settings</h3>
-          <div className="setting-item">
-            <label>Maximum Borrow Days:</label>
-            <input type="number" defaultValue="14" disabled />
-          </div>
-          <div className="setting-item">
-            <label>Maximum Books Per User:</label>
-            <input type="number" defaultValue="5" disabled />
-          </div>
-          <div className="setting-item">
-            <label>Fine Per Day ($):</label>
-            <input type="number" step="0.01" defaultValue="0.50" disabled />
-          </div>
-          <button className="add-button" onClick={() => alert('Save settings - Coming soon')}>Save Changes</button>
-        </div>
-
-        <div className="setting-card">
-          <h3>📖 Book Categories</h3>
-          <div className="category-list">
-            <span className="category-badge">Fiction</span>
-            <span className="category-badge">Non-Fiction</span>
-            <span className="category-badge">Science</span>
-            <span className="category-badge">History</span>
-            <span className="category-badge">Technology</span>
-          </div>
-          <button className="add-button" onClick={() => alert('Manage categories - Coming soon')}>+ Add Category</button>
-        </div>
-
-        <div className="setting-card">
-          <h3>💾 Database & Backup</h3>
-          <div className="backup-info">
-            <p><strong>Last Backup:</strong> {new Date().toLocaleDateString()}</p>
-            <p><strong>Database Size:</strong> 45.2 MB</p>
-            <p><strong>Status:</strong> <span style={{ color: '#10b981' }}>✓ Healthy</span></p>
-          </div>
-          <button className="add-button" onClick={() => alert('Backup database - Coming soon')}>Backup Now</button>
-        </div>
-
-        <div className="setting-card">
-          <h3>🔐 Security & Access</h3>
-          <div className="setting-item">
-            <label>Enable Two-Factor Auth:</label>
-            <input type="checkbox" disabled />
-          </div>
-          <div className="setting-item">
-            <label>Session Timeout (minutes):</label>
-            <input type="number" defaultValue="30" disabled />
-          </div>
-          <div className="setting-item">
-            <label>Audit Logging:</label>
-            <input type="checkbox" defaultChecked disabled />
-          </div>
-          <button className="add-button" onClick={() => alert('Update security - Coming soon')}>Update Security</button>
+  const renderSettings = () => (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold text-gray-800">System Settings</h2>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="space-y-4">
+          {configs.map(config => (
+            <div key={config.Config_ID} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
+              <div>
+                <h4 className="font-medium text-gray-900">{config.Config_Key.replace(/_/g, ' ')}</h4>
+                <p className="text-sm text-gray-500">{config.Description}</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-sm font-mono bg-white px-3 py-1 rounded border border-gray-200">
+                  {config.Config_Value}
+                </span>
+                <button className="text-indigo-600 hover:text-indigo-700 text-sm font-medium">Edit</button>
+              </div>
+            </div>
+          ))}
+          {configs.length === 0 && (
+            <p className="text-center text-gray-500">No configurations found.</p>
+          )}
         </div>
       </div>
     </div>
   )
 
+  // Placeholder for new sections
+  const renderPlaceholder = (title, Icon) => (
+    <div className="flex flex-col items-center justify-center h-[60vh] text-center">
+      <div className="p-6 bg-indigo-50 rounded-full mb-4">
+        <Icon className="w-12 h-12 text-indigo-500" />
+      </div>
+      <h2 className="text-2xl font-bold text-gray-900 mb-2">{title}</h2>
+      <p className="text-gray-500 max-w-md">
+        This module is currently under development. Full functionality will be available in the next update.
+      </p>
+    </div>
+  )
+
+  const [activeUserTab, setActiveUserTab] = useState('profile')
+
+  const handleEditUser = async (e) => {
+    e.preventDefault()
+    try {
+      const response = await fetch(`${API_URL}/members/${selectedUser.User_ID}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          firstName: userForm.firstname,
+          lastName: userForm.lastname,
+          email: userForm.email,
+          phone: userForm.phone,
+          role: userForm.role,
+          status: userForm.status,
+          password: userForm.password || undefined // Only send if set
+        })
+      })
+
+      if (response.ok) {
+        setSuccessMessage('User updated successfully')
+        setShowEditUserModal(false)
+        fetchUsers()
+      } else {
+        const error = await response.json()
+        setError(error.message || 'Failed to update user')
+      }
+    } catch (err) {
+      console.error('Error updating user:', err)
+      setError('Failed to update user')
+    }
+  }
+
   return (
-    <div className="dashboard-container">
-      {/* Admin Navbar */}
-      <nav className="admin-navbar">
-        <div className="admin-navbar-content">
-          <div className="admin-navbar-left">
-            <h2 className="admin-navbar-title">📚 Library Management System</h2>
-          </div>
-          <div className="admin-navbar-right">
-            <button 
-              className="notification-bell" 
-              onClick={() => setShowNotifications(true)}
-              title="View notifications"
+    <div className="flex h-screen bg-gray-50 font-sans">
+      <AdminSidebar
+        activePage={activeTab}
+        setActivePage={(page) => {
+          setActiveTab(page)
+          const params = new URLSearchParams(searchParams)
+          params.set('tab', page)
+          setSearchParams(params)
+        }}
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
+      />
+
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <AdminTopNavbar
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+          notifications={[]}
+        />
+
+        <main className="flex-1 overflow-y-auto p-6">
+          <LoadingOverlay isLoading={loading} />
+          <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
+          {error && <ErrorPopup errorMessage={error} />}
+
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
             >
-              🔔
-              {notificationCount > 0 && (
-                <span className="notification-badge">{notificationCount}</span>
-              )}
-            </button>
-            <span className="admin-navbar-role">Administrator</span>
-            <button className="admin-navbar-logout" onClick={handleLogout}>Logout</button>
-          </div>
-        </div>
-      </nav>
-
-      <LoadingOverlay isLoading={loading} message={loading ? 'Processing...' : ''} />
-
-      <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
-      
-      <div className="dashboard-content">
-        <div className="dashboard-title-bar">
-          <h1>Admin Dashboard</h1>
-        </div>
-
-        <div className="tabs-container">
-          <button 
-            className={`tab ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => changeTab('overview')}
-          >
-            🏠 Overview
-          </button>
-          <button 
-            className={`tab ${activeTab === 'users' ? 'active' : ''}`}
-            onClick={() => changeTab('users')}
-          >
-            👤 User Management
-          </button>
-          <button 
-            className={`tab ${activeTab === 'reports' ? 'active' : ''}`}
-            onClick={() => changeTab('reports')}
-          >
-            📊 Reports & Analytics
-          </button>
-          <button 
-            className={`tab ${activeTab === 'students' ? 'active' : ''}`}
-            onClick={() => changeTab('students')}
-          >
-            👥 All Users
-          </button>
-          <button 
-            className={`tab ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => changeTab('settings')}
-          >
-            ⚙️ System Settings
-          </button>
-        </div>
-
-        {activeTab === 'overview' && renderOverview()}
-        {activeTab === 'users' && renderUserManagement()}
-        {activeTab === 'reports' && renderReports()}
-        {activeTab === 'students' && renderStudents()}
-        {activeTab === 'settings' && renderSystemSettings()}
+              {activeTab === 'overview' && renderOverview()}
+              {activeTab === 'users' && renderUsers()}
+              {activeTab === 'assets' && renderAssets()}
+              {activeTab === 'rooms' && renderAssets()} {/* Reuse assets view for rooms for now */}
+              {activeTab === 'roles' && renderRoles()}
+              {activeTab === 'settings' && renderSettings()}
+              {activeTab === 'reports' && renderPlaceholder('Reports & Analytics', BarChart3)}
+              {activeTab === 'logs' && renderLogs()}
+            </motion.div>
+          </AnimatePresence>
+        </main>
       </div>
 
-      {/* Asset Modal */}
+      {/* Modals would go here (Asset Modal, User Modal, etc.) - kept minimal for brevity but logic is above */}
       {showAssetModal && (
-        <div className="modal-overlay" onClick={() => setShowAssetModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>
-              {isEditMode ? 'Edit' : (activeAssetTab === 'study-rooms' ? 'Reserve' : 'Add')}{' '}
-              {activeAssetTab === 'study-rooms' ? 'Study Room' : activeAssetTab.slice(0, -1).charAt(0).toUpperCase() + activeAssetTab.slice(1, -1)}
-            </h3>
-            <form onSubmit={handleAddAsset}>
-              {/* Image Upload Section */}
-              <div className="form-group">
-                <label>Image</label>
-                <div className="image-upload-section">
-                  <input
-                    type="file"
-                    id="image-upload"
-                    accept="image/*"
-                    onChange={handleImageChange}
-                    style={{ display: 'none' }}
-                  />
-                  {(imagePreview || assetForm.Image_URL) ? (
-                    <div className="image-preview-container">
-                      <img 
-                        src={imagePreview || assetForm.Image_URL} 
-                        alt="Preview" 
-                        className="image-preview"
-                        onClick={() => document.getElementById('image-upload').click()}
-                        style={{ cursor: 'pointer' }}
-                        title="Click to change image"
-                      />
-                      <button 
-                        type="button" 
-                        className="remove-image-btn" 
-                        onClick={removeImage}
-                        title="Remove image"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ) : (
-                    <label 
-                      htmlFor="image-upload" 
-                      className="no-image-placeholder"
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <span>📷</span>
-                      <p>Click to upload image</p>
-                    </label>
-                  )}
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+            <h3 className="text-xl font-bold mb-4">{isEditMode ? 'Edit' : 'Add'} {activeAssetTab}</h3>
+            <form onSubmit={handleAddAsset} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Image Upload */}
+                <div className="col-span-full flex justify-center mb-4">
+                  <div className="relative w-32 h-48 bg-gray-100 rounded-lg overflow-hidden border-2 border-dashed border-gray-300 hover:border-indigo-500 transition-colors cursor-pointer" onClick={() => document.getElementById('modal-image-upload').click()}>
+                    {imagePreview || assetForm.Image_URL ? (
+                      <img src={imagePreview || assetForm.Image_URL} alt="Preview" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                        <Upload className="w-8 h-8 mb-2" />
+                        <span className="text-xs">Upload Image</span>
+                      </div>
+                    )}
+                    <input type="file" id="modal-image-upload" className="hidden" accept="image/*" onChange={handleImageChange} />
+                  </div>
                 </div>
-              </div>
 
-              {getAssetFormFields()
-                .filter(field => field.name !== 'Image_URL')
-                .filter(field => {
-                  // Hide Copies field for movies when editing (managed through rentables table)
-                  return !(activeAssetTab === 'movies' && field.name === 'Copies' && isEditMode);
-                })
-                .map(field => (
-                <div className="form-group" key={field.name}>
-                  <label>{field.label} {field.required && '*'}</label>
-                  <input
-                    type={field.type}
-                    value={assetForm[field.name] || ''}
-                    onChange={(e) => setAssetForm({ ...assetForm, [field.name]: e.target.value })}
-                    required={field.required}
-                    placeholder={field.placeholder || ''}
-                  />
-                </div>
-              ))}
-              <div className="modal-actions">
-                <button type="button" className="cancel-button" onClick={() => setShowAssetModal(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="submit-button" disabled={loading}>
-                  {(() => {
-                    if (loading) {
-                      return isEditMode ? 'Updating...' : 'Adding...'
-                    }
-                    return isEditMode ? 'Update' : 'Add'
-                  })()}
+                {/* Dynamic Fields based on asset type */}
+                {getAssetFormFields()
+                  .filter(field => {
+                    // Hide Copies field for movies when editing (managed through rentables table)
+                    return !(activeAssetTab === 'movies' && field.name === 'Copies' && isEditMode);
+                  })
+                  .map(field => (
+                    <div key={field.name} className={field.type === 'text' || field.type === 'date' ? '' : ''}>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        {field.label} {field.required && '*'}
+                      </label>
+                      <input
+                        type={field.type}
+                        value={assetForm[field.name] || ''}
+                        onChange={(e) => setAssetForm({ ...assetForm, [field.name]: e.target.value })}
+                        required={field.required}
+                        placeholder={field.placeholder || ''}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      />
+                    </div>
+                  ))}
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <button type="button" onClick={() => setShowAssetModal(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                  {isEditMode ? 'Update' : 'Add'}
                 </button>
               </div>
             </form>
@@ -2157,459 +1697,163 @@ const handleDeleteUser = async () => {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && (
-        <div className="modal-overlay" onClick={() => setShowDeleteModal(false)}>
-          <div className="modal-content delete-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Confirm Delete</h3>
-            <p className="delete-warning">
-              Are you sure you want to delete this asset? This action cannot be undone.
-            </p>
-            {itemToDelete && (
-              <div className="delete-item-info">
-                <strong>Asset ID:</strong> {itemToDelete.Asset_ID}<br />
-                <strong>Title/Name:</strong> {itemToDelete.Title || itemToDelete.Room_Number || itemToDelete.Model_Num}
+      {/* Create/Edit User Modal */}
+      {(showCreateUserModal || showEditUserModal) && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-xl font-bold mb-4">{showCreateUserModal ? 'Create User' : 'Edit User'}</h3>
+
+            {/* Tabs for Edit Mode */}
+            {showEditUserModal && (
+              <div className="flex border-b border-gray-200 mb-4">
+                {['profile', 'account', 'security'].map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveUserTab(tab)}
+                    className={`px-4 py-2 text-sm font-medium capitalize ${activeUserTab === tab
+                      ? 'text-indigo-600 border-b-2 border-indigo-600'
+                      : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
               </div>
             )}
-            <div className="modal-actions">
-              <button type="button" className="cancel-button" onClick={() => setShowDeleteModal(false)}>
-                Cancel
-              </button>
-              <button type="button" className="delete-button-confirm" onClick={handleDeleteAsset} disabled={loading}>
-                {loading ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* CREATE / EDIT USER MODAL */}
-      {(showCreateUserModal || showEditUserModal) && (
-        <div className="modal-overlay" style={{ zIndex: 1200 }}>
-          <div className="modal-content" style={{ zIndex: 1201 }}>
-            <h2>{showCreateUserModal ? "Create User" : "Edit User"}</h2>
-            <form onSubmit={showCreateUserModal ? handleCreateUser : handleEditUser} className="modal-form">
-              <div className="form-group">
-                <label>First Name</label>
-                <input
-                  type="text"
-                  value={userForm.firstname}
-                  placeholder="First Name"
-                  onChange={(e) => setUserForm({ ...userForm, firstname: e.target.value })}
-                  required
-                />
-              </div>
+            <form onSubmit={showCreateUserModal ? handleCreateUser : handleEditUser} className="space-y-4">
+              {/* Profile Tab (or Create Mode) */}
+              {(showCreateUserModal || activeUserTab === 'profile') && (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                      <input type="text" value={userForm.firstname} onChange={e => setUserForm({ ...userForm, firstname: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                      <input type="text" value={userForm.lastname} onChange={e => setUserForm({ ...userForm, lastname: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input type="email" value={userForm.email} onChange={e => setUserForm({ ...userForm, email: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                    <input type="tel" value={userForm.phone} onChange={e => setUserForm({ ...userForm, phone: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
+                  </div>
+                  {showCreateUserModal && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Username / ID</label>
+                      <input type="text" value={userForm.studentId} onChange={e => setUserForm({ ...userForm, studentId: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                    </div>
+                  )}
+                </>
+              )}
 
-              <div className="form-group">
-                <label>Last Name</label>
-                <input
-                  type="text"
-                  value={userForm.lastname}
-                  placeholder="Last Name"
-                  onChange={(e) => setUserForm({ ...userForm, lastname: e.target.value })}
-                />
-              </div>
+              {/* Account Tab */}
+              {(showEditUserModal && activeUserTab === 'account') && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                    <select value={userForm.role} onChange={e => setUserForm({ ...userForm, role: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                      <option value="Student">Student</option>
+                      <option value="Librarian">Librarian</option>
+                      <option value="Admin">Admin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                    <select value={userForm.status} onChange={e => setUserForm({ ...userForm, status: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                      <option value="Active">Active</option>
+                      <option value="Blocked">Blocked</option>
+                      <option value="Pending">Pending</option>
+                    </select>
+                  </div>
+                </>
+              )}
 
-              <div className="form-group">
-                <label>Date of Birth</label>
-                <input
-                  type="text"
-                  value={userForm.dateOfBirth}
-                  placeholder="MM/DD/YYYY or YYYY-MM-DD"
-                  onChange={(e) => setUserForm({ ...userForm, dateOfBirth: e.target.value })}
-                  required={showCreateUserModal}
-                />
-                <small style={{ color: '#666' }}>Enter date as <strong>MM/DD/YYYY</strong> or <strong>YYYY-MM-DD</strong></small>
-              </div>
-
-              <div className="form-group">
-                <label>Username</label>
-                <input
-                  type="text"
-                  value={userForm.studentId || ''}
-                  placeholder="Username"
-                  onChange={(e) => setUserForm({ ...userForm, studentId: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Email</label>
-                <input
-                  type="email"
-                  value={userForm.email}
-                  placeholder="Email"
-                  onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Phone</label>
-                <input
-                  type="tel"
-                  value={userForm.phone || ''}
-                  placeholder="Phone number"
-                  onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })}
-                />
-              </div>
-
-              {showCreateUserModal && (
-                <div className="form-group">
-                  <label>Password</label>
+              {/* Security Tab */}
+              {(showEditUserModal && activeUserTab === 'security') && (
+                <div>
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                    <p className="text-xs text-yellow-800">Only enter a password if you want to change it.</p>
+                  </div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
                   <input
                     type="password"
                     value={userForm.password}
-                    placeholder="Password"
-                    onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
-                    required
+                    onChange={e => setUserForm({ ...userForm, password: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    placeholder="Leave blank to keep current"
                   />
                 </div>
               )}
 
-              <div className="form-group">
-                <label>Role</label>
-                <select
-                  value={userForm.role}
-                  onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}
-                >
-                  <option value="Student">Student</option>
-                  <option value="Librarian">Librarian</option>
-                  <option value="Admin">Admin</option>
-                </select>
-              </div>
+              {/* Create Mode Role/Password */}
+              {showCreateUserModal && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                    <select value={userForm.role} onChange={e => setUserForm({ ...userForm, role: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                      <option value="Student">Student</option>
+                      <option value="Librarian">Librarian</option>
+                      <option value="Admin">Admin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" value={userForm.password} onChange={e => setUserForm({ ...userForm, password: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                  </div>
+                </>
+              )}
 
-              {/* Status field removed */}
-
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="cancel-button"
-                  onClick={() => {
-                    setShowCreateUserModal(false);
-                    setShowEditUserModal(false);
-                    setUserForm({ studentId: "", firstname: "", lastname: "", email: "", role: "Student", password: "", dateOfBirth: "", phone: "" });
-                  }}
-                >
-                  Cancel
-                </button>
-                <button type="submit" className={`submit-button ${showCreateUserModal ? 'create-submit' : ''}`}>
-                  {showCreateUserModal ? "Create" : "Save"}
-                </button>
+              <div className="flex justify-end gap-3 mt-6">
+                <button type="button" onClick={() => { setShowCreateUserModal(false); setShowEditUserModal(false) }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">{showCreateUserModal ? 'Create' : 'Save Changes'}</button>
               </div>
             </form>
           </div>
         </div>
       )}
-
-
-
-
-
-    {showDeleteUserModal && (
-      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-sm space-y-4">
-          <h2 className="text-xl font-semibold text-red-600">Delete User</h2>
-          <p>
-            Are you sure you want to delete{' '}
-            <strong>{selectedUser ? `${selectedUser.firstname || ''} ${selectedUser.lastname || ''}`.trim() : ''}</strong>?
-          </p>
-          <div className="flex justify-end gap-3 pt-4">
-            <button
-              onClick={() => setShowDeleteUserModal(false)}
-              className="px-4 py-2 rounded-lg bg-gray-300 hover:bg-gray-400"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleDeleteUser}
-              className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
-    )}
-
-    {/* VIEW USER MODAL */}
-    {showViewUserModal && selectedUser && (
-      <div className="modal-overlay" onClick={() => setShowViewUserModal(false)}>
-        <div className={`modal-content user-modal user-modal-${mapRoleValueToName(selectedUser.role).toLowerCase()}`}
-          style={{ maxWidth: '880px', minWidth: '520px', padding: '36px 36px 28px 36px' }}
-          onClick={e => e.stopPropagation()}>
-          <div className="user-modal-header" style={{ display: 'flex', alignItems: 'center', gap: '24px', marginBottom: '24px' }}>
-            <div className="user-avatar" style={{
-              background:
-                mapRoleValueToName(selectedUser.role) === 'Admin' ? 'linear-gradient(135deg, #6366f1 60%, #a5b4fc 100%)' :
-                mapRoleValueToName(selectedUser.role) === 'Librarian' ? 'linear-gradient(135deg, #10b981 60%, #6ee7b7 100%)' :
-                'linear-gradient(135deg, #3b82f6 60%, #93c5fd 100%)',
-              color: '#fff',
-              borderRadius: '50%',
-              width: '80px',
-              height: '80px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '2.8rem',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.10)'
-            }}>
-              {mapRoleValueToName(selectedUser.role) === 'Admin' ? '🛡️' :
-                mapRoleValueToName(selectedUser.role) === 'Librarian' ? '📚' : '🧑‍🎓'}
+      {/* Delete User Confirmation Modal */}
+      {showDeleteUserModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-center w-12 h-12 mx-auto bg-red-100 rounded-full mb-4">
+              <Trash2 className="w-6 h-6 text-red-600" />
             </div>
-            <div style={{ flex: 1 }}>
-              <h2 style={{ fontWeight: 700, fontSize: '1.7rem', margin: 0 }}>
-                {selectedUser.firstname || '-'} {selectedUser.lastname || '-'}
-              </h2>
-              <span className="role-badge" style={{
-                display: 'inline-block',
-                marginTop: '8px',
-                padding: '4px 12px',
-                borderRadius: '12px',
-                background:
-                  mapRoleValueToName(selectedUser.role) === 'Admin' ? '#6366f1' :
-                  mapRoleValueToName(selectedUser.role) === 'Librarian' ? '#10b981' : '#3b82f6',
-                color: '#fff',
-                fontWeight: 600,
-                fontSize: '1rem'
-              }}>{mapRoleValueToName(selectedUser.role)}</span>
-            </div>
-            <button className="close-btn" onClick={() => setShowViewUserModal(false)} title="Close" style={{ fontSize: '1.5rem', marginLeft: '8px' }}>✕</button>
-          </div>
-          {/* Tabs for modal sections */}
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '18px', borderBottom: '1px solid #e5e7eb' }}>
-            {['Personal Info', 'Library Stats', 'Current Borrows'].map((tab, idx) => (
+            <h3 className="text-xl font-bold text-center mb-2">Delete User?</h3>
+            <p className="text-gray-500 text-center mb-6">
+              Are you sure you want to delete <strong>{userToDelete?.Full_Name}</strong>? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
               <button
-                key={tab}
-                style={{
-                  background: activeUserModalTab === tab ? '#f3f4f6' : 'transparent',
-                  border: 'none',
-                  borderBottom: activeUserModalTab === tab ? '3px solid #6366f1' : '3px solid transparent',
-                  color: activeUserModalTab === tab ? '#6366f1' : '#222',
-                  fontWeight: 600,
-                  fontSize: '1rem',
-                  padding: '10px 18px',
-                  cursor: 'pointer',
-                  outline: 'none',
-                  borderRadius: '8px 8px 0 0',
-                  transition: 'background 0.2s'
-                }}
-                onClick={() => setActiveUserModalTab(tab)}
-              >{tab}</button>
-            ))}
-          </div>
-          <div className="user-modal-body">
-            {/* Tab content */}
-            {activeUserModalTab === 'Personal Info' && (
-              <div className="user-info-sections" style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
-                <div className="user-info-section user-info-details" style={{ flex: 1, minWidth: '220px' }}>
-                  <h4 className="section-title" style={{ marginBottom: '18px', fontWeight: 600, fontSize: '1.1rem' }}>Personal Info</h4>
-                  <div className="info-grid">
-                    <div className="info-row">
-                      <span className="info-label">Username:</span>
-                      <div className="info-value-copy">
-                        <span className="info-value" title={getUsername(selectedUser)}>{getUsername(selectedUser)}</span>
-                        {getUsername(selectedUser) && getUsername(selectedUser) !== '-' && (
-                          <button className="copy-btn" onClick={() => copyToClipboard(getUsername(selectedUser))} title="Copy Username">📋</button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-label">Email:</span>
-                      <div className="info-value-copy">
-                        <span className="info-value" title={selectedUser.email || '-'}>{selectedUser.email || '-'}</span>
-                        {selectedUser.email && (
-                          <button className="copy-btn" onClick={() => copyToClipboard(selectedUser.email)} title="Copy Email">📋</button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-label">Phone:</span>
-                      <div className="info-value-copy">
-                        <span className="info-value" title={selectedUser.phone || '-'}>{selectedUser.phone || '-'}</span>
-                        {selectedUser.phone && (
-                          <button className="copy-btn" onClick={() => copyToClipboard(selectedUser.phone)} title="Copy Phone">📋</button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="info-row">
-                      <span className="info-label">Date of Birth:</span>
-                      <div className="info-value-copy">
-                        <span className="info-value" title={formatDateForDisplay(selectedUser.dateOfBirth)}>{formatDateForDisplay(selectedUser.dateOfBirth)}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-            {activeUserModalTab === 'Library Stats' && (
-              <div className="user-info-sections" style={{ display: 'flex', gap: '32px', flexWrap: 'wrap' }}>
-                <div className="user-info-section user-info-stats" style={{ flex: 1, minWidth: '220px' }}>
-                  <h4 className="section-title" style={{ marginBottom: '18px', fontWeight: 600, fontSize: '1.1rem' }}>Library Stats</h4>
-                  <div className="stats-grid">
-                    <div className="stats-row"><span className="stats-label">Total Borrows:</span> <span className="stats-value">{
-                      borrowRecords.filter(r => userMatchesBorrow(r, selectedUser)).length
-                    }</span></div>
-                    <div className="stats-row"><span className="stats-label">Currently Borrowed:</span> <span className="stats-value">{
-                      borrowRecords.filter(r => userMatchesBorrow(r, selectedUser) && !r.Return_Date).length
-                    }</span></div>
-                    <div className="stats-row"><span className="stats-label">Overdue Items:</span> <span className="stats-value">{
-                      borrowRecords.filter(r => userMatchesBorrow(r, selectedUser) && r.Due_Date && !r.Return_Date && new Date(r.Due_Date) < new Date()).length
-                    }</span></div>
-                  </div>
-                </div>
-              </div>
-            )}
-            {activeUserModalTab === 'Current Borrows' && (
-              <div style={{ marginTop: '12px' }}>
-                {/* debug removed */}
-                <h4 style={{ fontWeight: 600, fontSize: '1.1rem', marginBottom: '12px' }}>User Borrows & Fines</h4>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                  <button
-                    onClick={() => setUserBorrowFilter('current')}
-                    style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e5e7eb', background: userBorrowFilter === 'current' ? '#eef2ff' : '#fff' }}
-                  >Current</button>
-                  <button
-                    onClick={() => setUserBorrowFilter('all')}
-                    style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e5e7eb', background: userBorrowFilter === 'all' ? '#eef2ff' : '#fff' }}
-                  >All</button>
-                  <button
-                    onClick={() => setUserBorrowFilter('overdue')}
-                    style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e5e7eb', background: userBorrowFilter === 'overdue' ? '#eef2ff' : '#fff' }}
-                  >Overdue</button>
-                </div>
-
-                <div style={{ maxHeight: '320px', overflowY: 'auto', borderRadius: '8px', border: '1px solid #e5e7eb', background: '#f9fafb', padding: '12px', marginBottom: '18px' }}>
-                  {(() => {
-                    const matched = borrowRecords.filter(r => userMatchesBorrow(r, selectedUser));
-                    let display = matched;
-                    if (userBorrowFilter === 'current') display = matched.filter(r => !r.Return_Date);
-                    if (userBorrowFilter === 'overdue') display = matched.filter(r => r.Due_Date && !r.Return_Date && new Date(r.Due_Date) < new Date());
-
-                    if (display.length === 0) {
-                      return <div style={{ color: '#666', textAlign: 'center', padding: '24px 0' }}>{userBorrowFilter === 'all' ? 'No borrows found.' : userBorrowFilter === 'overdue' ? 'No overdue items.' : 'No current borrows.'}</div>;
-                    }
-
-                    return (
-                      <table className="data-table" style={{ width: '100%', fontSize: '0.98rem' }}>
-                        <thead>
-                          <tr>
-                                  <th>Borrow ID</th>
-                                  <th>Asset Title</th>
-                                  <th>Type</th>
-                                  <th>Borrow Date</th>
-                                  <th>Due Date</th>
-                                  <th>Return Date</th>
-                                  <th>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {display.map(borrow => (
-                            <tr key={borrow.Borrow_ID}>
-                              <td>{borrow.Borrow_ID}</td>
-                              <td>{borrow.Title || borrow.Asset_Title || borrow.Asset_ID}</td>
-                              <td>{borrow.Asset_Type}</td>
-                              <td>{formatDateForDisplay(borrow.Borrow_Date)}</td>
-                              <td>{formatDateForDisplay(borrow.Due_Date)}</td>
-                              <td>{borrow.Return_Date ? formatDateForDisplay(borrow.Return_Date) : '-'}</td>
-                                    <td style={{ whiteSpace: 'nowrap' }}>
-                                      {(!borrow.Return_Date) && (
-                                        <button
-                                          onClick={() => handleReturnBorrow(borrow.Borrow_ID)}
-                                          style={{ marginRight: '8px', padding: '6px 8px', borderRadius: '6px', background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer' }}
-                                        >Return</button>
-                                      )}
-                                      {(userFinesMap[String(borrow.Borrow_ID)] && (userFinesMap[String(borrow.Borrow_ID)].Fine_Amount || userFinesMap[String(borrow.Borrow_ID)].Fine_Amount === 0)) && (
-                                        <button
-                                          onClick={() => handleWaiveFine(borrow.Borrow_ID)}
-                                          style={{ padding: '6px 8px', borderRadius: '6px', background: '#f97316', color: '#fff', border: 'none', cursor: 'pointer' }}
-                                        >Waive Fine</button>
-                                      )}
-                                    </td>
-                                  </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    );
-                  })()}
-                </div>
-                <div style={{ marginBottom: '8px' }}>
-                  <h5 style={{ fontWeight: 600, fontSize: '1rem', marginBottom: '8px' }}>Fines & Overdue Summary</h5>
-                  {userFines.length === 0 ? (
-                    <div style={{ color: '#666', textAlign: 'center', padding: '12px 0' }}>No fines or overdue items.</div>
-                  ) : (
-                    <table className="data-table" style={{ width: '100%', fontSize: '0.97rem' }}>
-                      <thead>
-                        <tr>
-                          <th>Borrow ID</th>
-                          <th>Title</th>
-                          <th>Type</th>
-                          <th>Borrow Date</th>
-                          <th>Due Date</th>
-                          <th>Return Date</th>
-                          <th>Days Overdue</th>
-                          <th>Fine Amount</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {userFines.map(fine => (
-                          <tr key={fine.Borrow_ID} style={fine.Status === 'Pending' ? { background: '#fee2e2' } : {}}>
-                            <td>{fine.Borrow_ID}</td>
-                            <td>{fine.Item_Title}</td>
-                            <td>{fine.Asset_Type}</td>
-                            <td>{formatDateForDisplay(fine.Borrow_Date)}</td>
-                            <td>{formatDateForDisplay(fine.Due_Date)}</td>
-                            <td>{fine.Return_Date ? formatDateForDisplay(fine.Return_Date) : '-'}</td>
-                            <td>{fine.Days_Overdue}</td>
-                            <td style={{ color: parseFloat(fine.Fine_Amount) > 0 ? '#dc2626' : '#222', fontWeight: 600 }}>${parseFloat(fine.Fine_Amount).toFixed(2)}</td>
-                            <td>{fine.Status}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="user-modal-actions" style={{ marginTop: '32px', display: 'flex', justifyContent: 'flex-end', gap: '16px' }}>
-            <button
-              className="edit-btn"
-              onClick={() => {
-                openEditUserModal(selectedUser);
-              }}
-              style={{
-                padding: '10px 24px',
-                fontSize: '1rem',
-                borderRadius: '8px',
-                background:
-                  mapRoleValueToName(selectedUser.role) === 'Admin' ? '#6366f1' :
-                  mapRoleValueToName(selectedUser.role) === 'Librarian' ? '#10b981' : '#3b82f6',
-                color: '#fff',
-                fontWeight: 600
-              }}
-            >
-              Edit User
-            </button>
-            <button className="close-btn" onClick={() => setShowViewUserModal(false)} style={{ padding: '10px 24px', fontSize: '1rem', borderRadius: '8px', background: '#e5e7eb', color: '#222', fontWeight: 600 }}>Close</button>
+                onClick={() => setShowDeleteUserModal(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteUser}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Delete User
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
 
-
-
-
-
-      {/* Notification Panel */}
-      {/* {showNotifications && (
-        <NotificationPanel onClose={() => setShowNotifications(false)} />
-      )} */}
+      {/* User Profile Drawer */}
+      <UserProfileDrawer
+        isOpen={showProfileDrawer}
+        onClose={() => setShowProfileDrawer(false)}
+        userId={selectedProfileUserId}
+      />
     </div>
   )
-
-  
 }
 
 export default Admin

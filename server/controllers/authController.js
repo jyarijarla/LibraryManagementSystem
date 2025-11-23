@@ -36,6 +36,14 @@ async function login(req, res) {
       return;
     }
 
+    // Check if user is active and not deleted
+    if (user.Is_Deleted || user.Is_Active === 0) {
+      res.statusCode = 403;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ message: 'Account is inactive. Please contact support.' }));
+      return;
+    }
+
     // Verify password
     const isValidPassword = await bcrypt.compare(password, user.Password);
     if (!isValidPassword) {
@@ -45,6 +53,9 @@ async function login(req, res) {
       return;
     }
 
+    // Update Last_Login
+    await db.promise().query('UPDATE user SET Last_Login = NOW() WHERE User_ID = ?', [user.User_ID]);
+
     // Fetch role name
     const [roleResult] = await db.promise().query(
       `SELECT role_name
@@ -52,7 +63,7 @@ async function login(req, res) {
        JOIN role_type rt ON u.Role = rt.role_id 
        WHERE Username = ?`, [username]
     );
-    if(roleResult.length === 0) {
+    if (roleResult.length === 0) {
       res.statusCode = 404;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ message: 'User with that role does not exist' }));
@@ -62,9 +73,9 @@ async function login(req, res) {
     const userRole = roleResult[0].role_name;
 
     // Create security fingerprint based on IP and User-Agent
-    const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || 
-                     req.socket.remoteAddress || 
-                     'unknown';
+    const clientIp = req.headers['x-forwarded-for']?.split(',')[0] ||
+      req.socket.remoteAddress ||
+      'unknown';
     const userAgent = req.headers['user-agent'] || 'unknown';
     const fingerprint = createFingerprint(clientIp, userAgent);
 
@@ -108,8 +119,8 @@ async function signup(req, res) {
   if (!username || !password || !email || !firstName || !role) {
     res.statusCode = 400;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ 
-      message: 'Username, password, email, first name, and role are required' 
+    res.end(JSON.stringify({
+      message: 'Username, password, email, first name, and role are required'
     }));
     return;
   }
@@ -142,22 +153,22 @@ async function signup(req, res) {
   if (role === 'admin' || role === 'librarian') {
     res.statusCode = 403;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ 
-      message: 'Admin and Librarian accounts cannot be created through signup. Please contact library management.' 
+    res.end(JSON.stringify({
+      message: 'Admin and Librarian accounts cannot be created through signup. Please contact library management.'
     }));
     return;
   }
 
   try {
     // Check if username, email, or studentId already exists
-    const checkQuery = role === 'student' 
+    const checkQuery = role === 'student'
       ? 'SELECT * FROM user WHERE Username = ? OR User_Email = ? OR Student_ID = ?'
       : 'SELECT * FROM user WHERE Username = ? OR User_Email = ?';
-    
-    const checkParams = role === 'student' 
+
+    const checkParams = role === 'student'
       ? [username, email, studentId]
       : [username, email];
-    
+
     db.query(checkQuery, checkParams, async (err, results) => {
       if (err) {
         console.error('Database error:', err);
@@ -289,7 +300,7 @@ async function signup(req, res) {
 // Route handler for /api/login and /api/signup
 async function authHandler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  
+
   if (url.pathname === '/api/login' && req.method === 'POST') {
     await login(req, res);
   } else if (url.pathname === '/api/signup' && req.method === 'POST') {

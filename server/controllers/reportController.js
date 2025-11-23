@@ -149,16 +149,15 @@ const getInventorySummary = (req, res) => {
   const query = `
     SELECT 
       'Book' AS Asset_Type,
-      COUNT(DISTINCT r.Rentable_ID) AS Unique_Items,
-      SUM(r.Num_Copies) AS Total_Copies,
-      SUM(r.Num_Available) AS Total_Available,
-      SUM(r.Num_Copies - r.Num_Available) AS Currently_Borrowed,
-      ROUND((SUM(r.Num_Copies - r.Num_Available) / NULLIF(SUM(r.Num_Copies), 0)) * 100, 2) AS Utilization_Percentage
+      COUNT(DISTINCT b.Asset_ID) AS Unique_Items,
+      COUNT(r.Rentable_ID) AS Total_Copies,
+      SUM(CASE WHEN r.Availability = 1 THEN 1 ELSE 0 END) AS Total_Available,
+      SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) AS Currently_Borrowed,
+      ROUND((SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(r.Rentable_ID), 0)) * 100, 2) AS Utilization_Percentage
     FROM rentable r
-    LEFT JOIN asset a ON r.Asset_ID = a.Asset_ID
-    LEFT JOIN book b ON a.Asset_ID = b.Asset_ID
-    WHERE b.Asset_ID IS NOT NULL
-    ORDER BY Total_Copies DESC
+    JOIN asset a ON r.Asset_ID = a.Asset_ID
+    JOIN book b ON a.Asset_ID = b.Asset_ID
+    GROUP BY Asset_Type
   `;
 
   db.query(query, (err, results) => {
@@ -167,6 +166,33 @@ const getInventorySummary = (req, res) => {
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ error: 'Failed to fetch inventory summary', details: err.message }));
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(results));
+  });
+};
+
+// Report 5: Borrowing Trends (Last 6 Months)
+const getBorrowingTrends = (req, res) => {
+  const query = `
+    SELECT 
+      DATE_FORMAT(Borrow_Date, '%b') as name,
+      MONTH(Borrow_Date) as month_num,
+      COUNT(*) as borrows
+    FROM borrow
+    WHERE Borrow_Date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+    GROUP BY DATE_FORMAT(Borrow_Date, '%b'), MONTH(Borrow_Date)
+    ORDER BY MONTH(Borrow_Date) ASC
+  `;
+
+  db.query(query, (err, results) => {
+    if (err) {
+      console.error('Error fetching borrowing trends:', err);
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Failed to fetch borrowing trends', details: err.message }));
       return;
     }
     res.statusCode = 200;
@@ -1066,6 +1092,7 @@ module.exports = {
   getLibrarianDailyActivity,
   getLibrarianMembers,
   getLibrarianBooks,
+  getBorrowingTrends,
   getLibrarianRoomBookings,
   getRoomReportMetadata
 };
