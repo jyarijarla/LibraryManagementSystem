@@ -972,6 +972,7 @@ const getLibrarianRoomBookings = (req, res) => {
   const capacityMinNumber = capacityMin !== undefined && capacityMin !== '' ? Number(capacityMin) : null;
   const capacityMaxNumber = capacityMax !== undefined && capacityMax !== '' ? Number(capacityMax) : null;
 
+<<<<<<< HEAD
   let query = `
 SELECT
 br.Borrow_ID AS Booking_ID,
@@ -1115,10 +1116,39 @@ br.Borrow_ID AS Booking_ID,
       res.end(JSON.stringify({ error: 'Failed to fetch room bookings', details: err.message }));
       return;
     }
+=======
+// Study room metadata (numbers, capacities, member roles)
+const getRoomReportMetadata = async (req, res) => {
+  const runQuery = (sql, params = []) => new Promise((resolve, reject) => {
+    db.query(sql, params, (err, results) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(results);
+    });
+  });
+
+  try {
+    const roomsPromise = runQuery('SELECT Room_Number, Capacity, Availability FROM study_room ORDER BY Room_Number ASC');
+    const rolesPromise = runQuery('SELECT role_id, role_name FROM role_type ORDER BY role_name ASC');
+
+    const [rooms, memberRoles] = await Promise.all([roomsPromise, rolesPromise]);
+    const capacities = rooms.map(room => Number(room.Capacity) || 0);
+    const capacityRange = capacities.length > 0
+      ? { min: Math.min(...capacities), max: Math.max(...capacities) }
+      : { min: 0, max: 0 };
+
+>>>>>>> e6bf537 (feat(reports): redesign Reports & Analytics, add KPI row, filters, tabs, custom-report v2 and styles)
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify(results));
-  });
+    res.end(JSON.stringify({ rooms, memberRoles, capacityRange }));
+  } catch (error) {
+    console.error('Error fetching room metadata:', error);
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ error: 'Failed to fetch room metadata', details: error.message }));
+  }
 };
 // Study room metadata (numbers, capacities, member roles)
 const getRoomReportMetadata = async (req, res) => {

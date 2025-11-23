@@ -424,6 +424,9 @@ const [userToDelete, setUserToDelete] = useState(null);
     }
   }
 
+  // Sidebar collapsed state for left navigation
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   const fetchData = async () => {
     setLoading(true)
     setError('')
@@ -1090,12 +1093,43 @@ const handleDeleteUser = async () => {
     }
   }
 
-  const renderOverview = () => (
-    <div className="tab-content">
-      <h2>Dashboard Overview</h2>
+  const renderOverview = () => {
+    const totalAssets = books.length + cds.length + audiobooks.length + movies.length + technology.length + studyRooms.length
+    const totalStudents = students.length
+    const borrowedCount = borrowRecords.filter(r => !r.Return_Date).length
+
+    const assetsMax = Math.max(50, totalAssets)
+    const studentsMax = Math.max(200, totalStudents)
+    const borrowedMax = Math.max(50, borrowedCount)
+
+    const assetsPct = Math.round((totalAssets / assetsMax) * 100)
+    const studentsPct = Math.round((totalStudents / studentsMax) * 100)
+    const borrowedPct = Math.round((borrowedCount / borrowedMax) * 100)
+    const ICONS = {
+      Books: '📚',
+      CDs: '💿',
+      Audiobooks: '🎧',
+      Movies: '🎬',
+      Technology: '💻',
+      'Study Rooms': '🚪'
+    }
+
+    return (
+    <div className="tab-content overview-layout">
+      <div className="overview-hero">
+        <div>
+          <h1 className="title">Welcome back, Administrator</h1>
+          <div className="subtitle">Quick summary of library activity and recent changes</div>
+        </div>
+        <div className="overview-actions">
+          <button className="btn ghost" onClick={() => setOverviewModal('assets')}>View Assets</button>
+          <button className="btn primary" onClick={() => changeTab('reports')}>Open Reports</button>
+        </div>
+      </div>
+
       <ErrorPopup errorMessage={error} />
 
-      <div className="stats-grid">
+      <div className="overview-cards">
         <div className="stat-card" onClick={() => setOverviewModal('assets')} style={{ cursor: 'pointer' }}>
           <div className="stat-icon blue">📚</div>
           <div className="stat-details">
@@ -1120,79 +1154,217 @@ const handleDeleteUser = async () => {
       </div>
 
       {/* Overview Modals */}
-      {overviewModal === 'assets' && (
-        <div className="modal-overlay" onClick={() => setOverviewModal(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
-            <h3>All Assets</h3>
-            <ul style={{ maxHeight: '320px', overflowY: 'auto', marginBottom: '18px' }}>
-              <li><strong>Books:</strong> {books.length}</li>
-              <li><strong>CDs:</strong> {cds.length}</li>
-              <li><strong>Audiobooks:</strong> {audiobooks.length}</li>
-              <li><strong>Movies:</strong> {movies.length}</li>
-              <li><strong>Technology:</strong> {technology.length}</li>
-              <li><strong>Study Rooms:</strong> {studyRooms.length}</li>
-            </ul>
-            <div style={{ fontSize: '0.98rem', color: '#555' }}>
-              <strong>Recent Additions:</strong>
-              <ul>
-                {[...books, ...cds, ...audiobooks, ...movies, ...technology, ...studyRooms].slice(-5).map(a => (
-                  <li key={a.Asset_ID || a.Room_Number || a.Model_Num}>{a.Title || a.Room_Number || a.Model_Num || 'Asset'}</li>
-                ))}
-              </ul>
+      {overviewModal === 'assets' && (() => {
+        const combinedAssets = [
+          ...books.map(a => ({ ...a, __type: 'Book' })),
+          ...cds.map(a => ({ ...a, __type: 'CD' })),
+          ...audiobooks.map(a => ({ ...a, __type: 'Audiobook' })),
+          ...movies.map(a => ({ ...a, __type: 'Movie' })),
+          ...technology.map(a => ({ ...a, __type: 'Technology' })),
+          ...studyRooms.map(a => ({ ...a, __type: 'Study Room' })),
+        ]
+
+        const assetTypeToPath = (t) => {
+          switch (t) {
+            case 'Book': return 'books'
+            case 'CD': return 'cds'
+            case 'Audiobook': return 'audiobooks'
+            case 'Movie': return 'movies'
+            case 'Technology': return 'technology'
+            case 'Study Room': return 'study-rooms'
+            default: return 'general'
+          }
+        }
+
+        return (
+          <div className="modal-overlay" onClick={() => setOverviewModal(null)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '900px' }}>
+              <h3 style={{ marginTop: 0 }}>All Assets</h3>
+              <div className="counts-row" style={{ marginBottom: 8, color: '#444' }}>
+                <strong style={{ marginRight: 8, flex: '0 0 auto' }}>Counts:</strong>
+                {[
+                  { label: 'Books', count: books.length },
+                  { label: 'CDs', count: cds.length },
+                  { label: 'Audiobooks', count: audiobooks.length },
+                  { label: 'Movies', count: movies.length },
+                  { label: 'Technology', count: technology.length },
+                  { label: 'Study Rooms', count: studyRooms.length }
+                ].map(item => {
+                  const icon = ICONS[item.label] || '📦'
+                  return (
+                    <span key={item.label} className="count-pill" title={`${item.label}: ${item.count}`}>
+                      <span className="pill-icon" aria-hidden>{icon}</span>
+                      <span className="pill-number">{item.count}</span>
+                      <span className="pill-label">{item.label}</span>
+                    </span>
+                  )
+                })}
+              </div>
+              <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
+                <table className="data-table overview-modal-table">
+                  <thead>
+                    <tr>
+                      <th></th>
+                      <th>ID</th>
+                      <th>Title / Name</th>
+                      <th>Type</th>
+                      <th>Available</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {combinedAssets.slice().reverse().slice(0, 200).map((a, i) => {
+                      const id = a.Asset_ID || a.Room_Number || a.Model_Num || `#${i}`
+                      const title = a.Title || a.Room_Number || a.Model_Num || a.Description || '-'
+                      const available = a.Available_Copies ?? a.Available ?? a.Copies ?? '-'
+                      const assetPath = assetTypeToPath(a.__type)
+                      const imgSrc = a.Image_URL ? `${a.Image_URL}?t=${imageRefreshKey}` : getAssetImagePath(assetPath, a.Asset_ID || a.Room_Number || a.Model_Num, 'png')
+                      return (
+                        <tr key={String(id) + i}>
+                          <td style={{ width: 56 }}>
+                            <img src={imgSrc} alt={title} className="overview-modal-thumb" onError={(e) => { e.target.style.display = 'none' }} />
+                          </td>
+                          <td style={{ whiteSpace: 'nowrap' }}>{id}</td>
+                          <td>{title}</td>
+                          <td style={{ whiteSpace: 'nowrap' }}>{a.__type}</td>
+                          <td style={{ textAlign: 'right' }}>{available}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="modal-actions">
+                <button className="close-btn" onClick={() => setOverviewModal(null)}>Close</button>
+              </div>
             </div>
-            <button className="close-btn" onClick={() => setOverviewModal(null)} style={{ marginTop: '18px' }}>Close</button>
           </div>
-        </div>
-      )}
+        )
+      })()}
       {overviewModal === 'students' && (
         <div className="modal-overlay" onClick={() => setOverviewModal(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
-            <h3>All Students</h3>
-            <ul style={{ maxHeight: '320px', overflowY: 'auto', marginBottom: '18px' }}>
-              {students.map(s => (
-                <li key={s.id}><strong>{s.studentId || s.username}</strong>: {s.firstname} {s.lastname} ({mapRoleValueToName(s.role)})</li>
-              ))}
-            </ul>
-            <button className="close-btn" onClick={() => setOverviewModal(null)} style={{ marginTop: '18px' }}>Close</button>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '860px' }}>
+            <h3 style={{ marginTop: 0 }}>All Students</h3>
+            <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
+              <table className="data-table overview-modal-table">
+                <thead>
+                  <tr>
+                    <th>Student ID</th>
+                    <th>First Name</th>
+                    <th>Last Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Phone</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {students.map(s => (
+                    <tr key={s.id}>
+                      <td style={{ whiteSpace: 'nowrap' }}><strong>{s.studentId || s.username || '-'}</strong></td>
+                      <td>{s.firstname || '-'}</td>
+                      <td>{s.lastname || '-'}</td>
+                          <td style={{ color: '#374151' }}>{s.email || '-'}</td>
+                          <td>
+                            <span className={`role-badge role-${mapRoleValueToName(s.role).toLowerCase()}`}>{mapRoleValueToName(s.role)}</span>
+                          </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{s.phone || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="modal-actions">
+              <button className="close-btn" onClick={() => setOverviewModal(null)}>Close</button>
+            </div>
           </div>
         </div>
       )}
       {overviewModal === 'borrowed' && (
         <div className="modal-overlay" onClick={() => setOverviewModal(null)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
-            <h3>Currently Borrowed Items</h3>
-            <ul style={{ maxHeight: '320px', overflowY: 'auto', marginBottom: '18px' }}>
-              {borrowRecords.filter(r => !r.Return_Date).map(r => (
-                <li key={r.Borrow_ID}><strong>{r.Title || r.Item_Title || 'Asset'}</strong> by {r.Borrower_Name} (Due: {formatDateForDisplay(r.Due_Date)})</li>
-              ))}
-            </ul>
-            <button className="close-btn" onClick={() => setOverviewModal(null)} style={{ marginTop: '18px' }}>Close</button>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '900px' }}>
+            <h3 style={{ marginTop: 0 }}>Currently Borrowed Items</h3>
+            <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
+              <table className="data-table overview-modal-table">
+                <thead>
+                  <tr>
+                    <th>Borrow ID</th>
+                    <th>Borrower</th>
+                    <th>Phone</th>
+                    <th>Asset</th>
+                    <th>Type</th>
+                    <th>Due Date</th>
+                    <th>Days Overdue</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {borrowRecords.filter(r => !r.Return_Date).map(r => (
+                    <tr key={r.Borrow_ID}>
+                      <td>{r.Borrow_ID}</td>
+                      <td>{r.Borrower_Name}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>{r.User_Phone || r.UserPhone || '-'}</td>
+                      <td>{r.Title || r.Item_Title || '-'}</td>
+                      <td>{r.Type || r.Asset_Type || '-'}</td>
+                      <td>{formatDateForDisplay(r.Due_Date)}</td>
+                      <td style={{ color: '#dc2626' }}>{r.Days_Overdue || '-'}</td>
+                      <td><span className={`status-badge ${r.Return_Date ? 'returned' : 'borrowed'}`}>{r.Return_Date ? 'Returned' : 'Borrowed'}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="modal-actions">
+              <button className="close-btn" onClick={() => setOverviewModal(null)}>Close</button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Asset Type Breakdown Chart */}
-      <div style={{ marginTop: '32px', background: '#f9fafb', borderRadius: '12px', padding: '24px', maxWidth: '600px' }}>
-        <h3 style={{ marginBottom: '18px' }}>Asset Type Breakdown</h3>
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={[
-            { type: 'Books', count: books.length },
-            { type: 'CDs', count: cds.length },
-            { type: 'Audiobooks', count: audiobooks.length },
-            { type: 'Movies', count: movies.length },
-            { type: 'Technology', count: technology.length },
-            { type: 'Study Rooms', count: studyRooms.length }
-          ]}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="type" />
-            <YAxis allowDecimals={false} />
-            <Tooltip />
-            <Bar dataKey="count" fill="#6366f1" />
-          </BarChart>
-        </ResponsiveContainer>
+      <div className="overview-grid">
+        <div className="overview-panel overview-charts">
+          <h3 style={{ marginBottom: '18px' }}>Asset Type Breakdown</h3>
+          <div style={{ height: 260 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={[
+                { type: 'Books', count: books.length },
+                { type: 'CDs', count: cds.length },
+                { type: 'Audiobooks', count: audiobooks.length },
+                { type: 'Movies', count: movies.length },
+                { type: 'Technology', count: technology.length },
+                { type: 'Study Rooms', count: studyRooms.length }
+              ]}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="type" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#6366f1" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="overview-panel overview-mini">
+          <h3>Quick Actions & Recent</h3>
+          <div>
+            <strong>Recent additions</strong>
+            <ul style={{ marginTop: 8, marginBottom: 0 }}>
+              {[...books, ...cds, ...audiobooks, ...movies, ...technology, ...studyRooms].slice(-6).reverse().map(a => (
+                <li key={a.Asset_ID || a.Room_Number || a.Model_Num} style={{ padding: '6px 0', borderBottom: '1px dashed #f1f5f9' }}>{a.Title || a.Room_Number || a.Model_Num || 'Asset'}</li>
+              ))}
+            </ul>
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <strong>Top borrowers (live)</strong>
+            <ul style={{ marginTop: 8, marginBottom: 0 }}>
+              {borrowRecords.slice(0,6).map(b => (
+                <li key={b.Borrow_ID} style={{ padding: '6px 0', borderBottom: '1px dashed #f1f5f9' }}>{b.Borrower_Name || b.User_Name || 'User'}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
       </div>
     </div>
-  )
+    )
+  }
 
   const renderCellContent = (item, col, rowIndex) => {
     if (col.key === 'rowNum') {
@@ -1397,7 +1569,7 @@ const handleDeleteUser = async () => {
                   <td>{student.firstname || '-'}</td>
                   <td>{student.lastname || '-'}</td>
                   <td>
-                    <span className="status-badge available">{mapRoleValueToName(student.role)}</span>
+                    <span className={`role-badge role-${mapRoleValueToName(student.role).toLowerCase()}`}>{mapRoleValueToName(student.role)}</span>
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     <div className="row-action-group">
@@ -1512,7 +1684,7 @@ const handleDeleteUser = async () => {
         <div className="report-section" style={{ marginBottom: '32px', background: '#f3f4f6', borderRadius: '14px', padding: '32px 28px' }}>
           <h3 style={{ marginBottom: '18px', fontWeight: 700, fontSize: '1.3rem' }}>🛠️ Generate Custom Report</h3>
           <form style={{ display: 'flex', flexWrap: 'wrap', gap: '32px', marginBottom: '18px', alignItems: 'flex-end' }} onSubmit={e => { e.preventDefault(); generateCustomReport(); }}>
-            <div style={{ minWidth: '220px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ minWidth: '320px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <label style={{ fontWeight: 600 }}>Date Range</label>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input type="date" value={customReportFilters.startDate} onChange={e => setCustomReportFilters(f => ({ ...f, startDate: e.target.value }))} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', flex: 1 }} />
@@ -1520,7 +1692,7 @@ const handleDeleteUser = async () => {
                 <input type="date" value={customReportFilters.endDate} onChange={e => setCustomReportFilters(f => ({ ...f, endDate: e.target.value }))} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', flex: 1 }} />
               </div>
             </div>
-            <div style={{ minWidth: '220px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ minWidth: '200px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <label style={{ fontWeight: 600 }}>Asset Type</label>
               <select value={customReportFilters.assetType} onChange={e => setCustomReportFilters(f => ({ ...f, assetType: e.target.value }))} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db' }}>
                 <option value="">All</option>
@@ -1892,7 +2064,7 @@ const handleDeleteUser = async () => {
                   <td>{student.firstname}</td>
                   <td>{student.lastname}</td>
                   <td>
-                    <span className="status-badge available">{mapRoleValueToName(student.role)}</span>
+                    <span className={`role-badge role-${mapRoleValueToName(student.role).toLowerCase()}`}>{mapRoleValueToName(student.role)}</span>
                   </td>
                   <td style={{ textAlign: 'center' }}>
                     <div className="row-action-group">
@@ -1997,76 +2169,68 @@ const handleDeleteUser = async () => {
 
   return (
     <div className="dashboard-container">
-      {/* Admin Navbar */}
-      <nav className="admin-navbar">
-        <div className="admin-navbar-content">
-          <div className="admin-navbar-left">
-            <h2 className="admin-navbar-title">📚 Library Management System</h2>
-          </div>
-          <div className="admin-navbar-right">
-            <button 
-              className="notification-bell" 
-              onClick={() => setShowNotifications(true)}
-              title="View notifications"
+      <div className={`dashboard-layout ${sidebarCollapsed ? 'collapsed' : ''}`}>
+        <aside className="admin-sidebar">
+          <div className="sidebar-top">
+            <button
+              className="sidebar-toggle brand-icon"
+              onClick={() => setSidebarCollapsed(s => !s)}
+              aria-label="Toggle sidebar"
+              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
-              🔔
-              {notificationCount > 0 && (
-                <span className="notification-badge">{notificationCount}</span>
-              )}
+              <span className="toggle-icon">☰</span>
             </button>
-            <span className="admin-navbar-role">Administrator</span>
-            <button className="admin-navbar-logout" onClick={handleLogout}>Logout</button>
           </div>
-        </div>
-      </nav>
 
-      <LoadingOverlay isLoading={loading} message={loading ? 'Processing...' : ''} />
+          <nav className="sidebar-menu">
+            <button className={`sidebar-item ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => changeTab('overview')} title="Overview">
+              <span className="icon">🏠</span>
+              {!sidebarCollapsed && <span className="label">Overview</span>}
+            </button>
 
-      <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
-      
-      <div className="dashboard-content">
-        <div className="dashboard-title-bar">
-          <h1>Admin Dashboard</h1>
-        </div>
+            <button className={`sidebar-item ${activeTab === 'users' ? 'active' : ''}`} onClick={() => changeTab('users')} title="User Management">
+              <span className="icon">👤</span>
+              {!sidebarCollapsed && <span className="label">User Management</span>}
+            </button>
 
-        <div className="tabs-container">
-          <button 
-            className={`tab ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => changeTab('overview')}
-          >
-            🏠 Overview
-          </button>
-          <button 
-            className={`tab ${activeTab === 'users' ? 'active' : ''}`}
-            onClick={() => changeTab('users')}
-          >
-            👤 User Management
-          </button>
-          <button 
-            className={`tab ${activeTab === 'reports' ? 'active' : ''}`}
-            onClick={() => changeTab('reports')}
-          >
-            📊 Reports & Analytics
-          </button>
-          <button 
-            className={`tab ${activeTab === 'students' ? 'active' : ''}`}
-            onClick={() => changeTab('students')}
-          >
-            👥 All Users
-          </button>
-          <button 
-            className={`tab ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => changeTab('settings')}
-          >
-            ⚙️ System Settings
-          </button>
-        </div>
+            <button className={`sidebar-item ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => changeTab('reports')} title="Reports & Analytics">
+              <span className="icon">📊</span>
+              {!sidebarCollapsed && <span className="label">Reports & Analytics</span>}
+            </button>
 
-        {activeTab === 'overview' && renderOverview()}
-        {activeTab === 'users' && renderUserManagement()}
-        {activeTab === 'reports' && renderReports()}
-        {activeTab === 'students' && renderStudents()}
-        {activeTab === 'settings' && renderSystemSettings()}
+            {/* Note: 'All Users' and 'System Settings' intentionally hidden from sidebar */}
+          </nav>
+
+          <div className="sidebar-footer">
+            <div className="sidebar-role">{!sidebarCollapsed && <span className="admin-navbar-role">Administrator</span>}</div>
+            <button className="logout-btn" onClick={handleLogout} title="Logout">
+              <span className="icon">🔒</span>
+              {!sidebarCollapsed && <span className="label">Logout</span>}
+            </button>
+          </div>
+        </aside>
+
+        <main className="admin-main">
+          <LoadingOverlay isLoading={loading} message={loading ? 'Processing...' : ''} />
+          <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
+
+          <div className="page-banner">
+            <div className="banner-content">
+              <h1 className="banner-title">
+                {activeTab === 'overview' ? 'Admin Dashboard' : activeTab === 'users' ? 'User Management' : activeTab === 'reports' ? 'Reports & Analytics' : ''}
+              </h1>
+              <p className="banner-sub">Manage library data, users, and reports</p>
+            </div>
+          </div>
+
+          <div className="dashboard-content">
+            {activeTab === 'overview' && renderOverview()}
+            {activeTab === 'users' && renderUserManagement()}
+            {activeTab === 'reports' && renderReports()}
+            {activeTab === 'students' && renderStudents()}
+            {activeTab === 'settings' && renderSystemSettings()}
+          </div>
+        </main>
       </div>
 
       {/* Asset Modal */}
@@ -2357,22 +2521,11 @@ const handleDeleteUser = async () => {
               {mapRoleValueToName(selectedUser.role) === 'Admin' ? '🛡️' :
                 mapRoleValueToName(selectedUser.role) === 'Librarian' ? '📚' : '🧑‍🎓'}
             </div>
-            <div style={{ flex: 1 }}>
+              <div style={{ flex: 1 }}>
               <h2 style={{ fontWeight: 700, fontSize: '1.7rem', margin: 0 }}>
                 {selectedUser.firstname || '-'} {selectedUser.lastname || '-'}
               </h2>
-              <span className="role-badge" style={{
-                display: 'inline-block',
-                marginTop: '8px',
-                padding: '4px 12px',
-                borderRadius: '12px',
-                background:
-                  mapRoleValueToName(selectedUser.role) === 'Admin' ? '#6366f1' :
-                  mapRoleValueToName(selectedUser.role) === 'Librarian' ? '#10b981' : '#3b82f6',
-                color: '#fff',
-                fontWeight: 600,
-                fontSize: '1rem'
-              }}>{mapRoleValueToName(selectedUser.role)}</span>
+              <span className={`role-badge role-${mapRoleValueToName(selectedUser.role).toLowerCase()}`} style={{ display: 'inline-block', marginTop: '8px', fontSize: '1rem' }}>{mapRoleValueToName(selectedUser.role)}</span>
             </div>
             <button className="close-btn" onClick={() => setShowViewUserModal(false)} title="Close" style={{ fontSize: '1.5rem', marginLeft: '8px' }}>✕</button>
           </div>
@@ -2575,19 +2728,9 @@ const handleDeleteUser = async () => {
           </div>
           <div className="user-modal-actions" style={{ marginTop: '32px', display: 'flex', justifyContent: 'flex-end', gap: '16px' }}>
             <button
-              className="edit-btn"
+              className={`edit-btn role-btn role-${mapRoleValueToName(selectedUser.role).toLowerCase()}`}
               onClick={() => {
                 openEditUserModal(selectedUser);
-              }}
-              style={{
-                padding: '10px 24px',
-                fontSize: '1rem',
-                borderRadius: '8px',
-                background:
-                  mapRoleValueToName(selectedUser.role) === 'Admin' ? '#6366f1' :
-                  mapRoleValueToName(selectedUser.role) === 'Librarian' ? '#10b981' : '#3b82f6',
-                color: '#fff',
-                fontWeight: 600
               }}
             >
               Edit User
