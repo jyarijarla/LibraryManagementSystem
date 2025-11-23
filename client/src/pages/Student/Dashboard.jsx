@@ -306,7 +306,6 @@ const StudentSidebar = ({ sidebarOpen, setSidebarOpen, onLogout }) => (
 )
 
 const StudentTopbar = ({ sidebarOpen, setSidebarOpen }) => {
-    const [searchValue, setSearchValue] = useState('')
     const navigate = useNavigate()
 
     const user = JSON.parse(localStorage.getItem('user') || '{}')
@@ -318,19 +317,10 @@ const StudentTopbar = ({ sidebarOpen, setSidebarOpen }) => {
                     {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
                 </button>
                 <div>
-                    <p>Welcome back, {user.First_Name || 'Student'} 👋</p>
+                    <p>Welcome back, {user.First_Name || 'Student'}</p>
                 </div>
             </div>
             <div className="student-topbar-right">
-                <div className="student-search">
-                    <Search size={18} />
-                    <input
-                        type="text"
-                        placeholder="Search..."
-                        value={searchValue}
-                        onChange={(event) => setSearchValue(event.target.value)}
-                    />
-                </div>
                 <button className="student-icon-button">
                     <Bell size={20} />
                     <span className="student-indicator" />

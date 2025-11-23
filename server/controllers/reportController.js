@@ -1153,7 +1153,58 @@ const getRoomReportMetadata = async (req, res) => {
     res.end(JSON.stringify({ error: 'Failed to fetch room metadata', details: error.message }));
   }
 };
-
+const getUserHistory = async (req, res) => {
+  await db.promise().query(
+    `SELECT Borrow_ID AS id,
+      Borrower_ID AS user_id,
+      Rentable_ID AS asset_id,
+      Borrow_Date AS start_date,
+      Return_Date AS end_date,
+      'borrow' AS type,
+      Due_Date AS due_or_expire,
+      CASE 
+        WHEN Return_Date IS NOT NULL THEN 'returned'
+        WHEN Return_Date IS NULL AND CURDATE() > Due_Date THEN 'overdue'
+        ELSE 'active'
+      END AS status
+    FROM borrow
+    WHERE Borrower_ID = ?
+    UNION ALL
+    SELECT Hold_ID AS id,
+      Holder_ID AS user_id,
+      Rentable_ID AS asset_id,
+      Hold_Date AS start_date,
+      COALESCE(Canceled_At, Expired_At) AS end_date,
+      'hold' AS type,
+      Hold_Expires AS due_or_expire,
+      CASE 
+        WHEN Canceled_At IS NOT NULL THEN 'canceled'
+        WHEN Expired_At IS NOT NULL THEN 'expired'
+        WHEN Fulfilling_Borrow_ID IS NOT NULL THEN 'fulfilled'
+        ELSE 'active'
+    END AS status
+    FROM hold
+    WHERE Holder_ID = ?
+    UNION ALL
+    SELECT Waitlist_ID AS id,
+      Waitlister_ID AS user_id,
+      Asset_ID AS asset_id,
+      Waitlist_Date AS start_date,
+      Canceled_At AS end_date,
+      'waitlist' AS type,
+      NULL AS due_or_expire,
+      CASE 
+        WHEN Canceled_At IS NOT NULL THEN 'canceled'
+        WHEN Fulfilling_Hold_ID IS NOT NULL THEN 'fulfilled'
+        ELSE 'active'
+      END AS status
+    FROM waitlist
+    WHERE Waitlister_ID = ?
+    ORDER BY 
+      (status = 'active') DESC,
+      COALESCE(end_date, start_date) DESC;`
+  )
+}
 module.exports = {
   getMostBorrowedAssets,
   getActiveBorrowers,
