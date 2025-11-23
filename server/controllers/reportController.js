@@ -973,38 +973,38 @@ const getLibrarianRoomBookings = (req, res) => {
   const capacityMaxNumber = capacityMax !== undefined && capacityMax !== '' ? Number(capacityMax) : null;
 
   let query = `
-SELECT
-br.Borrow_ID AS Booking_ID,
-  br.Borrow_Date,
-  br.Due_Date,
-  br.Return_Date,
-  DATE(br.Borrow_Date) AS Booking_Date,
-    TIME(br.Borrow_Date) AS Start_Time,
-      TIME(br.Return_Date) AS Actual_End_Time,
-        sr.Room_Number,
-        sr.Capacity,
-        CONCAT(member.First_Name, ' ', IFNULL(member.Last_Name, '')) AS Member_Name,
-          member.User_ID AS Member_ID,
-            rt.role_name AS Member_Role,
-              CONCAT(staff.First_Name, ' ', IFNULL(staff.Last_Name, '')) AS Approved_By,
-                br.Processed_By AS Approved_By_ID,
-                  CASE
-        WHEN br.Return_Date IS NOT NULL THEN 'Completed'
-        WHEN br.Due_Date < CURDATE() THEN 'Overdue'
-        WHEN DATE(br.Borrow_Date) > CURDATE() THEN 'Upcoming'
-        ELSE 'Active'
-      END AS Booking_Status,
-  DATEDIFF(br.Due_Date, DATE(br.Borrow_Date)) + 1 AS Duration_Days,
-    TIMESTAMPDIFF(HOUR, br.Borrow_Date, COALESCE(br.Return_Date, CONCAT(br.Due_Date, ' 23:59:59'))) AS Duration_Hours,
-      br.Borrow_Date AS Created_At
-    FROM borrow br
-    INNER JOIN rentable r ON br.Rentable_ID = r.Rentable_ID
-    INNER JOIN asset a ON r.Asset_ID = a.Asset_ID
-    INNER JOIN study_room sr ON a.Asset_ID = sr.Asset_ID
-    INNER JOIN user member ON br.Borrower_ID = member.User_ID
-    LEFT JOIN role_type rt ON member.Role = rt.role_id
-    LEFT JOIN user staff ON br.Processed_By = staff.User_ID
-    WHERE 1 = 1
+  SELECT
+  br.Borrow_ID AS Booking_ID,
+    br.Borrow_Date,
+    br.Due_Date,
+    br.Return_Date,
+    DATE(br.Borrow_Date) AS Booking_Date,
+      TIME(br.Borrow_Date) AS Start_Time,
+        TIME(br.Return_Date) AS Actual_End_Time,
+          sr.Room_Number,
+          sr.Capacity,
+          CONCAT(member.First_Name, ' ', IFNULL(member.Last_Name, '')) AS Member_Name,
+            member.User_ID AS Member_ID,
+              rt.role_name AS Member_Role,
+                CONCAT(staff.First_Name, ' ', IFNULL(staff.Last_Name, '')) AS Approved_By,
+                  br.Processed_By AS Approved_By_ID,
+                    CASE
+          WHEN br.Return_Date IS NOT NULL THEN 'Completed'
+          WHEN br.Due_Date < CURDATE() THEN 'Overdue'
+          WHEN DATE(br.Borrow_Date) > CURDATE() THEN 'Upcoming'
+          ELSE 'Active'
+        END AS Booking_Status,
+    DATEDIFF(br.Due_Date, DATE(br.Borrow_Date)) + 1 AS Duration_Days,
+      TIMESTAMPDIFF(HOUR, br.Borrow_Date, COALESCE(br.Return_Date, CONCAT(br.Due_Date, ' 23:59:59'))) AS Duration_Hours,
+        br.Borrow_Date AS Created_At
+      FROM borrow br
+      INNER JOIN rentable r ON br.Rentable_ID = r.Rentable_ID
+      INNER JOIN asset a ON r.Asset_ID = a.Asset_ID
+      INNER JOIN study_room sr ON a.Asset_ID = sr.Asset_ID
+      INNER JOIN user member ON br.Borrower_ID = member.User_ID
+      LEFT JOIN role_type rt ON member.Role = rt.role_id
+      LEFT JOIN user staff ON br.Processed_By = staff.User_ID
+      WHERE 1 = 1
   `;
 
   const params = [];
@@ -1115,11 +1115,12 @@ br.Borrow_ID AS Booking_ID,
       res.end(JSON.stringify({ error: 'Failed to fetch room bookings', details: err.message }));
       return;
     }
+    // Success case: send results back
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify(results));
+    res.end(JSON.stringify({ bookings: results }));
   });
-};
+  }
 // Study room metadata (numbers, capacities, member roles)
 const getRoomReportMetadata = async (req, res) => {
   const runQuery = (sql, params = []) => new Promise((resolve, reject) => {
