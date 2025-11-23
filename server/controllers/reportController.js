@@ -87,14 +87,6 @@ const getActiveBorrowers = (req, res) => {
 // Report 3: Overdue Items
 const getOverdueItems = async (req, res) => {
   try {
-    // Get fine config
-    const [rate, maxDaysVal] = await Promise.all([
-      getConfigValue('FINE_RATE_PER_DAY'),
-      getConfigValue('FINE_MAX_DAYS')
-    ]);
-    const fineRate = parseFloat(rate || 1.00);
-    const maxDays = parseInt(maxDaysVal || 30);
-
     const query = `
       SELECT 
         br.Borrow_ID,
@@ -112,9 +104,10 @@ const getOverdueItems = async (req, res) => {
           WHEN DATEDIFF(CURDATE(), br.Due_Date) <= 14 THEN 'Urgent'
           ELSE 'Critical'
         END AS Severity,
-        COALESCE(br.Fee_Incurred, ROUND(LEAST(DATEDIFF(CURDATE(), br.Due_Date), ?) * ?, 2)) AS Estimated_Late_Fee
+        COALESCE(f.Amount_Due, 0) AS Estimated_Late_Fee
       FROM borrow br
       INNER JOIN user u ON br.Borrower_ID = u.User_ID
+      LEFT JOIN fine f ON br.Borrow_ID = f.Borrow_ID
       LEFT JOIN rentable r ON br.Rentable_ID = r.Rentable_ID
       LEFT JOIN asset a ON r.Asset_ID = a.Asset_ID
       LEFT JOIN book b ON a.Asset_ID = b.Asset_ID
@@ -123,7 +116,7 @@ const getOverdueItems = async (req, res) => {
       ORDER BY Days_Overdue DESC
     `;
 
-    db.query(query, [maxDays, fineRate], (err, results) => {
+    db.query(query, (err, results) => {
       if (err) {
         console.error('Error fetching overdue items:', err);
         res.statusCode = 500;
@@ -149,16 +142,15 @@ const getInventorySummary = (req, res) => {
   const query = `
     SELECT 
       'Book' AS Asset_Type,
-      COUNT(DISTINCT r.Rentable_ID) AS Unique_Items,
-      SUM(r.Num_Copies) AS Total_Copies,
-      SUM(r.Num_Available) AS Total_Available,
-      SUM(r.Num_Copies - r.Num_Available) AS Currently_Borrowed,
-      ROUND((SUM(r.Num_Copies - r.Num_Available) / NULLIF(SUM(r.Num_Copies), 0)) * 100, 2) AS Utilization_Percentage
+      COUNT(DISTINCT b.Asset_ID) AS Unique_Items,
+      COUNT(r.Rentable_ID) AS Total_Copies,
+      SUM(CASE WHEN r.Availability = 1 THEN 1 ELSE 0 END) AS Total_Available,
+      SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) AS Currently_Borrowed,
+      ROUND((SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(r.Rentable_ID), 0)) * 100, 2) AS Utilization_Percentage
     FROM rentable r
-    LEFT JOIN asset a ON r.Asset_ID = a.Asset_ID
-    LEFT JOIN book b ON a.Asset_ID = b.Asset_ID
-    WHERE b.Asset_ID IS NOT NULL
-    ORDER BY Total_Copies DESC
+    JOIN asset a ON r.Asset_ID = a.Asset_ID
+    JOIN book b ON a.Asset_ID = b.Asset_ID
+    GROUP BY Asset_Type
   `;
 
   db.query(query, (err, results) => {
@@ -167,6 +159,33 @@ const getInventorySummary = (req, res) => {
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ error: 'Failed to fetch inventory summary', details: err.message }));
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(results));
+  });
+};
+
+// Report 5: Borrowing Trends (Last 6 Months)
+const getBorrowingTrends = (req, res) => {
+  const query = `
+    SELECT 
+      DATE_FORMAT(Borrow_Date, '%b') as name,
+      MONTH(Borrow_Date) as month_num,
+      COUNT(*) as borrows
+    FROM borrow
+    WHERE Borrow_Date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+    GROUP BY DATE_FORMAT(Borrow_Date, '%b'), MONTH(Borrow_Date)
+    ORDER BY MONTH(Borrow_Date) ASC
+  `;
+
+  db.query(query, (err, results) => {
+    if (err) {
+      console.error('Error fetching borrowing trends:', err);
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Failed to fetch borrowing trends', details: err.message }));
       return;
     }
     res.statusCode = 200;
@@ -205,30 +224,30 @@ const getLibrarianSummary = async (req, res) => {
         COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? THEN 1 END) AS assets_issued_total,
         COUNT(CASE WHEN br.Return_Date BETWEEN ? AND ? THEN 1 END) AS assets_returned_total,
         COUNT(CASE WHEN br.Renew_Date BETWEEN ? AND ? THEN 1 END) AS renewals,
+        
         COALESCE(SUM(CASE 
           WHEN br.Return_Date BETWEEN ? AND ? AND br.Return_Date > br.Due_Date
-          THEN (LEAST(DATEDIFF(br.Return_Date, br.Due_Date), ?) * ?) - COALESCE(br.Fee_Incurred, 0)
+          THEN (LEAST(DATEDIFF(br.Return_Date, br.Due_Date), ?) * ?) - COALESCE(f.Amount_Due, 0)
           ELSE 0 
         END), 0) AS fines_collected,
-        (SELECT COALESCE(SUM(CASE 
-          WHEN b.Return_Date IS NULL AND b.Due_Date < CURDATE() 
-          THEN (LEAST(DATEDIFF(CURDATE(), b.Due_Date), ?) * ?) - COALESCE(b.Fee_Incurred, 0)
-          WHEN b.Return_Date IS NOT NULL AND b.Fee_Incurred > 0 
-          THEN b.Fee_Incurred
-          ELSE 0 
-        END), 0)
-         FROM borrow b
-         WHERE (b.Processed_By = ? OR b.Processed_By IS NULL)) AS fines_unpaid,
+        
+         (SELECT COALESCE(SUM(f2.Amount_Due), 0)
+          FROM fine f2
+          JOIN borrow b2 ON f2.Borrow_ID = b2.Borrow_ID
+          WHERE f2.Paid = 0) AS fines_unpaid,
+         
         (SELECT COUNT(*) 
          FROM borrow b3 
          WHERE b3.Return_Date IS NULL 
          AND b3.Due_Date < CURDATE()
          AND (b3.Processed_By = ? OR b3.Processed_By IS NULL)) AS overdue_books,
+         
         (SELECT COUNT(*) 
          FROM borrow b2 
          WHERE b2.Return_Date IS NULL 
          AND b2.Borrow_Date <= ?
          AND (b2.Processed_By = ? OR b2.Processed_By IS NULL)) AS active_loans,
+         
         COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND bk.Asset_ID IS NOT NULL THEN 1 END) AS books_issued,
         COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND cd.Asset_ID IS NOT NULL THEN 1 END) AS cds_issued,
         COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND ab.Asset_ID IS NOT NULL THEN 1 END) AS audiobooks_issued,
@@ -236,6 +255,7 @@ const getLibrarianSummary = async (req, res) => {
         COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND t.Asset_ID IS NOT NULL THEN 1 END) AS technology_issued,
         COUNT(CASE WHEN br.Borrow_Date BETWEEN ? AND ? AND sr.Asset_ID IS NOT NULL THEN 1 END) AS study_rooms_issued
       FROM borrow br
+      LEFT JOIN fine f ON br.Borrow_ID = f.Borrow_ID
       JOIN rentable r ON br.Rentable_ID = r.Rentable_ID
       LEFT JOIN book bk ON r.Asset_ID = bk.Asset_ID
       LEFT JOIN cd ON r.Asset_ID = cd.Asset_ID
@@ -258,7 +278,7 @@ const getLibrarianSummary = async (req, res) => {
         from, to,               // returned window
         from, to,               // renewals window
         from, to, maxDays, fineRate,     // fines collected window + rate
-        maxDays, fineRate, librarianId,  // fines_unpaid subquery rate + librarian
+        // librarianId,            // fines_unpaid subquery librarian (REMOVED)
         librarianId,            // overdue_books subquery librarian
         to, librarianId,        // active_loans subquery + librarian
         from, to,               // books issued window
@@ -314,14 +334,6 @@ const getLibrarianTransactions = async (req, res) => {
   } = req.query;
 
   try {
-    // Get fine config
-    const [rate, maxDaysVal] = await Promise.all([
-      getConfigValue('FINE_RATE_PER_DAY'),
-      getConfigValue('FINE_MAX_DAYS')
-    ]);
-    const fineRate = parseFloat(rate || 1.00);
-    const maxDays = parseInt(maxDaysVal || 30);
-
     // Parse comma-separated arrays
     const actionArray = actions ? actions.split(',').filter(a => a) : [];
     const fineStatusArray = fineStatuses ? fineStatuses.split(',').filter(f => f) : [];
@@ -358,11 +370,10 @@ const getLibrarianTransactions = async (req, res) => {
           WHEN br.Due_Date < CURDATE() AND br.Return_Date IS NULL THEN 'Overdue'
           ELSE 'Active Loan'
         END AS status,
-        COALESCE(br.Fee_Incurred, 0) AS Fee_Incurred,
+        COALESCE(f.Amount_Due, 0) AS Fee_Incurred,
         CASE 
-          WHEN br.Return_Date IS NOT NULL AND br.Fee_Incurred > 0 THEN 'Unpaid'
-          WHEN br.Return_Date IS NOT NULL AND br.Fee_Incurred = 0 AND DATEDIFF(br.Return_Date, br.Due_Date) > 0 THEN 'Paid'
-          WHEN br.Return_Date IS NULL AND br.Due_Date < CURDATE() THEN 'Unpaid'
+          WHEN f.Paid = 1 THEN 'Paid'
+          WHEN f.Amount_Due > 0 THEN 'Unpaid'
           ELSE 'None'
         END AS fine_status,
         CASE
@@ -370,14 +381,11 @@ const getLibrarianTransactions = async (req, res) => {
           WHEN br.Renew_Date IS NOT NULL THEN 'Renewed'
           ELSE 'Issued'
         END AS action,
-        CASE
-          WHEN br.Return_Date IS NOT NULL THEN COALESCE(br.Fee_Incurred, 0)
-          WHEN br.Due_Date < CURDATE() AND br.Return_Date IS NULL THEN LEAST(DATEDIFF(CURDATE(), br.Due_Date), ?) * ?
-          ELSE 0
-        END AS Fine_Amount,
+        COALESCE(f.Amount_Due, 0) AS Fine_Amount,
         br.Processed_By
       FROM borrow br
       INNER JOIN user u ON br.Borrower_ID = u.User_ID
+      LEFT JOIN fine f ON br.Borrow_ID = f.Borrow_ID
       LEFT JOIN rentable r ON br.Rentable_ID = r.Rentable_ID
       LEFT JOIN asset a ON r.Asset_ID = a.Asset_ID
       LEFT JOIN book b ON a.Asset_ID = b.Asset_ID
@@ -389,7 +397,7 @@ const getLibrarianTransactions = async (req, res) => {
       WHERE 1=1
     `;
 
-    const params = [maxDays, fineRate];
+    const params = [];
 
     // Staff ID Filter
     if (staffId) {
@@ -453,9 +461,9 @@ const getLibrarianTransactions = async (req, res) => {
       const fineConditions = [];
       fineStatusArray.forEach(status => {
         if (status === 'paid') {
-          fineConditions.push('(br.Return_Date IS NOT NULL AND br.Fee_Incurred = 0 AND DATEDIFF(br.Return_Date, br.Due_Date) > 0)');
+          fineConditions.push('(f.Paid = 1)');
         } else if (status === 'unpaid') {
-          fineConditions.push('((br.Return_Date IS NOT NULL AND br.Fee_Incurred > 0) OR (br.Return_Date IS NULL AND br.Due_Date < CURDATE()))');
+          fineConditions.push('(f.Paid = 0 AND f.Amount_Due > 0)');
         }
       });
       if (fineConditions.length > 0) {
@@ -466,35 +474,25 @@ const getLibrarianTransactions = async (req, res) => {
     // Fine status filter - paid or unpaid (legacy single select)
     if (fineStatus) {
       if (fineStatus === 'paid') {
-        query += ` AND br.Return_Date IS NOT NULL AND br.Fee_Incurred = 0 AND DATEDIFF(br.Return_Date, br.Due_Date) > 0`;
+        query += ` AND f.Paid = 1`;
       } else if (fineStatus === 'unpaid') {
-        query += ` AND((br.Return_Date IS NOT NULL AND br.Fee_Incurred > 0) OR(br.Return_Date IS NULL AND br.Due_Date < CURDATE()))`;
+        query += ` AND f.Paid = 0 AND f.Amount_Due > 0`;
       } else if (fineStatus === 'hasFine') {
-        query += ` AND((br.Return_Date IS NOT NULL AND COALESCE(br.Fee_Incurred, 0) > 0) OR(br.Return_Date IS NULL AND br.Due_Date < CURDATE()))`;
+        query += ` AND f.Amount_Due > 0`;
       } else if (fineStatus === 'noFine') {
-        query += ` AND((br.Return_Date IS NOT NULL AND(br.Fee_Incurred IS NULL OR br.Fee_Incurred = 0)) OR(br.Return_Date IS NULL AND br.Due_Date >= CURDATE()))`;
+        query += ` AND (f.Amount_Due IS NULL OR f.Amount_Due = 0)`;
       }
     }
 
     // Fine Amount Range Filter
     if (fineMin !== undefined || fineMax !== undefined) {
-      // Calculate fine amount logic again for filtering
-      const fineCalc = `
-CASE
-          WHEN br.Return_Date IS NOT NULL THEN COALESCE(br.Fee_Incurred, 0)
-          WHEN br.Due_Date < CURDATE() AND br.Return_Date IS NULL THEN LEAST(DATEDIFF(CURDATE(), br.Due_Date), ?) * ?
-  ELSE 0
-END
-      `;
-      // We need to inject the fine rate parameter for each usage of fineCalc
-
       if (fineMin !== undefined) {
-        query += ` AND(${fineCalc}) >= ? `;
-        params.push(maxDays, fineRate, fineMin);
+        query += ` AND f.Amount_Due >= ? `;
+        params.push(fineMin);
       }
       if (fineMax !== undefined) {
-        query += ` AND(${fineCalc}) <= ? `;
-        params.push(maxDays, fineRate, fineMax);
+        query += ` AND f.Amount_Due <= ? `;
+        params.push(fineMax);
       }
     }
 
@@ -612,14 +610,6 @@ const getLibrarianDailyActivity = async (req, res) => {
   }
 
   try {
-    // Get fine config
-    const [rate, maxDaysVal] = await Promise.all([
-      getConfigValue('FINE_RATE_PER_DAY'),
-      getConfigValue('FINE_MAX_DAYS')
-    ]);
-    const fineRate = parseFloat(rate || 1.00);
-    const maxDays = parseInt(maxDaysVal || 30);
-
     // Parse comma-separated arrays
     const actionArray = actions ? actions.split(',').filter(a => a) : [];
     const fineStatusArray = fineStatuses ? fineStatuses.split(',').filter(f => f) : [];
@@ -667,6 +657,7 @@ DATE(br.Borrow_Date) AS date,
   ${selectColumns.join(', ')}
       FROM borrow br
       LEFT JOIN user u ON br.Borrower_ID = u.User_ID
+      LEFT JOIN fine f ON br.Borrow_ID = f.Borrow_ID
       LEFT JOIN rentable r ON br.Rentable_ID = r.Rentable_ID
       LEFT JOIN asset a ON r.Asset_ID = a.Asset_ID
       LEFT JOIN book b ON a.Asset_ID = b.Asset_ID
@@ -745,9 +736,9 @@ DATE(br.Borrow_Date) AS date,
       const fineConditions = [];
       fineStatusArray.forEach(status => {
         if (status === 'paid') {
-          fineConditions.push('(br.Return_Date IS NOT NULL AND br.Fee_Incurred = 0 AND DATEDIFF(br.Return_Date, br.Due_Date) > 0)');
+          fineConditions.push('(f.Paid = 1)');
         } else if (status === 'unpaid') {
-          fineConditions.push('((br.Return_Date IS NOT NULL AND br.Fee_Incurred > 0) OR (br.Return_Date IS NULL AND br.Due_Date < CURDATE()))');
+          fineConditions.push('(f.Paid = 0 AND f.Amount_Due > 0)');
         }
       });
       if (fineConditions.length > 0) {
@@ -757,27 +748,19 @@ DATE(br.Borrow_Date) AS date,
 
     // Fine Amount Range Filter
     if (fineMin !== undefined || fineMax !== undefined) {
-      // Calculate fine amount logic again for filtering
-      const fineCalc = `
-CASE
-          WHEN br.Return_Date IS NOT NULL THEN COALESCE(br.Fee_Incurred, 0)
-          WHEN br.Due_Date < CURDATE() AND br.Return_Date IS NULL THEN LEAST(DATEDIFF(CURDATE(), br.Due_Date), ?) * ?
-  ELSE 0
-END
-      `;
-
       if (fineMin !== undefined) {
-        query += ` AND(${fineCalc}) >= ? `;
-        params.push(maxDays, fineRate, fineMin);
+        query += ` AND f.Amount_Due >= ? `;
+        params.push(fineMin);
       }
       if (fineMax !== undefined) {
-        query += ` AND(${fineCalc}) <= ? `;
-        params.push(maxDays, fineRate, fineMax);
+        query += ` AND f.Amount_Due <= ? `;
+        params.push(fineMax);
       }
     }
 
     // Overdue Bucket Filter
     if (overdueBucket) {
+      // 1-7, 8-30, 30+
       if (overdueBucket === '1-7') {
         query += ` AND(br.Return_Date IS NULL AND DATEDIFF(CURDATE(), br.Due_Date) BETWEEN 1 AND 7)`;
       } else if (overdueBucket === '8-30') {
@@ -793,30 +776,30 @@ END
       params.push(roomId);
     }
 
-    // Member name filter
+    // Member name filter - multiple selections
     if (memberNameArray.length > 0) {
       const memberConditions = memberNameArray.map(() => `CONCAT(u.First_Name, ' ', IFNULL(u.Last_Name, '')) = ? `);
       query += ` AND(${memberConditions.join(' OR ')})`;
       params.push(...memberNameArray);
     }
 
-    // Asset title filter
+    // Asset title filter - multiple selections
     if (assetTitleArray.length > 0) {
       const titleConditions = assetTitleArray.map(() => `(
   b.Title = ? OR 
-        cd.Title = ? OR 
-        ab.Title = ? OR 
-        mv.Title = ? OR
-        CONCAT('Tech: ', t.Model_Num) = ? OR
-        CONCAT('Room ', sr.Room_Number) = ?
-      )`);
+      cd.Title = ? OR 
+      ab.Title = ? OR 
+      mv.Title = ? OR
+      CONCAT('Tech: ', t.Model_Num) = ? OR
+      CONCAT('Room ', sr.Room_Number) = ?
+    )`);
       query += ` AND(${titleConditions.join(' OR ')})`;
       assetTitleArray.forEach(title => {
         params.push(title, title, title, title, title, title);
       });
     }
 
-    // Asset type filter
+    // Asset type filter - multiple selections
     if (assetTypeArray.length > 0) {
       const typeConditions = [];
       assetTypeArray.forEach(type => {
@@ -839,11 +822,14 @@ END
       }
     }
 
-    query += ` GROUP BY DATE(br.Borrow_Date) ORDER BY date ASC`;
+    query += `
+      GROUP BY DATE(br.Borrow_Date)
+      ORDER BY DATE(br.Borrow_Date) ASC
+    `;
 
     db.query(query, params, (err, results) => {
       if (err) {
-        console.error('Error fetching daily activity:', err);
+        console.error('Error fetching librarian daily activity:', err);
         res.statusCode = 500;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ error: 'Failed to fetch daily activity', details: err.message }));
@@ -861,28 +847,83 @@ END
   }
 };
 
-// Get list of member names for autocomplete
-const getLibrarianMembers = (req, res) => {
-  const librarianId = req.params.id;
+// Librarian Report: Room Bookings
+const getLibrarianRoomBookings = (req, res) => {
+  const { from, to, roomId } = req.query;
 
-  const query = `
-    SELECT DISTINCT
-u.User_ID,
-  CONCAT(u.First_Name, ' ', IFNULL(u.Last_Name, '')) AS member_name,
-    u.User_Email,
-    CASE 
-        WHEN u.Role = 1 THEN 'Student'
-        WHEN u.Role = 2 THEN 'Admin'
-        WHEN u.Role = 3 THEN 'Librarian'
-        ELSE 'Unknown'
-      END AS role
-    FROM user u
-    WHERE u.Role = 1
-    ORDER BY member_name ASC
-    LIMIT 200
+  let query = `
+    SELECT 
+      br.Borrow_ID,
+      br.Borrow_Date as Start_Time,
+      br.Return_Date as End_Time,
+      sr.Room_Number,
+      CONCAT(u.First_Name, ' ', IFNULL(u.Last_Name, '')) AS Member_Name,
+      u.User_Email,
+      br.Processed_By
+    FROM borrow br
+    JOIN rentable r ON br.Rentable_ID = r.Rentable_ID
+    JOIN study_room sr ON r.Asset_ID = sr.Asset_ID
+    JOIN user u ON br.Borrower_ID = u.User_ID
+    WHERE 1=1
   `;
 
-  db.query(query, [], (err, results) => {
+  const params = [];
+
+  if (from && to) {
+    query += ` AND br.Borrow_Date BETWEEN ? AND ?`;
+    params.push(from, to);
+  }
+
+  if (roomId) {
+    query += ` AND sr.Room_Number = ?`;
+    params.push(roomId);
+  }
+
+  query += ` ORDER BY br.Borrow_Date DESC`;
+
+  db.query(query, params, (err, results) => {
+    if (err) {
+      console.error('Error fetching room bookings:', err);
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Failed to fetch room bookings' }));
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(results));
+  });
+};
+
+// Librarian Report: Room Metadata
+const getRoomReportMetadata = (req, res) => {
+  const query = `SELECT DISTINCT Room_Number FROM study_room ORDER BY Room_Number`;
+
+  db.query(query, (err, results) => {
+    if (err) {
+      console.error('Error fetching room metadata:', err);
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Failed to fetch room metadata' }));
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ rooms: results.map(r => r.Room_Number) }));
+  });
+};
+
+// Librarian Report: Members Autocomplete
+const getLibrarianMembers = (req, res) => {
+  const query = `
+    SELECT DISTINCT 
+      CONCAT(First_Name, ' ', IFNULL(Last_Name, '')) as name 
+    FROM user 
+    WHERE Role = 1 
+    ORDER BY name
+  `;
+
+  db.query(query, (err, results) => {
     if (err) {
       console.error('Error fetching members:', err);
       res.statusCode = 500;
@@ -892,266 +933,36 @@ u.User_ID,
     }
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify(results));
+    res.end(JSON.stringify(results.map(r => r.name)));
   });
 };
 
-// Get list of book titles for autocomplete
+// Librarian Report: Books Autocomplete (and other assets)
 const getLibrarianBooks = (req, res) => {
-  const librarianId = req.params.id;
-
   const query = `
-    SELECT DISTINCT
-a.Asset_ID,
-  COALESCE(b.Title, cd.Title, ab.Title, mv.Title, CONCAT('Tech: ', t.Model_Num), CONCAT('Room ', sr.Room_Number), 'Unknown') AS book_title,
-    CASE
-        WHEN b.Asset_ID IS NOT NULL THEN 'Book'
-        WHEN cd.Asset_ID IS NOT NULL THEN 'CD'
-        WHEN ab.Asset_ID IS NOT NULL THEN 'Audiobook'
-        WHEN mv.Asset_ID IS NOT NULL THEN 'Movie'
-        WHEN t.Asset_ID IS NOT NULL THEN 'Technology'
-        WHEN sr.Asset_ID IS NOT NULL THEN 'Study Room'
-        ELSE 'Other'
-      END AS asset_type
-    FROM borrow br
-    LEFT JOIN rentable r ON br.Rentable_ID = r.Rentable_ID
-    LEFT JOIN asset a ON r.Asset_ID = a.Asset_ID
-    LEFT JOIN book b ON a.Asset_ID = b.Asset_ID
-    LEFT JOIN cd ON a.Asset_ID = cd.Asset_ID
-    LEFT JOIN audiobook ab ON a.Asset_ID = ab.Asset_ID
-    LEFT JOIN movie mv ON a.Asset_ID = mv.Asset_ID
-    LEFT JOIN technology t ON a.Asset_ID = t.Asset_ID
-    LEFT JOIN study_room sr ON a.Asset_ID = sr.Asset_ID
-WHERE(br.Processed_By = ? OR br.Processed_By IS NULL)
-    ORDER BY book_title ASC
-    LIMIT 100
+    SELECT Title FROM book
+    UNION
+    SELECT Title FROM cd
+    UNION
+    SELECT Title FROM audiobook
+    UNION
+    SELECT Title FROM movie
+    ORDER BY Title
+    LIMIT 1000
   `;
 
-  db.query(query, [librarianId], (err, results) => {
+  db.query(query, (err, results) => {
     if (err) {
-      console.error('Error fetching books:', err);
+      console.error('Error fetching asset titles:', err);
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ error: 'Failed to fetch books' }));
+      res.end(JSON.stringify({ error: 'Failed to fetch asset titles' }));
       return;
     }
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify(results));
+    res.end(JSON.stringify(results.map(r => r.Title)));
   });
-};
-// Study room bookings list for report tab
-const getLibrarianRoomBookings = (req, res) => {
-  const librarianId = req.params.id;
-  const {
-    from,
-    to,
-    status,
-    rooms,
-    memberNames,
-    memberTypes,
-    memberSearch,
-    capacityMin,
-    capacityMax,
-    durationBucket,
-    timeOfDay,
-    staffId
-  } = req.query;
-
-  if (!from || !to) {
-    res.statusCode = 400;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: 'Missing required parameters: from and to dates are required' }));
-    return;
-  }
-
-  const statusArray = status ? status.split(',').filter(Boolean) : [];
-  const roomArray = rooms ? rooms.split(',').filter(Boolean) : [];
-  const memberNameArray = memberNames ? memberNames.split(',').filter(Boolean) : [];
-  const memberTypeArray = memberTypes ? memberTypes.split(',').filter(Boolean) : [];
-  const capacityMinNumber = capacityMin !== undefined && capacityMin !== '' ? Number(capacityMin) : null;
-  const capacityMaxNumber = capacityMax !== undefined && capacityMax !== '' ? Number(capacityMax) : null;
-
-  let query = `
-  SELECT
-  br.Borrow_ID AS Booking_ID,
-    br.Borrow_Date,
-    br.Due_Date,
-    br.Return_Date,
-    DATE(br.Borrow_Date) AS Booking_Date,
-      TIME(br.Borrow_Date) AS Start_Time,
-        TIME(br.Return_Date) AS Actual_End_Time,
-          sr.Room_Number,
-          sr.Capacity,
-          CONCAT(member.First_Name, ' ', IFNULL(member.Last_Name, '')) AS Member_Name,
-            member.User_ID AS Member_ID,
-              rt.role_name AS Member_Role,
-                CONCAT(staff.First_Name, ' ', IFNULL(staff.Last_Name, '')) AS Approved_By,
-                  br.Processed_By AS Approved_By_ID,
-                    CASE
-          WHEN br.Return_Date IS NOT NULL THEN 'Completed'
-          WHEN br.Due_Date < CURDATE() THEN 'Overdue'
-          WHEN DATE(br.Borrow_Date) > CURDATE() THEN 'Upcoming'
-          ELSE 'Active'
-        END AS Booking_Status,
-    DATEDIFF(br.Due_Date, DATE(br.Borrow_Date)) + 1 AS Duration_Days,
-      TIMESTAMPDIFF(HOUR, br.Borrow_Date, COALESCE(br.Return_Date, CONCAT(br.Due_Date, ' 23:59:59'))) AS Duration_Hours,
-        br.Borrow_Date AS Created_At
-      FROM borrow br
-      INNER JOIN rentable r ON br.Rentable_ID = r.Rentable_ID
-      INNER JOIN asset a ON r.Asset_ID = a.Asset_ID
-      INNER JOIN study_room sr ON a.Asset_ID = sr.Asset_ID
-      INNER JOIN user member ON br.Borrower_ID = member.User_ID
-      LEFT JOIN role_type rt ON member.Role = rt.role_id
-      LEFT JOIN user staff ON br.Processed_By = staff.User_ID
-      WHERE 1 = 1
-  `;
-
-  const params = [];
-
-  if (staffId) {
-    query += ` AND br.Processed_By = ? `;
-    params.push(staffId);
-  } else {
-    query += ` AND(br.Processed_By = ? OR br.Processed_By IS NULL)`;
-    params.push(librarianId);
-  }
-
-  query += ` AND DATE(br.Borrow_Date) <= ?
-  AND DATE(COALESCE(br.Return_Date, br.Due_Date)) >= ? `;
-  params.push(to, from);
-
-  if (statusArray.length > 0) {
-    const statusConditions = [];
-    statusArray.forEach((statusValue) => {
-      const val = statusValue.toLowerCase();
-      if (val === 'completed') {
-        statusConditions.push('br.Return_Date IS NOT NULL');
-      } else if (val === 'overdue') {
-        statusConditions.push('(br.Return_Date IS NULL AND br.Due_Date < CURDATE())');
-      } else if (val === 'upcoming') {
-        statusConditions.push('(DATE(br.Borrow_Date) > CURDATE() AND br.Return_Date IS NULL)');
-      } else if (val === 'active') {
-        statusConditions.push('(br.Return_Date IS NULL AND br.Due_Date >= CURDATE() AND DATE(br.Borrow_Date) <= CURDATE())');
-      }
-    });
-    if (statusConditions.length > 0) {
-      query += ` AND(${statusConditions.join(' OR ')})`;
-    }
-  }
-
-  if (roomArray.length > 0) {
-    const placeholders = roomArray.map(() => '?').join(',');
-    query += ` AND sr.Room_Number IN(${placeholders})`;
-    params.push(...roomArray);
-  }
-
-  if (memberNameArray.length > 0) {
-    const memberConditions = memberNameArray.map(() => `CONCAT(member.First_Name, ' ', IFNULL(member.Last_Name, '')) = ? `);
-    query += ` AND(${memberConditions.join(' OR ')})`;
-    params.push(...memberNameArray);
-  }
-
-  if (memberSearch) {
-    query += ` AND CONCAT(member.First_Name, ' ', IFNULL(member.Last_Name, '')) LIKE ? `;
-    params.push(`% ${memberSearch}% `);
-  }
-
-  if (memberTypeArray.length > 0) {
-    const roleMap = {
-      student: 1,
-      admin: 2,
-      librarian: 3,
-      teacher: 4
-    };
-    const roleIds = memberTypeArray
-      .map(type => roleMap[type.toLowerCase()])
-      .filter(id => id !== undefined);
-    if (roleIds.length > 0) {
-      const placeholders = roleIds.map(() => '?').join(',');
-      query += ` AND member.Role IN(${placeholders})`;
-      params.push(...roleIds);
-    }
-  }
-
-  if (capacityMinNumber !== null && !Number.isNaN(capacityMinNumber)) {
-    query += ` AND sr.Capacity >= ? `;
-    params.push(capacityMinNumber);
-  }
-
-  if (capacityMaxNumber !== null && !Number.isNaN(capacityMaxNumber)) {
-    query += ` AND sr.Capacity <= ? `;
-    params.push(capacityMaxNumber);
-  }
-
-  if (durationBucket) {
-    const durationCalc = 'DATEDIFF(br.Due_Date, DATE(br.Borrow_Date)) + 1';
-    if (durationBucket === 'short') {
-      query += ` AND ${durationCalc} <= 1`;
-    } else if (durationBucket === 'standard') {
-      query += ` AND ${durationCalc} BETWEEN 2 AND 7`;
-    } else if (durationBucket === 'extended') {
-      query += ` AND ${durationCalc} > 7`;
-    }
-  }
-
-  if (timeOfDay) {
-    if (timeOfDay === 'morning') {
-      query += ' AND HOUR(br.Borrow_Date) BETWEEN 5 AND 11';
-    } else if (timeOfDay === 'afternoon') {
-      query += ' AND HOUR(br.Borrow_Date) BETWEEN 12 AND 17';
-    } else if (timeOfDay === 'evening') {
-      query += ' AND HOUR(br.Borrow_Date) BETWEEN 18 AND 23';
-    }
-  }
-
-  query += ' ORDER BY br.Borrow_Date DESC LIMIT 500';
-
-  db.query(query, params, (err, results) => {
-    if (err) {
-      console.error('Error fetching room bookings:', err);
-      res.statusCode = 500;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ error: 'Failed to fetch room bookings', details: err.message }));
-      return;
-    }
-    // Success case: send results back
-    res.statusCode = 200;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ bookings: results }));
-  });
-  }
-// Study room metadata (numbers, capacities, member roles)
-const getRoomReportMetadata = async (req, res) => {
-  const runQuery = (sql, params = []) => new Promise((resolve, reject) => {
-    db.query(sql, params, (err, results) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve(results);
-    });
-  });
-
-  try {
-    const roomsPromise = runQuery('SELECT Room_Number, Capacity, Availability FROM study_room ORDER BY Room_Number ASC');
-    const rolesPromise = runQuery('SELECT role_id, role_name FROM role_type ORDER BY role_name ASC');
-
-    const [rooms, memberRoles] = await Promise.all([roomsPromise, rolesPromise]);
-    const capacities = rooms.map(room => Number(room.Capacity) || 0);
-    const capacityRange = capacities.length > 0
-      ? { min: Math.min(...capacities), max: Math.max(...capacities) }
-      : { min: 0, max: 0 };
-
-    res.statusCode = 200;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ rooms, memberRoles, capacityRange }));
-  } catch (error) {
-    console.error('Error fetching room metadata:', error);
-    res.statusCode = 500;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: 'Failed to fetch room metadata', details: error.message }));
-  }
 };
 
 module.exports = {
@@ -1159,11 +970,12 @@ module.exports = {
   getActiveBorrowers,
   getOverdueItems,
   getInventorySummary,
+  getBorrowingTrends,
   getLibrarianSummary,
   getLibrarianTransactions,
   getLibrarianDailyActivity,
-  getLibrarianMembers,
-  getLibrarianBooks,
   getLibrarianRoomBookings,
-  getRoomReportMetadata
+  getRoomReportMetadata,
+  getLibrarianMembers,
+  getLibrarianBooks
 };
