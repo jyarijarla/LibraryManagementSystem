@@ -189,6 +189,13 @@ const routes = [
   { method: 'GET', path: '/api/reports/admin/generated', handler: adminReportController.getReportsGenerated, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
   { method: 'GET', path: '/api/reports/admin/audit-trail', handler: adminReportController.getAuditTrail, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
 
+  // Executive Dashboard Routes
+  { method: 'GET', path: '/api/reports/admin/dashboard-stats', handler: adminReportController.getDashboardStats, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/reports/admin/activity-trends', handler: adminReportController.getActivityTrends, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/reports/admin/user-growth', handler: adminReportController.getUserGrowthStats, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/reports/admin/financial-trends', handler: adminReportController.getFinancialTrends, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/reports/admin/inventory-health', handler: adminReportController.getInventoryHealth, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+
   // Notification routes
   { method: 'GET', path: '/api/notifications', handler: notificationController.getAdminNotifications, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/notifications/counts', handler: notificationController.getNotificationCounts, auth: true, roles: ROLE_GROUPS.STAFF },

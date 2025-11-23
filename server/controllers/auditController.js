@@ -8,6 +8,7 @@ const mockLogs = [
     { Log_ID: 4, User_ID: 1, Action: 'USER_CREATE', Details: '{"newUserId": 15}', IP_Address: '127.0.0.1', Timestamp: new Date(Date.now() - 86400000).toISOString() },
     { Log_ID: 5, User_ID: 3, Action: 'LOGIN_FAILED', Details: '{"reason": "wrong_password"}', IP_Address: '10.0.0.5', Timestamp: new Date(Date.now() - 90000000).toISOString() }
 ];
+exports.mockLogs = mockLogs;
 
 /**
  * Get audit logs
