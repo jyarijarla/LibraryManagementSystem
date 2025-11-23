@@ -533,12 +533,14 @@ exports.userReturnAsset = async (req, res) => {
     [borrowID]
   )
   if (validBorrower.length === 0) {
-    return res.writeHead(404, { 'Content-Type': 'application/json' })
-      && res.end(JSON.stringify({ message: 'Borrow does not exist' }));
+    console.error("Borrow length is 0")
+    res.writeHead(404, { 'Content-Type': 'application/json' })
+    return res.end(JSON.stringify({ message: 'Borrow does not exist' }));
   }
-  if (validBorrower[0] != userID) {
-    return res.writeHead(401, { 'Content-Type': 'application/json' })
-      && res.end(JSON.stringify({ message: 'Unauthorized return' }));
+  if (validBorrower[0].Borrower_ID != userID) {
+    console.error("User given", userID, "does not match borrow requester", validBorrower[0].Borrower_ID)
+    res.writeHead(401, { 'Content-Type': 'application/json' })
+    return res.end(JSON.stringify({ message: 'Unauthorized return' }));
   }
 
   const newReq = {

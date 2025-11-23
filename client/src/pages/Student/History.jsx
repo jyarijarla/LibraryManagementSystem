@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useLoading } from '../../components/FeedbackUI/LoadingContext'
+import { ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
 import {
     ShieldCheck,
     AlertCircle,
@@ -29,7 +31,11 @@ const History = () => {
     const [holds, setHolds] = useState([]);
     const [history, setHistory] = useState([]);
     
-    const [error, setError] = useState(null);
+    const [error, setErrorState] = useState('')
+    const setError = (sendError) => {
+        setErrorState(sendError)
+        setTimeout(() => setError(''), 5000)
+    }
     const [processingId, setProcessingId] = useState(null);
     const [successMessage, setSuccessMessage] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
@@ -85,7 +91,7 @@ const History = () => {
         }
     };
 
-    {/*const handleReturn = async (borrowID) => {
+    const handleReturn = async (borrowID) => {
         setLoading({ isLoading: true })
         try {
             await axios.put(`${API_URL}/borrow/return/${borrowID}`, 
@@ -98,11 +104,11 @@ const History = () => {
             fetchAllData();
         } catch (error) {
             console.error('Error returning asset:', error);
-            setError(err.message);
+            setError(error.response.data.message);
         } finally {
             setLoading({ isLoading: false })
         }
-    }*/}
+    }
 
     const handlePayFine = async (fine) => {
         setProcessingId(fine.Borrow_ID);
@@ -153,6 +159,7 @@ const History = () => {
     return (
         <div className="student-dashboard-content">
             <div className="student-section-header">
+                <ErrorPopup errorMessage={error} />
                 <div>
                     <h3>My History</h3>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
@@ -415,7 +422,7 @@ const History = () => {
                                                         )}
                                                         <span className="status-badge active">Borrowed</span>
                                                     </div>
-                                                    {/*<button onClick={handleReturn(loan.Borrow_ID)}>Test</button>*/}
+                                                    {<button className="student-log-action-btn" onClick={() => handleReturn(loan.Borrow_ID)}>Return</button>}
                                                 </div>
                                             </div>
                                         ))
