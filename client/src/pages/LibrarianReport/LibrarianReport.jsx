@@ -775,7 +775,7 @@ function LibrarianReport() {
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="bg-white rounded-xl shadow-sm p-4 mb-6 border border-gray-100"
+        className="bg-white rounded-xl shadow-sm p-4 mb-6 border border-gray-100 relative z-20"
       >
         <div className="flex items-center justify-between mb-4">
           <button
@@ -1037,7 +1037,7 @@ function LibrarianReport() {
                       {showMemberDropdown && membersList.length > 0 && (
                         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                           {membersList
-                            .filter(member => member.member_name.toLowerCase().includes(memberSearchText.toLowerCase()))
+                            .filter(member => member.member_name && member.member_name.toLowerCase().includes(memberSearchText.toLowerCase()))
                             .map(member => (
                               <button
                                 key={member.User_ID}
@@ -1437,58 +1437,57 @@ function LibrarianReport() {
                   <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Member</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Room</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Date</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Start Time</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">End Date</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Duration</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Check In</th>
+                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Check Out</th>
                   <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
-                  <th className="px-3 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Approved By</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {roomBookings.length === 0 ? (
                   <tr>
-                    <td colSpan="9" className="px-6 py-12 text-center text-gray-500">
-                      <Search className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-                      <p>No room bookings found for the selected period</p>
+                    <td colSpan="7" className="px-6 py-12 text-center text-gray-500">
+                      <div className="flex flex-col items-center justify-center">
+                        <Calendar className="w-12 h-12 text-gray-300 mb-3" />
+                        <p className="text-lg font-medium text-gray-900">No bookings found</p>
+                        <p className="text-sm text-gray-500 mt-1">Try adjusting your filters</p>
+                      </div>
                     </td>
                   </tr>
                 ) : (
-                  roomBookings.map((booking, index) => (
+                  roomBookings.map((booking) => (
                     <motion.tr
                       key={booking.Booking_ID}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      transition={{ delay: index * 0.03 }}
                       className="hover:bg-gray-50 transition-colors"
                     >
-                      <td className="px-3 py-3 text-sm font-semibold text-gray-800">#{booking.Booking_ID}</td>
+                      <td className="px-3 py-3 text-sm font-medium text-gray-900">#{booking.Booking_ID}</td>
                       <td className="px-3 py-3 text-sm text-gray-800">
-                        <p className="font-medium">{booking.Member_Name}</p>
-                        <p className="text-xs text-gray-500">{booking.Member_Role || 'Member'}</p>
+                        <div>
+                          <p className="font-medium">{booking.Member_Name}</p>
+                          <p className="text-xs text-gray-500">{booking.Member_Role}</p>
+                        </div>
                       </td>
                       <td className="px-3 py-3 text-sm text-gray-800">
-                        <p className="font-medium">Room {booking.Room_Number}</p>
-                        <p className="text-xs text-gray-500">Capacity: {booking.Capacity}</p>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">Room {booking.Room_Number}</span>
+                          <span className="text-xs text-gray-500">({booking.Capacity} ppl)</span>
+                        </div>
                       </td>
                       <td className="px-3 py-3 text-sm text-gray-800">
-                        {booking.Booking_Date ? new Date(booking.Booking_Date).toLocaleDateString() : '—'}
+                        {new Date(booking.Booking_Date).toLocaleDateString()}
                       </td>
-                      <td className="px-3 py-3 text-sm text-gray-800">{booking.Start_Time || '—'}</td>
-                      <td className="px-3 py-3 text-sm text-gray-800">
-                        {booking.Due_Date ? new Date(booking.Due_Date).toLocaleDateString() : '—'}
-                      </td>
-                      <td className="px-3 py-3 text-sm text-gray-800">{booking.Duration_Days || 0} day(s)</td>
-                      <td className="px-3 py-3 text-sm">
+                      <td className="px-3 py-3 text-sm text-gray-800 font-mono">{booking.Check_In}</td>
+                      <td className="px-3 py-3 text-sm text-gray-800 font-mono">{booking.Check_Out}</td>
+                      <td className="px-3 py-3 whitespace-nowrap text-sm">
                         <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${booking.Booking_Status === 'Active' ? 'bg-green-100 text-green-700'
-                          : booking.Booking_Status === 'Upcoming' ? 'bg-blue-100 text-blue-700'
+                          : booking.Booking_Status === 'Overdue' ? 'bg-red-100 text-red-700'
                             : booking.Booking_Status === 'Completed' ? 'bg-gray-100 text-gray-700'
-                              : booking.Booking_Status === 'Overdue' ? 'bg-red-100 text-red-700'
-                                : 'bg-slate-100 text-slate-700'
+                              : 'bg-blue-100 text-blue-700'
                           }`}>
                           {booking.Booking_Status}
                         </span>
                       </td>
-                      <td className="px-3 py-3 text-sm text-gray-800">{booking.Approved_By || '—'}</td>
                     </motion.tr>
                   ))
                 )}

@@ -120,16 +120,16 @@ const routes = [
 
   // Student routes
   { method: 'GET', path: '/api/students', handler: studentController.getAllStudents, auth: true, roles: ROLE_GROUPS.STAFF },
-  { 
-  method: 'GET',
-  path: '/api/students/:id',
-  handler: studentController.getStudentById,
-  auth: true,
-  roles: ROLE_GROUPS.ANY_AUTH
+  {
+    method: 'GET',
+    path: '/api/students/:id',
+    handler: studentController.getStudentById,
+    auth: true,
+    roles: ROLE_GROUPS.ANY_AUTH
   },
 
 
-          // specifically for editing profile
+  // specifically for editing profile
   { method: 'PUT', path: '/api/students/:id', handler: studentController.updateStudent, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
 
   { method: 'PUT', path: '/api/students/:id', handler: studentController.updateStudent, auth: true, roles: ROLE_GROUPS.STAFF },
@@ -269,6 +269,13 @@ async function handleMatchedRoute(req, res, matchedRoute, pathname, urlParts) {
   });
 
   // Call the handler
+  if (typeof matchedRoute.handler !== 'function') {
+    console.error(`Error: Handler for route ${req.method} ${pathname} is not a function`);
+    res.statusCode = 500;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ message: 'Internal server error: Invalid route handler' }));
+    return;
+  }
   await matchedRoute.handler(req, res);
 }
 
