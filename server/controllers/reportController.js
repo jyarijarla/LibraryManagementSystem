@@ -1016,34 +1016,112 @@ DATE(br.Borrow_Date) AS date,
 
 // Librarian Report: Room Bookings
 const getLibrarianRoomBookings = (req, res) => {
-  const { from, to, roomId } = req.query;
+  const {
+    from, to, status, rooms, memberTypes, memberSearch,
+    capacityMin, capacityMax, durationBucket, timeOfDay, staffId
+  } = req.query;
+
+  console.log('getLibrarianRoomBookings params:', req.query);
 
   let query = `
     SELECT 
-      br.Borrow_ID,
-      br.Borrow_Date as Start_Time,
-      br.Return_Date as End_Time,
+      br.Borrow_ID as Booking_ID,
+      br.Borrow_Date as Booking_Date,
+      br.Borrow_Date as Check_In,
+      br.Return_Date as Check_Out,
+      br.Due_Date as Due_Time,
       sr.Room_Number,
+      sr.Capacity,
       CONCAT(u.First_Name, ' ', IFNULL(u.Last_Name, '')) AS Member_Name,
+      rt.role_name as Member_Role,
       u.User_Email,
-      br.Processed_By
+      DATEDIFF(IFNULL(br.Return_Date, NOW()), br.Borrow_Date) as Duration_Days,
+      CASE
+        WHEN br.Return_Date IS NOT NULL THEN 'Completed'
+        WHEN br.Return_Date IS NULL AND br.Due_Date < NOW() THEN 'Overdue'
+        WHEN br.Borrow_Date > NOW() THEN 'Upcoming'
+        ELSE 'Active'
+      END as Booking_Status
     FROM borrow br
     JOIN rentable r ON br.Rentable_ID = r.Rentable_ID
     JOIN study_room sr ON r.Asset_ID = sr.Asset_ID
     JOIN user u ON br.Borrower_ID = u.User_ID
+    JOIN role_type rt ON u.Role = rt.role_id
+    LEFT JOIN user staff ON br.Processed_By = staff.User_ID
     WHERE 1=1
   `;
 
   const params = [];
 
   if (from && to) {
-    query += ` AND br.Borrow_Date BETWEEN ? AND ?`;
-    params.push(from, to);
+    // Adjust 'to' date to include the full day
+    const toDate = new Date(to);
+    toDate.setDate(toDate.getDate() + 1);
+    const adjustedTo = toDate.toISOString().split('T')[0];
+
+    query += ` AND br.Borrow_Date >= ? AND br.Borrow_Date < ?`;
+    params.push(from, adjustedTo);
   }
 
-  if (roomId) {
-    query += ` AND sr.Room_Number = ?`;
-    params.push(roomId);
+  if (status) {
+    const statuses = status.split(',').map(s => s.trim().toLowerCase());
+    const conditions = [];
+    if (statuses.includes('completed')) conditions.push('br.Return_Date IS NOT NULL');
+    if (statuses.includes('overdue')) conditions.push('(br.Return_Date IS NULL AND br.Due_Date < NOW())');
+    if (statuses.includes('upcoming')) conditions.push('br.Borrow_Date > NOW()');
+    if (statuses.includes('active')) conditions.push('(br.Return_Date IS NULL AND br.Due_Date >= NOW() AND br.Borrow_Date <= NOW())');
+
+    if (conditions.length > 0) {
+      query += ` AND (${conditions.join(' OR ')})`;
+    }
+  }
+
+  if (rooms) {
+    const roomList = rooms.split(',').map(r => r.trim());
+    query += ` AND sr.Room_Number IN (?)`;
+    params.push(roomList);
+  }
+
+  if (memberTypes) {
+    const types = memberTypes.split(',').map(t => t.trim());
+    query += ` AND rt.role_name IN (?)`;
+    params.push(types);
+  }
+
+  if (memberSearch) {
+    query += ` AND (u.First_Name LIKE ? OR u.Last_Name LIKE ?)`;
+    params.push(`%${memberSearch}%`, `%${memberSearch}%`);
+  }
+
+  if (capacityMin) {
+    query += ` AND sr.Capacity >= ?`;
+    params.push(capacityMin);
+  }
+
+  if (capacityMax) {
+    query += ` AND sr.Capacity <= ?`;
+    params.push(capacityMax);
+  }
+
+  if (staffId) {
+    query += ` AND br.Processed_By = ?`;
+    params.push(staffId);
+  }
+
+  if (timeOfDay) {
+    // Morning: 0-11, Afternoon: 12-16, Evening: 17-23
+    if (timeOfDay === 'morning') query += ` AND HOUR(br.Borrow_Date) < 12`;
+    else if (timeOfDay === 'afternoon') query += ` AND HOUR(br.Borrow_Date) BETWEEN 12 AND 16`;
+    else if (timeOfDay === 'evening') query += ` AND HOUR(br.Borrow_Date) > 16`;
+  }
+
+  // Duration bucket filtering needs to be done via HAVING or wrapped query, 
+  // but for simplicity we can use the expression directly in WHERE
+  if (durationBucket) {
+    const durationExpr = `DATEDIFF(IFNULL(br.Return_Date, NOW()), br.Borrow_Date)`;
+    if (durationBucket === 'short') query += ` AND ${durationExpr} < 1`;
+    else if (durationBucket === 'standard') query += ` AND ${durationExpr} BETWEEN 1 AND 7`;
+    else if (durationBucket === 'extended') query += ` AND ${durationExpr} > 7`;
   }
 
   query += ` ORDER BY br.Borrow_Date DESC`;
@@ -1056,9 +1134,21 @@ const getLibrarianRoomBookings = (req, res) => {
       res.end(JSON.stringify({ error: 'Failed to fetch room bookings' }));
       return;
     }
+
+    console.log(`Found ${results.length} room bookings`);
+
+    // Format times for frontend
+    const formattedResults = results.map(row => ({
+      ...row,
+      Check_In: new Date(row.Check_In).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      Check_Out: row.Check_Out ? new Date(row.Check_Out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-',
+      Due_Time: new Date(row.Due_Time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      Booking_Status: row.Booking_Status // Already calculated in SQL
+    }));
+
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify(results));
+    res.end(JSON.stringify(formattedResults));
   });
 };
 
