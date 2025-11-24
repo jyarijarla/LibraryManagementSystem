@@ -137,15 +137,14 @@ const routes = [
 
 
   // Member routes
+  // Admin UI: get all users (students + staff)
+  { method: 'GET', path: '/api/users', handler: memberController.getAllUsers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/members', handler: memberController.getAllMembers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/members/:id', handler: memberController.getMemberProfile, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'POST', path: '/api/members', handler: memberController.addMember, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'PUT', path: '/api/members/:id', handler: memberController.updateMember, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'DELETE', path: '/api/members/:id', handler: memberController.deleteMember, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/members/:id/activity', handler: memberController.getMemberActivity, auth: true, roles: ROLE_GROUPS.STAFF },
-
-  // Users - return all users (admins, librarians, students)
-  { method: 'GET', path: '/api/users', handler: memberController.getAllUsers, auth: true, roles: ROLE_GROUPS.STAFF },
 
   // Borrow routes
   { method: 'GET', path: '/api/borrow-records', handler: borrowController.getAllRecords, auth: true, roles: ROLE_GROUPS.STAFF },
@@ -171,6 +170,7 @@ const routes = [
 
   // Report routes
   { method: 'GET', path: '/api/reports/most-borrowed', handler: reportController.getMostBorrowedAssets, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/reports/custom', handler: reportController.getCustomReport, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/most-borrowed-assets', handler: reportController.getMostBorrowedAssets, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/active-borrowers', handler: reportController.getActiveBorrowers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/overdue-items', handler: reportController.getOverdueItems, auth: true, roles: ROLE_GROUPS.STAFF },

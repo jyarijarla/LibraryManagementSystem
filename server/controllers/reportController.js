@@ -145,20 +145,75 @@ const getOverdueItems = async (req, res) => {
 
 // Bonus Report: Inventory Summary
 const getInventorySummary = (req, res) => {
-  // Simplified query for current database schema - only checking books
+  // Build a safe inventory summary using the inventory views/tables that exist in the schema.
   const query = `
-    SELECT 
-      'Book' AS Asset_Type,
-      COUNT(DISTINCT r.Rentable_ID) AS Unique_Items,
-      SUM(r.Num_Copies) AS Total_Copies,
-      SUM(r.Num_Available) AS Total_Available,
-      SUM(r.Num_Copies - r.Num_Available) AS Currently_Borrowed,
-      ROUND((SUM(r.Num_Copies - r.Num_Available) / NULLIF(SUM(r.Num_Copies), 0)) * 100, 2) AS Utilization_Percentage
-    FROM rentable r
-    LEFT JOIN asset a ON r.Asset_ID = a.Asset_ID
-    LEFT JOIN book b ON a.Asset_ID = b.Asset_ID
-    WHERE b.Asset_ID IS NOT NULL
-    ORDER BY Total_Copies DESC
+    SELECT Asset_Type, Unique_Items, Total_Copies, Total_Available, Currently_Borrowed, Utilization_Percentage
+    FROM (
+      SELECT
+        'Book' AS Asset_Type,
+        COUNT(*) AS Unique_Items,
+        COALESCE(SUM(Copies),0) AS Total_Copies,
+        COALESCE(SUM(Available_Copies),0) AS Total_Available,
+        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
+      FROM book_inventory
+
+      UNION ALL
+
+      SELECT
+        'CD' AS Asset_Type,
+        COUNT(*) AS Unique_Items,
+        COALESCE(SUM(Copies),0) AS Total_Copies,
+        COALESCE(SUM(Available_Copies),0) AS Total_Available,
+        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
+      FROM cd_inventory
+
+      UNION ALL
+
+      SELECT
+        'Audiobook' AS Asset_Type,
+        COUNT(*) AS Unique_Items,
+        COALESCE(SUM(Copies),0) AS Total_Copies,
+        COALESCE(SUM(Available_Copies),0) AS Total_Available,
+        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
+      FROM audiobook_inventory
+
+      UNION ALL
+
+      SELECT
+        'Movie' AS Asset_Type,
+        COUNT(*) AS Unique_Items,
+        COALESCE(SUM(Copies),0) AS Total_Copies,
+        COALESCE(SUM(Available_Copies),0) AS Total_Available,
+        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
+      FROM movie_inventory
+
+      UNION ALL
+
+      SELECT
+        'Technology' AS Asset_Type,
+        COUNT(*) AS Unique_Items,
+        COALESCE(SUM(Copies),0) AS Total_Copies,
+        COALESCE(SUM(Available_Copies),0) AS Total_Available,
+        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
+      FROM technology_inventory
+
+      UNION ALL
+
+      SELECT
+        'Study Room' AS Asset_Type,
+        COUNT(*) AS Unique_Items,
+        COUNT(*) AS Total_Copies,
+        COALESCE(SUM(CASE WHEN Availability = 1 THEN 1 ELSE 0 END), 0) AS Total_Available,
+        COALESCE(COUNT(*) - SUM(CASE WHEN Availability = 1 THEN 1 ELSE 0 END), 0) AS Currently_Borrowed,
+        ROUND(COALESCE((COUNT(*) - SUM(CASE WHEN Availability = 1 THEN 1 ELSE 0 END)) / NULLIF(COUNT(*),0) * 100, 0), 2) AS Utilization_Percentage
+      FROM study_room
+    ) t
+    ORDER BY Total_Copies DESC;
   `;
 
   db.query(query, (err, results) => {
@@ -972,7 +1027,6 @@ const getLibrarianRoomBookings = (req, res) => {
   const capacityMinNumber = capacityMin !== undefined && capacityMin !== '' ? Number(capacityMin) : null;
   const capacityMaxNumber = capacityMax !== undefined && capacityMax !== '' ? Number(capacityMax) : null;
 
-<<<<<<< HEAD
   let query = `
 SELECT
 br.Borrow_ID AS Booking_ID,
@@ -1116,40 +1170,13 @@ br.Borrow_ID AS Booking_ID,
       res.end(JSON.stringify({ error: 'Failed to fetch room bookings', details: err.message }));
       return;
     }
-=======
-// Study room metadata (numbers, capacities, member roles)
-const getRoomReportMetadata = async (req, res) => {
-  const runQuery = (sql, params = []) => new Promise((resolve, reject) => {
-    db.query(sql, params, (err, results) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve(results);
-    });
-  });
-
-  try {
-    const roomsPromise = runQuery('SELECT Room_Number, Capacity, Availability FROM study_room ORDER BY Room_Number ASC');
-    const rolesPromise = runQuery('SELECT role_id, role_name FROM role_type ORDER BY role_name ASC');
-
-    const [rooms, memberRoles] = await Promise.all([roomsPromise, rolesPromise]);
-    const capacities = rooms.map(room => Number(room.Capacity) || 0);
-    const capacityRange = capacities.length > 0
-      ? { min: Math.min(...capacities), max: Math.max(...capacities) }
-      : { min: 0, max: 0 };
-
->>>>>>> e6bf537 (feat(reports): redesign Reports & Analytics, add KPI row, filters, tabs, custom-report v2 and styles)
+    // On success, return the bookings
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ rooms, memberRoles, capacityRange }));
-  } catch (error) {
-    console.error('Error fetching room metadata:', error);
-    res.statusCode = 500;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ error: 'Failed to fetch room metadata', details: error.message }));
-  }
+    res.end(JSON.stringify(results));
+  });
 };
+
 // Study room metadata (numbers, capacities, member roles)
 const getRoomReportMetadata = async (req, res) => {
   const runQuery = (sql, params = []) => new Promise((resolve, reject) => {
@@ -1196,3 +1223,97 @@ module.exports = {
   getLibrarianRoomBookings,
   getRoomReportMetadata
 };
+
+// Custom report endpoint: supports startDate, endDate, assetType, userId, status
+const getCustomReport = (req, res) => {
+  // Supported query params
+  const { startDate, endDate, assetType, userId, status } = req.query;
+
+  // Build base query to aggregate borrows by asset/title
+  let query = `
+    SELECT
+      ANY_VALUE(COALESCE(bk.Title, cd.Title, ab.Title, mv.Title, CONCAT('Tech-', t.Model_Num), CONCAT('Room-', sr.Room_Number), 'Unknown')) AS Label,
+      ANY_VALUE(CASE
+        WHEN bk.Asset_ID IS NOT NULL THEN 'Book'
+        WHEN cd.Asset_ID IS NOT NULL THEN 'CD'
+        WHEN ab.Asset_ID IS NOT NULL THEN 'Audiobook'
+        WHEN mv.Asset_ID IS NOT NULL THEN 'Movie'
+        WHEN t.Asset_ID IS NOT NULL THEN 'Technology'
+        WHEN sr.Asset_ID IS NOT NULL THEN 'Study Room'
+        ELSE 'Other'
+      END) AS Type,
+      -- Include borrower identity fields (wrapped with ANY_VALUE so query is compatible with ONLY_FULL_GROUP_BY)
+      ANY_VALUE(u.First_Name) AS User_FirstName,
+      ANY_VALUE(u.Last_Name) AS User_LastName,
+      ANY_VALUE(u.Username) AS User_Username,
+      COUNT(br.Borrow_ID) AS Count
+    FROM borrow br
+    LEFT JOIN rentable r ON br.Rentable_ID = r.Rentable_ID
+    LEFT JOIN asset a ON r.Asset_ID = a.Asset_ID
+    LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
+    LEFT JOIN cd ON a.Asset_ID = cd.Asset_ID
+    LEFT JOIN audiobook ab ON a.Asset_ID = ab.Asset_ID
+    LEFT JOIN movie mv ON a.Asset_ID = mv.Asset_ID
+    LEFT JOIN technology t ON a.Asset_ID = t.Asset_ID
+    LEFT JOIN study_room sr ON a.Asset_ID = sr.Asset_ID
+    LEFT JOIN user u ON br.Borrower_ID = u.User_ID
+    WHERE 1=1
+  `;
+
+  const params = [];
+
+  if (startDate) {
+    query += ` AND br.Borrow_Date >= ? `;
+    params.push(startDate);
+  }
+  if (endDate) {
+    query += ` AND br.Borrow_Date <= ? `;
+    params.push(endDate);
+  }
+
+  if (assetType) {
+    // Accept simple asset type keywords used by frontend (books, cds, audiobooks, movies, technology, study-rooms)
+    const t = String(assetType).toLowerCase();
+    if (t === 'books') query += ` AND bk.Asset_ID IS NOT NULL `;
+    else if (t === 'cds') query += ` AND cd.Asset_ID IS NOT NULL `;
+    else if (t === 'audiobooks') query += ` AND ab.Asset_ID IS NOT NULL `;
+    else if (t === 'movies') query += ` AND mv.Asset_ID IS NOT NULL `;
+    else if (t === 'technology') query += ` AND t.Asset_ID IS NOT NULL `;
+    else if (t === 'study-rooms' || t === 'study_room' || t === 'studyroom') query += ` AND sr.Asset_ID IS NOT NULL `;
+  }
+
+  if (userId) {
+    // allow either numeric user id or username/student id
+    query += ` AND (u.User_ID = ? OR u.Student_ID = ? OR u.Username = ?) `;
+    params.push(userId, userId, userId);
+  }
+
+  // Status filter: 'current' => currently borrowed (Return_Date IS NULL)
+  // 'returned' => returned items (Return_Date IS NOT NULL)
+  if (status) {
+    const s = String(status).toLowerCase();
+    if (s === 'current' || s === 'currently' || s === 'currently_borrowed') {
+      query += ` AND br.Return_Date IS NULL `;
+    } else if (s === 'returned') {
+      query += ` AND br.Return_Date IS NOT NULL `;
+    }
+  }
+
+  query += ` GROUP BY Label, Type ORDER BY Count DESC LIMIT 500`;
+
+  db.query(query, params, (err, results) => {
+    if (err) {
+      console.error('Error fetching custom report:', err);
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Failed to fetch custom report', details: err.message }));
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(results));
+  });
+};
+
+// Export the custom report function
+module.exports.getCustomReport = getCustomReport;

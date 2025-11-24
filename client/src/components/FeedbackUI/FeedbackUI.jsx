@@ -37,20 +37,48 @@ export const SuccessPopup = ({ message, onClose }) => {
 
 // Error Popup Component
 export const ErrorPopup = ({ errorMessage, onClose }) => {
-  if (!errorMessage) return null;
-  
-  // Auto-hide after 5 seconds
+  const [visible, setVisible] = React.useState(Boolean(errorMessage));
+  const [dismissedFor, setDismissedFor] = React.useState(null);
+
   React.useEffect(() => {
+    // If the incoming errorMessage matches the message we've dismissed, keep it hidden.
+    if (errorMessage && errorMessage === dismissedFor) {
+      setVisible(false);
+      return;
+    }
+    setVisible(Boolean(errorMessage));
+    // Clear dismissed marker when a new/different message arrives
+    if (errorMessage && errorMessage !== dismissedFor) setDismissedFor(null);
+  }, [errorMessage, dismissedFor]);
+
+  // Auto-hide after 5 seconds. If `onClose` is provided call it, otherwise hide locally.
+  React.useEffect(() => {
+    if (!visible) return undefined;
     const timer = setTimeout(() => {
       if (onClose) onClose();
+      else {
+        setVisible(false);
+        setDismissedFor(errorMessage);
+      }
     }, 5000);
     return () => clearTimeout(timer);
-  }, [errorMessage, onClose]);
-  
+  }, [visible, onClose]);
+
+  if (!visible || !errorMessage) return null;
+
+  const handleClose = () => {
+    if (onClose) onClose();
+    else {
+      setVisible(false);
+      setDismissedFor(errorMessage);
+    }
+  };
+
   return (
     <div className="popup-overlay">
       <div className="popup-content error-popup">
-        <div className="popup-icon">✕</div>
+        <button className="popup-close" onClick={handleClose} aria-label="Close error">✕</button>
+        <div className="popup-icon">⚠️</div>
         <p className="popup-message">{errorMessage}</p>
       </div>
     </div>

@@ -901,7 +901,7 @@
   align-items: center;
   gap: 16px;
   padding: 8px 0;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: none;
 }
 .user-modal .info-row:last-of-type { border-bottom: none; }
 .user-modal .info-label {
@@ -961,7 +961,7 @@
 }
 
 .user-modal .user-info-details .info-row {
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: none;
 }
 
 .user-modal .user-info-details .info-row:last-of-type {

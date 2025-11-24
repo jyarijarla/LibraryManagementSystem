@@ -1,5 +1,5 @@
 import UserDropdown from '../../components/UserDropdown';
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import './Admin.css'
 import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
@@ -18,8 +18,59 @@ const getAssetImagePath = (assetType, assetId, extension = 'png') => {
   return `/assets/${assetType}/${assetId}.${extension}`
 }
 
+// Generate random password for admin-created users when left blank
+const generateInitialPassword = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#$%';
+  let password = 'Library';
+  for (let i = 0; i < 6; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
 // Helper to get username from user object
 const getUsername = (user) => user.username || user.studentId || '-';
+
+// Robust first/last name getters with fallbacks for different API shapes
+const getFirstName = (user) => {
+  if (!user) return '-'
+  // Prefer explicit first name fields
+  const first = user.firstname || user.First_Name || user.firstName || user.first_name;
+  if (first) return first;
+
+  // If a combined name field exists, split and return the first token
+  const full = user.name || user.Full_Name || user.fullName || user.full_name;
+  if (full) {
+    const parts = String(full).trim().split(/\s+/);
+    return parts[0] || '-';
+  }
+
+  // Last resort: username or studentId
+  return user.username || user.studentId || '-'
+}
+
+const getLastName = (user) => {
+  if (!user) return '-'
+  const last = user.lastname || user.Last_Name || user.lastName || user.last_name;
+  if (last) return last;
+
+  const full = user.name || user.Full_Name || user.fullName || user.full_name;
+  if (full) {
+    const parts = String(full).trim().split(/\s+/);
+    return parts.slice(1).join(' ') || '';
+  }
+
+  return ''
+}
+
+// Robust DOB getter - check multiple possible field names
+const getUserDOB = (user) => {
+  if (!user) return ''
+  const candidates = ['dateOfBirth', 'Date_Of_Birth', 'dob', 'DOB', 'birthDate', 'birth_date']
+  for (const k of candidates) {
+    if (user[k]) return user[k]
+  }
+  return ''
+}
 
 // Helper to match a borrow record to a user robustly (by ID first, then by name)
 const userMatchesBorrow = (borrow, user) => {
@@ -48,7 +99,6 @@ const userMatchesBorrow = (borrow, user) => {
   // Try matching by full name using various possible name fields
   const userFullName = `${user.firstname || user.First_Name || ''} ${user.lastname || user.Last_Name || ''}`.trim();
   const borrowFullName = pick(borrow, ['Borrower_Name']) || ((borrow.First_Name || borrow.FirstName || borrow.first_name) ? `${borrow.First_Name || borrow.FirstName || borrow.first_name} ${borrow.Last_Name || borrow.LastName || borrow.last_name || ''}`.trim() : undefined);
-
   if (userFullName && borrowFullName) {
     return userFullName === borrowFullName;
   }
@@ -60,12 +110,15 @@ function Admin() {
         const [showUserListModal, setShowUserListModal] = useState(false);
       // Custom report state (for Reports tab)
       const [customReportType, setCustomReportType] = useState('table');
+      const [pieActive, setPieActive] = useState(null);
       const [customReportData, setCustomReportData] = useState([]);
       const [customReportFilters, setCustomReportFilters] = useState({
         startDate: '',
         endDate: '',
-        assetType: '',
-        userId: ''
+        // assetType and userId are arrays when multi-select is used. Empty array means "All".
+        assetType: [],
+        userId: [],
+        status: '' // '', 'current', 'returned' — filter by borrow status
       });
       const [customReportLoading, setCustomReportLoading] = useState(false);
       const [customReportError, setCustomReportError] = useState('');
@@ -100,8 +153,28 @@ function Admin() {
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [showEditUserModal, setShowEditUserModal] = useState(false);
   const [showDeleteUserModal, setShowDeleteUserModal] = useState(false);
+  const [showForceDeleteConfirm, setShowForceDeleteConfirm] = useState(false);
+  const [forceDeleteMessage, setForceDeleteMessage] = useState('');
   const [showViewUserModal, setShowViewUserModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  // Modal to show items for a quick-action borrower
+  const [showBorrowerItemsModal, setShowBorrowerItemsModal] = useState(false);
+  const [modalBorrower, setModalBorrower] = useState(null);
+  const [modalBorrowerItems, setModalBorrowerItems] = useState([]);
+  // Modal to show items for a timeline bucket (bar click)
+  const [showBucketModal, setShowBucketModal] = useState(false);
+  const [bucketModalItems, setBucketModalItems] = useState([]);
+  const [bucketModalTitle, setBucketModalTitle] = useState('');
+  // Modal to show users who borrowed a specific asset in a time bucket
+  const [showAssetBucketModal, setShowAssetBucketModal] = useState(false);
+  const [assetBucketModalItems, setAssetBucketModalItems] = useState([]);
+  const [assetBucketModalTitle, setAssetBucketModalTitle] = useState('');
+  // User selector modal for reports
+  const [showUserSelectorModal, setShowUserSelectorModal] = useState(false);
+  const [userSelectorSearch, setUserSelectorSearch] = useState('');
+  // Asset type dropdown open state (for custom checkbox dropdown)
+  const [assetDropdownOpen, setAssetDropdownOpen] = useState(false);
+  const assetDropdownRef = useRef(null);
   // Tab state for user view modal
   const [activeUserModalTab, setActiveUserModalTab] = useState('Personal Info');
   // Fines state for selected user
@@ -145,6 +218,17 @@ function Admin() {
       setUserFines([]);
     }
   }, [showViewUserModal, selectedUser]);
+
+  // Close asset dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (assetDropdownRef.current && !assetDropdownRef.current.contains(e.target)) {
+        setAssetDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Return a borrow (admin action)
   const handleReturnBorrow = async (borrowId) => {
@@ -449,12 +533,16 @@ const [userToDelete, setUserToDelete] = useState(null);
         await fetchAssets(activeAssetTab)
       } else if (activeTab === 'students') {
         await fetchStudents()
-          } else if (activeTab === 'users') {
-            await fetchUsers()
+      } else if (activeTab === 'users') {
+        await fetchAllUsers()
       } else if (activeTab === 'records') {
         await fetchBorrowRecords()
       } else if (activeTab === 'reports') {
-        await fetchReports()
+        // Ensure reports and students are fetched so the User dropdown is populated
+        await Promise.all([
+          fetchReports().catch(e => console.error('Reports error:', e)),
+          fetchStudents().catch(e => console.error('Students (reports) error:', e))
+        ])
       }
     } catch (err) {
       console.error('Error in fetchData:', err)
@@ -536,7 +624,16 @@ const [userToDelete, setUserToDelete] = useState(null);
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       })
-      if (!response.ok) throw new Error('Failed to fetch students')
+      if (!response.ok) {
+        console.error('Failed to fetch students, status:', response.status)
+        // Try fallback: fetch all users (may include students)
+        try {
+          await fetchAllUsers()
+          return
+        } catch (fallbackErr) {
+          throw new Error(`Failed to fetch students: ${response.status}`)
+        }
+      }
       const data = await response.json()
       console.log(`✅ Received ${data.length} students`)
       // Sort by id in ascending order
@@ -548,9 +645,10 @@ const [userToDelete, setUserToDelete] = useState(null);
     }
   }
 
-  const fetchUsers = async () => {
+  // Fetch all users (students + admins + librarians) for Admin Users tab
+  const fetchAllUsers = async () => {
     try {
-      console.log('Fetching users...')
+      console.log('Fetching all users...')
       const response = await fetch(`${API_URL}/users`, {
         headers: {
           'Content-Type': 'application/json',
@@ -560,17 +658,7 @@ const [userToDelete, setUserToDelete] = useState(null);
       if (!response.ok) throw new Error('Failed to fetch users')
       const data = await response.json()
       console.log(`✅ Received ${data.length} users`)
-      // Map to the shape used by the students UI (firstname, lastname, studentId, id, email, role, phone)
-      const mapped = data.map(u => ({
-        id: u.id,
-        studentId: u.studentId,
-        firstname: u.firstname || '',
-        lastname: u.lastname || '',
-        email: u.email || '',
-        role: u.role,
-        phone: u.phone || ''
-      }))
-      const sortedData = mapped.sort((a, b) => (a.id || 0) - (b.id || 0))
+      const sortedData = Array.isArray(data) ? data.sort((a, b) => (a.id || 0) - (b.id || 0)) : []
       setStudents(sortedData)
     } catch (error) {
       console.error('❌ Error fetching users:', error)
@@ -864,14 +952,18 @@ const handleCreateUser = async (e) => {
     const normalizedDOB = normalizeUserDOB(userForm.dateOfBirth) || normalizeUserDOB(formatDateForInput(userForm.dateOfBirth))
     if (!normalizedDOB) throw new Error('Please enter a valid Date of Birth (MM/DD/YYYY or YYYY-MM-DD)')
 
-    // Always send username as studentId
+    // Map form fields to server's member creation API and ensure password
     const payload = {
-      ...userForm,
+      firstName: userForm.firstname,
+      lastName: userForm.lastname,
+      email: userForm.email,
+      phone: userForm.phone,
+      username: (userForm.studentId && String(userForm.studentId).trim()) || (userForm.username && String(userForm.username).trim()) || '',
       dateOfBirth: normalizedDOB,
-      studentId: userForm.studentId // this is the username
+      password: userForm.password && String(userForm.password).trim() ? userForm.password : generateInitialPassword()
     }
 
-    const response = await fetch(`${API_URL}/students`, {
+    const response = await fetch(`${API_URL}/members`, {
       method: "POST",
       headers: { 
         "Content-Type": "application/json",
@@ -908,9 +1000,16 @@ const handleEditUser = async (e) => {
     // Only use studentId for username
     const coercedUsername = (userForm.studentId && String(userForm.studentId).trim()) || '';
     if (!coercedUsername) throw new Error('Username is required and cannot be empty');
-    const payload = { ...userForm, dateOfBirth: normalizedDOB, studentId: coercedUsername };
+    // Map frontend form to memberController expected keys and call members endpoint
+    const payload = {
+      firstName: userForm.firstname,
+      lastName: userForm.lastname,
+      email: userForm.email,
+      phone: userForm.phone,
+      dateOfBirth: normalizedDOB
+    };
 
-    const response = await fetch(`${API_URL}/students/${selectedUser.id}`, {
+    const response = await fetch(`${API_URL}/members/${selectedUser.id}`, {
       method: "PUT",
       headers: { 
         "Content-Type": "application/json",
@@ -951,7 +1050,7 @@ const handleDeleteUser = async () => {
   if (!selectedUser) return;
 
   try {
-    const response = await fetch(`${API_URL}/students/${selectedUser.id}`, {
+    const response = await fetch(`${API_URL}/members/${selectedUser.id}`, {
       method: "DELETE",
       headers: {
         "Authorization": `Bearer ${localStorage.getItem('token')}`
@@ -966,6 +1065,42 @@ const handleDeleteUser = async () => {
   } catch (err) {
     setError(err.message);
     console.error("Delete error response:", err.message);
+  }
+};
+
+// Enhanced delete: if server blocks due to unpaid fines, offer a force option
+const handleDeleteUserWithForce = async () => {
+  if (!selectedUser) return;
+
+  try {
+    const response = await fetch(`${API_URL}/members/${selectedUser.id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (response.ok) {
+      setShowDeleteUserModal(false);
+      await fetchStudents();
+      return;
+    }
+
+    // If blocked due to unpaid fines, ask for confirmation to force anonymize
+    const msg = (data && (data.error || data.message)) || 'Failed to delete user';
+    const unpaidPattern = /unpaid/i;
+    if (unpaidPattern.test(msg)) {
+      // Show an inline confirmation modal (nicer UI) instead of window.confirm
+      setForceDeleteMessage(msg + '\n\nForce anonymize this account anyway? (This will disable the account and remove PII)');
+      setShowForceDeleteConfirm(true);
+      return;
+    }
+
+    // Otherwise show error
+    throw new Error(msg);
+  } catch (err) {
+    setError(err.message);
+    console.error('Delete error response:', err.message);
   }
 };
 
@@ -1143,6 +1278,19 @@ const handleDeleteUser = async () => {
       'Study Rooms': '🚪'
     }
 
+    const getIconForType = (type) => {
+      if (!type) return '📦';
+      const t = String(type).toLowerCase();
+      if (t === 'book' || t === 'books') return ICONS['Books'] || '📚';
+      if (t === 'cd' || t === 'cds') return ICONS['CDs'] || '💿';
+      if (t === 'audiobook' || t === 'audiobooks') return ICONS['Audiobooks'] || '🎧';
+      if (t === 'movie' || t === 'movies') return ICONS['Movies'] || '🎬';
+      if (t === 'technology' || t === 'tech' || t === 'technologys') return ICONS['Technology'] || '💻';
+      if (t.includes('study') || t.includes('room')) return ICONS['Study Rooms'] || '🚪';
+      // fallback: try direct key
+      return ICONS[type] || '📦';
+    }
+
     return (
     <div className="tab-content overview-layout">
       <div className="overview-hero">
@@ -1151,7 +1299,6 @@ const handleDeleteUser = async () => {
           <div className="subtitle">Quick summary of library activity and recent changes</div>
         </div>
         <div className="overview-actions">
-          <button className="btn ghost" onClick={() => setOverviewModal('assets')}>View Assets</button>
           <button className="btn primary" onClick={() => changeTab('reports')}>Open Reports</button>
         </div>
       </div>
@@ -1237,7 +1384,7 @@ const handleDeleteUser = async () => {
                       <th>ID</th>
                       <th>Title / Name</th>
                       <th>Type</th>
-                      <th>Available</th>
+                      <th style={{ textAlign: 'center' }}>Available</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1250,12 +1397,18 @@ const handleDeleteUser = async () => {
                       return (
                         <tr key={String(id) + i}>
                           <td style={{ width: 56 }}>
-                            <img src={imgSrc} alt={title} className="overview-modal-thumb" onError={(e) => { e.target.style.display = 'none' }} />
+                            {a.Image_URL ? (
+                              <img src={`${a.Image_URL}?t=${imageRefreshKey}`} alt={title} className="overview-modal-thumb" onError={(e) => { e.target.style.display = 'none' }} />
+                            ) : (
+                              <div className="overview-modal-thumb" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }} aria-hidden>
+                                {getIconForType(a.__type)}
+                              </div>
+                            )}
                           </td>
                           <td style={{ whiteSpace: 'nowrap' }}>{id}</td>
                           <td>{title}</td>
                           <td style={{ whiteSpace: 'nowrap' }}>{a.__type}</td>
-                          <td style={{ textAlign: 'right' }}>{available}</td>
+                          <td style={{ textAlign: 'center' }}>{available}</td>
                         </tr>
                       )
                     })}
@@ -1289,8 +1442,8 @@ const handleDeleteUser = async () => {
                   {students.map(s => (
                     <tr key={s.id}>
                       <td style={{ whiteSpace: 'nowrap' }}><strong>{s.studentId || s.username || '-'}</strong></td>
-                      <td>{s.firstname || '-'}</td>
-                      <td>{s.lastname || '-'}</td>
+                        <td>{getFirstName(s)}</td>
+                        <td>{getLastName(s) || '-'}</td>
                           <td style={{ color: '#374151' }}>{s.email || '-'}</td>
                           <td>
                             <span className={`role-badge role-${mapRoleValueToName(s.role).toLowerCase()}`}>{mapRoleValueToName(s.role)}</span>
@@ -1315,9 +1468,9 @@ const handleDeleteUser = async () => {
               <table className="data-table overview-modal-table">
                 <thead>
                   <tr>
-                    <th>Borrow ID</th>
-                    <th>Borrower</th>
-                    <th>Phone</th>
+                    <th>Username</th>
+                    <th>First Name</th>
+                    <th>Last Name</th>
                     <th>Asset</th>
                     <th>Type</th>
                     <th>Due Date</th>
@@ -1326,18 +1479,57 @@ const handleDeleteUser = async () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {borrowRecords.filter(r => !r.Return_Date).map(r => (
-                    <tr key={r.Borrow_ID}>
-                      <td>{r.Borrow_ID}</td>
-                      <td>{r.Borrower_Name}</td>
-                      <td style={{ whiteSpace: 'nowrap' }}>{r.User_Phone || r.UserPhone || '-'}</td>
-                      <td>{r.Title || r.Item_Title || '-'}</td>
-                      <td>{r.Type || r.Asset_Type || '-'}</td>
-                      <td>{formatDateForDisplay(r.Due_Date)}</td>
-                      <td style={{ color: '#dc2626' }}>{r.Days_Overdue || '-'}</td>
-                      <td><span className={`status-badge ${r.Return_Date ? 'returned' : 'borrowed'}`}>{r.Return_Date ? 'Returned' : 'Borrowed'}</span></td>
-                    </tr>
-                  ))}
+                  {borrowRecords.filter(r => !r.Return_Date).map(r => {
+                    // Defensive field extraction for username / names
+                    const username = r.Username || r.username || r.User_Username || r.UserName || r.studentId || '';
+                    const firstName = r.First_Name || r.firstName || r.firstname || r.User_FirstName || '';
+                    const lastName = r.Last_Name || r.lastName || r.lastname || r.User_LastName || '';
+
+                    // If no separate name fields, try to split Borrower_Name
+                    let derivedFirst = firstName;
+                    let derivedLast = lastName;
+                    if (!derivedFirst && !derivedLast && r.Borrower_Name) {
+                      const parts = String(r.Borrower_Name).trim().split(/\s+/);
+                      derivedFirst = parts[0] || '';
+                      derivedLast = parts.slice(1).join(' ') || '';
+                    }
+
+                    const assetTitle = r.Title || r.Item_Title || r.Asset_Title || '-';
+                    const assetType = r.Type || r.Asset_Type || r.AssetType || '-';
+
+                    // Compute days overdue: prefer server-provided Days_Overdue, otherwise compute from Due_Date
+                    let daysOverdue = r.Days_Overdue;
+                    if (daysOverdue === undefined || daysOverdue === null || daysOverdue === '') {
+                      if (r.Due_Date) {
+                        try {
+                          const due = new Date(r.Due_Date);
+                          const today = new Date();
+                          const dueDateOnly = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+                          const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                          const diffMs = todayDateOnly - dueDateOnly;
+                          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                          daysOverdue = diffDays > 0 ? diffDays : 0;
+                        } catch (e) {
+                          daysOverdue = '-';
+                        }
+                      } else {
+                        daysOverdue = '-';
+                      }
+                    }
+
+                    return (
+                      <tr key={r.Borrow_ID || `${r.User_ID || r.Username || Math.random()}` }>
+                        <td style={{ whiteSpace: 'nowrap' }}>{username || '-'}</td>
+                        <td>{derivedFirst || '-'}</td>
+                        <td>{derivedLast || '-'}</td>
+                        <td>{assetTitle}</td>
+                        <td>{assetType}</td>
+                        <td>{formatDateForDisplay(r.Due_Date)}</td>
+                        <td style={{ color: '#dc2626' }}>{typeof daysOverdue === 'number' ? daysOverdue : daysOverdue}</td>
+                        <td><span className={`status-badge ${r.Return_Date ? 'returned' : 'borrowed'}`}>{r.Return_Date ? 'Returned' : 'Borrowed'}</span></td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1373,22 +1565,223 @@ const handleDeleteUser = async () => {
 
         <div className="overview-panel overview-mini">
           <h3>Quick Actions & Recent</h3>
-          <div>
-            <strong>Recent additions</strong>
-            <ul style={{ marginTop: 8, marginBottom: 0 }}>
-              {[...books, ...cds, ...audiobooks, ...movies, ...technology, ...studyRooms].slice(-6).reverse().map(a => (
-                <li key={a.Asset_ID || a.Room_Number || a.Model_Num} style={{ padding: '6px 0', borderBottom: '1px dashed #f1f5f9' }}>{a.Title || a.Room_Number || a.Model_Num || 'Asset'}</li>
-              ))}
-            </ul>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div>
+              <strong>Recent additions</strong>
+              <ul style={{ marginTop: 8, marginBottom: 0 }}>
+                {[...books, ...cds, ...audiobooks, ...movies, ...technology, ...studyRooms].slice(-6).reverse().map(a => (
+                  <li key={a.Asset_ID || a.Room_Number || a.Model_Num} style={{ padding: '6px 0', borderBottom: '1px dashed #f1f5f9' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 8, background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {a.Image_URL ? (
+                            <img src={`${a.Image_URL}?t=${imageRefreshKey}`} alt={a.Title || 'asset'} style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 6 }} onError={(e) => e.target.style.display='none'} />
+                          ) : (
+                            <span style={{ fontSize: 18 }}>{getIconForType(a.__type || a.Type || a.Asset_Type)}</span>
+                          )}
+                        </div>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>{a.Title || a.Room_Number || a.Model_Num || 'Asset'}</div>
+                          <div style={{ fontSize: 12, color: '#6b7280' }}>{a.__type || a.Type || a.Asset_Type || ''}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div>
+              <strong>Top borrowers (live)</strong>
+              <ul style={{ marginTop: 8, marginBottom: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {borrowRecords.slice(0,6).map(b => {
+                  const username = b.Username || b.username || b.User_Username || b.UserName || b.Student_ID || '';
+                  const first = b.First_Name || b.firstName || b.firstname || b.User_FirstName || '';
+                  const last = b.Last_Name || b.lastName || b.lastname || b.User_LastName || '';
+                  const nameFromParts = (first || last) ? `${first} ${last}`.trim() : '';
+                  const display = username || b.Borrower_Name || nameFromParts || (b.User_ID ? `#${b.User_ID}` : '') || 'User';
+                  const subtitle = username ? (nameFromParts || '') : (b.Borrower_Name ? '' : 'User');
+
+                  const openBorrowerItemsModal = (record) => {
+                    // Build identifying pieces
+                    const id = record.User_ID || record.UserId || record.Borrower_ID || record.BorrowerId || null;
+                    const uname = record.Username || record.username || record.User_Username || record.UserName || record.Student_ID || '';
+                    const f = record.First_Name || record.firstName || record.firstname || '';
+                    const l = record.Last_Name || record.lastName || record.lastname || '';
+                    const full = record.Borrower_Name || `${f} ${l}`.trim();
+
+                    const items = borrowRecords.filter(r => {
+                      const rId = r.User_ID || r.UserId || r.Borrower_ID || r.BorrowerId || null;
+                      const rU = r.Username || r.username || r.User_Username || r.UserName || r.Student_ID || '';
+                      const rFull = r.Borrower_Name || `${r.First_Name || r.firstName || ''} ${r.Last_Name || r.lastName || ''}`.trim();
+                      if (id && rId && String(id) === String(rId)) return true;
+                      if (uname && rU && uname === rU) return true;
+                      if (full && rFull && full === rFull) return true;
+                      return false;
+                    });
+
+                    setModalBorrower({ id, username: uname, first: f, last: l, display: display });
+                    setModalBorrowerItems(items);
+                    setShowBorrowerItemsModal(true);
+                  };
+
+                  return (
+                    <li key={b.Borrow_ID || b.User_ID || display} style={{ padding: '8px 10px', borderRadius: 8, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 8, background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }} aria-hidden>👤</div>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>{display}</div>
+                          {nameFromParts && <div style={{ fontSize: 12, color: '#6b7280' }}>{nameFromParts}</div>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="small-btn" onClick={() => openBorrowerItemsModal(b)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #e5e7eb', background: '#fff' }}>View items</button>
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
           </div>
-          <div style={{ marginTop: 8 }}>
-            <strong>Top borrowers (live)</strong>
-            <ul style={{ marginTop: 8, marginBottom: 0 }}>
-              {borrowRecords.slice(0,6).map(b => (
-                <li key={b.Borrow_ID} style={{ padding: '6px 0', borderBottom: '1px dashed #f1f5f9' }}>{b.Borrower_Name || b.User_Name || 'User'}</li>
-              ))}
-            </ul>
-          </div>
+
+          {/* Borrower Items Modal */}
+          {showBorrowerItemsModal && modalBorrower && (
+            <div className="modal-overlay" onClick={() => setShowBorrowerItemsModal(false)}>
+              <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '760px' }}>
+                <h3 style={{ marginTop: 0 }}>Items for {modalBorrower.display || modalBorrower.username || 'User'}</h3>
+                <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
+                  {modalBorrowerItems.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '24px', color: '#6b7280' }}>No borrows found for this user.</div>
+                  ) : (
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Borrow ID</th>
+                          <th>Title</th>
+                          <th>Type</th>
+                          <th>Borrow Date</th>
+                          <th>Due Date</th>
+                          <th>Return Date</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {modalBorrowerItems.map(it => (
+                          <tr key={it.Borrow_ID}>
+                            <td>{it.Borrow_ID}</td>
+                            <td>{it.Title || it.Item_Title || it.Asset_Title || '-'}</td>
+                            <td>{it.Type || it.Asset_Type || '-'}</td>
+                            <td>{formatDateForDisplay(it.Borrow_Date)}</td>
+                            <td>{formatDateForDisplay(it.Due_Date)}</td>
+                            <td>{it.Return_Date ? formatDateForDisplay(it.Return_Date) : '-'}</td>
+                            <td><span className={`status-badge ${it.Return_Date ? 'returned' : 'borrowed'}`}>{it.Return_Date ? 'Returned' : 'Borrowed'}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                <div className="modal-actions">
+                  <button className="close-btn" onClick={() => setShowBorrowerItemsModal(false)}>Close</button>
+                </div>
+              </div>
+            </div>
+          )}
+          {showBucketModal && (
+            <div className="modal-overlay" onClick={() => setShowBucketModal(false)}>
+              <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '920px' }}>
+                <h3 style={{ marginTop: 0 }}>{bucketModalTitle || 'Bucket Details'}</h3>
+                <div style={{ maxHeight: '520px', overflowY: 'auto' }}>
+                  {(!bucketModalItems || bucketModalItems.length === 0) ? (
+                    <div style={{ textAlign: 'center', padding: '24px', color: '#6b7280' }}>No items in this bucket.</div>
+                  ) : (
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Borrow ID</th>
+                          <th>Title</th>
+                          <th>Type</th>
+                          <th>Borrower</th>
+                          <th>Borrow Date</th>
+                          <th>Due Date</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bucketModalItems.map(it => {
+                          const borrowerName = it.Borrower_Name || `${it.First_Name || it.firstName || ''} ${it.Last_Name || it.lastName || ''}`.trim() || (it.Username || it.username) || '-';
+                          const title = it.Title || it.Item_Title || it.Asset_Title || '-';
+                          const type = it.Type || it.Asset_Type || '-';
+                          return (
+                            <tr key={it.Borrow_ID || Math.random()}>
+                              <td>{it.Borrow_ID}</td>
+                              <td>{title}</td>
+                              <td>{type}</td>
+                              <td>{borrowerName}</td>
+                              <td>{formatDateForDisplay(it.Borrow_Date)}</td>
+                              <td>{formatDateForDisplay(it.Due_Date)}</td>
+                              <td><span className={`status-badge ${it.Return_Date ? 'returned' : 'borrowed'}`}>{it.Return_Date ? 'Returned' : 'Borrowed'}</span></td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                <div className="modal-actions">
+                  <button className="close-btn" onClick={() => setShowBucketModal(false)}>Close</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showAssetBucketModal && (
+            <div className="modal-overlay" onClick={() => setShowAssetBucketModal(false)}>
+              <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '920px' }}>
+                <h3 style={{ marginTop: 0 }}>{assetBucketModalTitle || 'Asset Borrowers'}</h3>
+                <div style={{ maxHeight: '520px', overflowY: 'auto' }}>
+                  {(!assetBucketModalItems || assetBucketModalItems.length === 0) ? (
+                    <div style={{ textAlign: 'center', padding: '24px', color: '#6b7280' }}>No borrows for this asset in the selected time bucket.</div>
+                  ) : (
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Borrow ID</th>
+                          <th>Title</th>
+                          <th>Type</th>
+                          <th>Borrower</th>
+                          <th>Borrow Date</th>
+                          <th>Due Date</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {assetBucketModalItems.map(it => {
+                          const borrowerName = it.Borrower_Name || `${it.First_Name || it.firstName || ''} ${it.Last_Name || it.lastName || ''}`.trim() || (it.Username || it.username) || '-';
+                          const title = it.Title || it.Item_Title || it.Asset_Title || '-';
+                          const type = it.Type || it.Asset_Type || '-';
+                          return (
+                            <tr key={it.Borrow_ID || Math.random()}>
+                              <td>{it.Borrow_ID}</td>
+                              <td>{title}</td>
+                              <td>{type}</td>
+                              <td>{borrowerName}</td>
+                              <td>{formatDateForDisplay(it.Borrow_Date)}</td>
+                              <td>{formatDateForDisplay(it.Due_Date)}</td>
+                              <td><span className={`status-badge ${it.Return_Date ? 'returned' : 'borrowed'}`}>{it.Return_Date ? 'Returned' : 'Borrowed'}</span></td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                <div className="modal-actions">
+                  <button className="close-btn" onClick={() => setShowAssetBucketModal(false)}>Close</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1595,8 +1988,8 @@ const handleDeleteUser = async () => {
               students.map((student) => (
                 <tr key={student.id}>
                   <td><strong>{student.studentId || student.username}</strong></td>
-                  <td>{student.firstname || '-'}</td>
-                  <td>{student.lastname || '-'}</td>
+                  <td>{getFirstName(student)}</td>
+                  <td>{getLastName(student) || '-'}</td>
                   <td>
                     <span className={`role-badge role-${mapRoleValueToName(student.role).toLowerCase()}`}>{mapRoleValueToName(student.role)}</span>
                   </td>
@@ -1685,137 +2078,668 @@ const handleDeleteUser = async () => {
 
     // Generate custom report handler (must be outside renderReports)
     const generateCustomReport = async () => {
+      // Allow generation when either "All Students" or "All Asset Types" is selected,
+      // otherwise require start/end + at least one asset + at least one user.
+      const isAllUsersSelected = (() => {
+        const u = customReportFilters.userId;
+        if (!u) return false;
+        if (Array.isArray(u)) return u.length === 0 || u.includes('') || u.some(i => (i && typeof i === 'object' && (i.id === '' || i.studentId === '' || i.username === '')));
+        return String(u) === '';
+      })();
+      const isAllAssetsSelected = (() => {
+        const a = customReportFilters.assetType;
+        if (!a) return false;
+        if (Array.isArray(a)) return a.length === 0 || a.includes('') || a.some(i => (i && typeof i === 'object' && (i.id === '' || i.value === '' || i.name === '')));
+        return String(a) === '';
+      })();
+      const hasEssentialFilters = customReportFilters.startDate && customReportFilters.endDate && (customReportFilters.assetType && customReportFilters.assetType.length) && (customReportFilters.userId && customReportFilters.userId.length);
+      if (!(isAllUsersSelected || isAllAssetsSelected || hasEssentialFilters)) {
+        setCustomReportError('Please select either All Students, All Asset Types, or provide Start Date, End Date, at least one Asset Type, and at least one User.');
+        return;
+      }
+
       setCustomReportLoading(true);
       setCustomReportError('');
       try {
         const params = new URLSearchParams();
         if (customReportFilters.startDate) params.append('startDate', customReportFilters.startDate);
         if (customReportFilters.endDate) params.append('endDate', customReportFilters.endDate);
-        if (customReportFilters.assetType) params.append('assetType', customReportFilters.assetType);
-        if (customReportFilters.userId) params.append('userId', customReportFilters.userId);
-        const response = await fetch(`${API_URL}/reports/custom?${params.toString()}`);
-        if (!response.ok) throw new Error('Failed to fetch custom report');
+        // assetType and userId may be arrays (multi-select). Append each value separately.
+        if (customReportFilters.assetType) {
+          if (Array.isArray(customReportFilters.assetType)) {
+            customReportFilters.assetType.forEach(t => { if (t) params.append('assetType', t) });
+          } else {
+            params.append('assetType', customReportFilters.assetType);
+          }
+        }
+        if (customReportFilters.userId) {
+          if (Array.isArray(customReportFilters.userId)) {
+            customReportFilters.userId.forEach(u => { if (u) params.append('userId', u) });
+          } else {
+            params.append('userId', customReportFilters.userId);
+          }
+        }
+        if (customReportFilters.status) params.append('status', customReportFilters.status);
+
+        const response = await fetch(`${API_URL}/reports/custom?${params.toString()}`, {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        });
+
+        if (!response.ok) {
+          // try to parse server error
+          let msg = `Failed to fetch custom report (${response.status})`;
+          try {
+            const errBody = await response.json();
+            if (errBody && errBody.error) msg = errBody.error + (errBody.details ? `: ${errBody.details}` : '');
+          } catch (e) {
+            // ignore JSON parse errors
+          }
+          // If 404, give a helpful hint about server route or restart
+          if (response.status === 404) {
+            msg = `${msg} — route not found. Is the backend running with the latest code? Try restarting the server.`
+          }
+          throw new Error(msg);
+        }
+
         const data = await response.json();
         setCustomReportData(Array.isArray(data) ? data : []);
       } catch (err) {
+        console.error('Custom report error:', err);
         setCustomReportError(err.message || 'Error generating report');
       } finally {
         setCustomReportLoading(false);
       }
     };
 
+    const isAllUsersSelected = (() => {
+      const u = customReportFilters.userId;
+      if (!u) return true; // no selection considered 'All'
+      if (Array.isArray(u) && u.length === 0) return true;
+      if (Array.isArray(u) && u.includes('')) return true;
+      if (typeof u === 'string' && u === '') return true;
+      return false;
+    })();
+
+    const isAllAssetsSelected = (() => {
+      const a = customReportFilters.assetType;
+      if (!a) return true;
+      if (Array.isArray(a) && a.length === 0) return true;
+      if (Array.isArray(a) && a.includes('')) return true;
+      if (typeof a === 'string' && a === '') return true;
+      return false;
+    })();
+
+    // Allow generation if either all users OR all assets are selected (they imply broad report),
+    // otherwise require start+end+at least one user and asset type.
+    const canGenerate = isAllUsersSelected || isAllAssetsSelected || (
+      customReportFilters.startDate && customReportFilters.endDate && (customReportFilters.assetType && customReportFilters.assetType.length) && (customReportFilters.userId && customReportFilters.userId.length)
+    );
+
     return (
       <div className="tab-content">
-        <h2>Library Reports</h2>
         <ErrorPopup errorMessage={error} />
 
-        {/* Custom Report Generator */}
-        <div className="report-section" style={{ marginBottom: '32px', background: '#f3f4f6', borderRadius: '14px', padding: '32px 28px' }}>
-          <h3 style={{ marginBottom: '18px', fontWeight: 700, fontSize: '1.3rem' }}>🛠️ Generate Custom Report</h3>
-          <form style={{ display: 'flex', flexWrap: 'wrap', gap: '32px', marginBottom: '18px', alignItems: 'flex-end' }} onSubmit={e => { e.preventDefault(); generateCustomReport(); }}>
-            <div style={{ minWidth: '320px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 600 }}>Date Range</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input type="date" value={customReportFilters.startDate} onChange={e => setCustomReportFilters(f => ({ ...f, startDate: e.target.value }))} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', flex: 1 }} />
-                <span style={{ alignSelf: 'center' }}>to</span>
-                <input type="date" value={customReportFilters.endDate} onChange={e => setCustomReportFilters(f => ({ ...f, endDate: e.target.value }))} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', flex: 1 }} />
+        {/* Custom Report Generator - stylish layout */}
+        <div className="report-section" style={{ marginBottom: '36px', borderRadius: '14px', padding: '22px', background: 'linear-gradient(180deg,#ffffff 0%,#fbfdff 100%)', boxShadow: '0 6px 20px rgba(2,6,23,0.04)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 800 }}>✨ Generate Custom Report</h3>
+              <p style={{ margin: '6px 0 0 0', color: '#6b7280', maxWidth: 720 }}>Create tailored reports using dates, asset types, users and status. Choose a view and preview results instantly.</p>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" onClick={() => { setCustomReportFilters({ startDate: '', endDate: '', assetType: [], userId: [], status: '' }); setCustomReportData([]); }} style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid #e6eef8', background: '#fff', cursor: 'pointer' }}>Reset</button>
+            </div>
+          </div>
+
+          <form onSubmit={e => { e.preventDefault(); generateCustomReport(); }} style={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 12, alignItems: 'end' }}>
+            <div style={{ gridColumn: 'span 3', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontWeight: 700, fontSize: 13 }}>Start</label>
+              <input type="date" value={customReportFilters.startDate} onChange={e => setCustomReportFilters(f => ({ ...f, startDate: e.target.value }))} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #e6eef8', background: '#fff' }} />
+            </div>
+            <div style={{ gridColumn: 'span 3', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontWeight: 700, fontSize: 13 }}>End</label>
+              <input type="date" value={customReportFilters.endDate} onChange={e => setCustomReportFilters(f => ({ ...f, endDate: e.target.value }))} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #e6eef8', background: '#fff' }} />
+            </div>
+            <div style={{ gridColumn: 'span 3', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontWeight: 700, fontSize: 13 }}>Asset Type</label>
+              <div ref={assetDropdownRef} style={{ position: 'relative', width: '100%' }}>
+                <div
+                  onClick={() => setAssetDropdownOpen(o => !o)}
+                  style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #e6eef8', background: '#fff', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
+                  {(() => {
+                    const list = Array.isArray(customReportFilters.assetType) ? customReportFilters.assetType : (customReportFilters.assetType ? [customReportFilters.assetType] : []);
+                    if (!list || list.length === 0) return 'All Asset Types';
+                    const names = list.map(a => a.replace(/-/g, ' '));
+                    if (names.length <= 2) return names.join(', ');
+                    return `${names.slice(0,2).join(', ')} +${names.length - 2}`;
+                  })()}
+                </div>
+                {assetDropdownOpen && (
+                  <div style={{ position: 'absolute', top: '110%', left: 0, right: 0, background: '#fff', border: '1px solid #e6eef8', borderRadius: 8, boxShadow: '0 6px 18px rgba(2,6,23,0.06)', zIndex: 30, maxHeight: 240, overflowY: 'auto', padding: 8 }}>
+                    {[
+                      { value: 'books', label: 'Books' },
+                      { value: 'cds', label: 'CDs' },
+                      { value: 'audiobooks', label: 'Audiobooks' },
+                      { value: 'movies', label: 'Movies' },
+                      { value: 'technology', label: 'Technology' },
+                      { value: 'study-rooms', label: 'Study Rooms' }
+                    ].map(opt => {
+                      const checked = Array.isArray(customReportFilters.assetType) ? customReportFilters.assetType.includes(opt.value) : customReportFilters.assetType === opt.value;
+                      return (
+                        <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 6px', borderRadius: 6, background: checked ? '#f8fafc' : 'transparent', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={checked} onChange={() => {
+                            if (!Array.isArray(customReportFilters.assetType)) {
+                              setCustomReportFilters(f => ({ ...f, assetType: checked ? [] : [opt.value] }));
+                              return;
+                            }
+                            if (checked) {
+                              setCustomReportFilters(f => ({ ...f, assetType: f.assetType.filter(x => x !== opt.value) }));
+                            } else {
+                              setCustomReportFilters(f => ({ ...f, assetType: [...(f.assetType || []), opt.value] }));
+                            }
+                          }} />
+                          <span style={{ flex: 1 }}>{opt.label}</span>
+                        </label>
+                      )
+                    })}
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, justifyContent: 'flex-end' }}>
+                      <button type="button" onClick={() => setCustomReportFilters(f => ({ ...f, assetType: [] }))} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #e6eef8', background: '#fff' }}>Clear</button>
+                      <button type="button" onClick={() => setAssetDropdownOpen(false)} style={{ padding: '6px 10px', borderRadius: 8, border: 'none', background: '#6366f1', color: '#fff' }}>Done</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-            <div style={{ minWidth: '200px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 600 }}>Asset Type</label>
-              <select value={customReportFilters.assetType} onChange={e => setCustomReportFilters(f => ({ ...f, assetType: e.target.value }))} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db' }}>
-                <option value="">All</option>
-                <option value="books">Books</option>
-                <option value="cds">CDs</option>
-                <option value="audiobooks">Audiobooks</option>
-                <option value="movies">Movies</option>
-                <option value="technology">Technology</option>
-                <option value="study-rooms">Study Rooms</option>
+            <div style={{ gridColumn: 'span 3', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontWeight: 700, fontSize: 13 }}>User</label>
+              <div>
+                {(() => {
+                  const normalizedStudents = Array.isArray(students) ? students.map(s => ({
+                    ...s,
+                    firstname: s.firstname || s.firstName || s.First_Name || '',
+                    lastname: s.lastname || s.lastName || s.Last_Name || '',
+                    username: s.username || s.userName || s.Username || s.studentId || '',
+                    studentId: s.studentId || s.Student_ID || s.username || '',
+                  })) : [];
+                  const studentCandidates = normalizedStudents.filter(u => (!!u.studentId) || (!!u.username) || !!(u.firstname || u.lastname));
+                  const dropdownUsers = [ { id: '', firstname: 'All', lastname: 'Students', username: '', studentId: '' }, ...studentCandidates ];
+                  return <UserDropdown users={dropdownUsers} value={customReportFilters.userId} onChange={val => setCustomReportFilters(f => ({ ...f, userId: val }))} allLabel="All Students" multi={true} />
+                })()}
+              </div>
+            </div>
+
+            <div style={{ gridColumn: 'span 3', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontWeight: 700, fontSize: 13 }}>Status</label>
+              <select value={customReportFilters.status} onChange={e => setCustomReportFilters(f => ({ ...f, status: e.target.value }))} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #e6eef8', background: '#fff' }}>
+                <option value="">Any</option>
+                <option value="current">Currently Borrowed</option>
+                <option value="returned">Returned</option>
               </select>
             </div>
-            <div style={{ minWidth: '220px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
-              <label style={{ fontWeight: 600 }}>User</label>
-              <UserDropdown
-                users={[{ id: '', firstname: 'All', lastname: 'Students', username: '', studentId: '', role: 1 }, ...students.filter(u => u.role === 1)]}
-                value={customReportFilters.userId}
-                onChange={val => setCustomReportFilters(f => ({ ...f, userId: val }))}
-                allLabel="All Students"
-              />
+
+            <div style={{ gridColumn: 'span 3', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontWeight: 700, fontSize: 13 }}>View</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" onClick={() => setCustomReportType('table')} style={{ padding: '8px 12px', borderRadius: 8, border: customReportType === 'table' ? '1px solid #6366f1' : '1px solid #e6eef8', background: customReportType === 'table' ? '#eef2ff' : '#fff' }}>Table</button>
+                <button type="button" onClick={() => setCustomReportType('bar')} style={{ padding: '8px 12px', borderRadius: 8, border: customReportType === 'bar' ? '1px solid #6366f1' : '1px solid #e6eef8', background: customReportType === 'bar' ? '#eef2ff' : '#fff' }}>Bar</button>
+                <button type="button" onClick={() => setCustomReportType('pie')} style={{ padding: '8px 12px', borderRadius: 8, border: customReportType === 'pie' ? '1px solid #6366f1' : '1px solid #e6eef8', background: customReportType === 'pie' ? '#eef2ff' : '#fff' }}>Pie</button>
+              </div>
             </div>
-            <div style={{ minWidth: '220px', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ fontWeight: 600 }}>Report Type</label>
-              <select value={customReportType} onChange={e => setCustomReportType(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db' }}>
-                <option value="table">Table</option>
-                <option value="bar">Bar Chart</option>
-                <option value="pie">Pie Chart</option>
-              </select>
+
+            <div style={{ gridColumn: 'span 6', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="submit" disabled={customReportLoading || !canGenerate} style={{ padding: '12px 18px', borderRadius: 12, border: 'none', background: customReportLoading ? 'linear-gradient(90deg,#c7b3ff,#98f0f6)' : 'linear-gradient(90deg,#7c3aed,#06b6d4)', color: '#fff', fontWeight: 800 }}>{customReportLoading ? 'Generating...' : 'Generate Report'}</button>
             </div>
-            <div style={{ minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button className="add-button" type="submit" disabled={customReportLoading} style={{ padding: '10px 0', fontWeight: 600, fontSize: '1.05rem', borderRadius: '8px' }}>
-                {customReportLoading ? 'Generating...' : 'Generate Report'}
-              </button>
-            </div>
+            {!canGenerate && (
+              <div style={{ gridColumn: 'span 12', color: '#b91c1c', fontSize: 13 }}>
+                Please select either <strong>All Students</strong> or <strong>All Asset Types</strong>, or provide <strong>Start Date</strong>, <strong>End Date</strong>, at least one <strong>Asset Type</strong> and at least one <strong>User</strong> before generating a report.
+              </div>
+            )}
           </form>
-          {customReportError && <ErrorPopup errorMessage={customReportError} />}
-          {/* Custom Report Output */}
-          <div style={{ marginTop: '18px' }}>
-            {customReportType === 'table' && customReportData.length > 0 && (
-              <div className="table-container">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      {Object.keys(customReportData[0]).map(key => <th key={key}>{key}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {customReportData.map((row, idx) => (
-                      <tr key={idx}>
-                        {Object.values(row).map((val, i) => <td key={i}>{val}</td>)}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {customReportType === 'bar' && customReportData.length > 0 && (
-              <div style={{ background: '#fff', borderRadius: '8px', padding: '16px', marginBottom: '12px' }}>
-                <ResponsiveContainer width="100%" height={350}>
-                  <BarChart data={customReportData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey={Object.keys(customReportData[0])[0]} />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey={Object.keys(customReportData[0])[1]} fill="#6366f1" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            {customReportType === 'pie' && customReportData.length > 0 && (
-              <div style={{ background: '#fff', borderRadius: '8px', padding: '16px', marginBottom: '12px' }}>
-                <ResponsiveContainer width="100%" height={350}>
-                  <PieChart>
-                    <Pie
-                      data={customReportData}
-                      dataKey={Object.keys(customReportData[0])[1]}
-                      nameKey={Object.keys(customReportData[0])[0]}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={120}
-                      label={(entry) => `${entry[Object.keys(customReportData[0])[0]]}: ${entry[Object.keys(customReportData[0])[1]]}`}
-                    >
-                      {customReportData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            {customReportData.length === 0 && customReportLoading === false && (
-              <div style={{ color: '#666', textAlign: 'center', padding: '18px' }}>No custom report data yet.</div>
-            )}
+
+          {customReportError && <div style={{ marginTop: 12 }}><ErrorPopup errorMessage={customReportError} /></div>}
+
+          <div style={{ marginTop: 18 }}>
+            <div style={{ background: '#fff', borderRadius: 12, padding: 16, boxShadow: '0 4px 14px rgba(2,6,23,0.03)' }}>
+              {customReportLoading && <div style={{ padding: 28, textAlign: 'center', color: '#6b7280' }}>Generating report...</div>}
+              {!customReportLoading && customReportData.length === 0 && <div style={{ padding: 28, textAlign: 'center', color: '#9ca3af' }}>No results yet — try different filters and generate a report.</div>}
+
+              {!customReportLoading && customReportData.length > 0 && (
+                <div>
+                  {customReportType === 'table' && (
+                    <div className="table-container">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            {(() => {
+                              const formatColumnHeader = (col) => {
+                                if (!col) return '';
+                                const s = String(col);
+                                const key = s.toLowerCase();
+                                // common mappings
+                                const mappings = [
+                                  { re: /(^|_|\b)(first|first_name|firstname|user_first|borrower_first)/i, label: 'First Name' },
+                                  { re: /(^|_|\b)(last|last_name|lastname|user_last|borrower_last)/i, label: 'Last Name' },
+                                  { re: /(^|_|\b)(user_?name|username|studentid|student_id|userusername)/i, label: 'Username' },
+                                  { re: /(^|_|\b)(email|user_email|useremail)/i, label: 'Email' },
+                                  { re: /(^|_|\b)(borrow_?id|borrowid|id)$/, label: 'Borrow ID' },
+                                  { re: /(^|_|\b)(title|item_title|asset_title)/i, label: 'Title' },
+                                  { re: /(^|_|\b)(asset_?type|type|assettype)/i, label: 'Type' },
+                                  { re: /(^|_|\b)(due_?date|duedate)/i, label: 'Due Date' },
+                                  { re: /(^|_|\b)(days_?overdue|daysoverdue|days_overdue)/i, label: 'Days Overdue' },
+                                  { re: /(^|_|\b)(currently_?borrowed|currentlyborrowed)/i, label: 'Currently Borrowed' },
+                                  { re: /(^|_|\b)(total_?borrows|totalborrows)/i, label: 'Total Borrows' },
+                                  { re: /(_|\b)(balance|account_balance)/i, label: 'Balance' }
+                                ];
+                                for (const m of mappings) {
+                                  if (m.re.test(s)) return m.label;
+                                }
+                                // fallback: replace underscores and camelCase
+                                const withSpaces = s.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+                                return withSpaces.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                              };
+                              return Object.keys(customReportData[0] || {}).map((col) => <th key={col}>{formatColumnHeader(col)}</th>);
+                            })()}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {customReportData.map((row, idx) => (
+                            <tr key={idx}>{Object.keys(row).map((k, i) => <td key={i}>{row[k]}</td>)}</tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {(() => {
+                    // derive chart-friendly dataset from server response
+                    const deriveChartConfig = (rows = []) => {
+                      if (!rows || rows.length === 0) return { chartData: [], nameKey: '', valueKey: '', yLabel: '' };
+                      const keys = Object.keys(rows[0]);
+
+                      // numeric keys: all rows have parseable numbers for that key
+                      const numericKeys = keys.filter(k => rows.every(r => {
+                        const v = r[k];
+                        return v !== null && v !== undefined && v !== '' && !isNaN(parseFloat(v)) && isFinite(parseFloat(v));
+                      }));
+
+                      // detect date-like fields to ignore as categorical
+                      const isDateLike = (val) => typeof val === 'string' && /\d{4}-\d{2}-\d{2}/.test(val);
+
+                      const categoricalKeys = keys.filter(k => rows.some(r => {
+                        const v = r[k];
+                        return v !== null && v !== undefined && v !== '' && typeof v !== 'number' && !(!isNaN(parseFloat(v)) && isFinite(parseFloat(v))) && !isDateLike(v);
+                      }));
+
+                      const nameKey = categoricalKeys[0] || keys.find(k => /name|title|type|asset/i.test(k)) || keys[0];
+                      const valueKey = numericKeys[0] || null;
+
+                      const map = {};
+                      rows.forEach(r => {
+                        const name = (r[nameKey] !== undefined && r[nameKey] !== null && String(r[nameKey]).trim() !== '') ? String(r[nameKey]) : '(Unknown)';
+                        const val = valueKey ? parseFloat(r[valueKey]) || 0 : 1;
+                        map[name] = (map[name] || 0) + val;
+                      });
+
+                      const chartData = Object.keys(map).map((k) => ({ name: k, value: map[k] }));
+                      chartData.sort((a, b) => b.value - a.value);
+
+                      const yLabel = valueKey ? valueKey.replace(/_/g, ' ') : 'Count';
+                      return { chartData, nameKey, valueKey, yLabel };
+                    };
+
+                    const buildTitleFromFilters = () => {
+                      const parts = [];
+                      if (customReportFilters.status) parts.push(customReportFilters.status === 'current' ? 'Currently Borrowed' : 'Returned');
+                      if (customReportFilters.assetType && customReportFilters.assetType.length) parts.push(customReportFilters.assetType.map(a => a.replace(/-/g, ' ')).join(', '));
+                      if (customReportFilters.userId && customReportFilters.userId.length && Array.isArray(students)) {
+                        const names = students.filter(s => customReportFilters.userId.includes(s.studentId || s.username || s.id)).map(s => `${getFirstName(s)} ${getLastName(s)}`.trim()).filter(Boolean);
+                        if (names.length) parts.push(names.slice(0,2).join(', ') + (names.length > 2 ? ` +${names.length-2}` : ''));
+                      }
+                      return parts.length ? parts.join(' — ') : 'Distribution';
+                    };
+
+                    const { chartData, nameKey, valueKey, yLabel } = deriveChartConfig(customReportData || []);
+                    const title = buildTitleFromFilters();
+
+                    if (customReportType === 'bar') {
+                      // Build timeline buckets when rows contain a date field (e.g., Borrow_Date)
+                      const deriveTimelineBuckets = (rows = [], startDateStr, endDateStr) => {
+                        if (!rows || rows.length === 0) return [];
+                        // find a date-like key
+                        const cols = Object.keys(rows[0] || {});
+                        const dateKey = cols.find(k => /borrow.*date|borrow_date|borrowdate|due_date|borrowDate|date$/i.test(k)) || cols.find(k => {
+                          // fallback: detect by value pattern
+                          return rows.some(r => typeof r[k] === 'string' && /\d{4}-\d{2}-\d{2}/.test(r[k]));
+                        });
+                        if (!dateKey) return [];
+
+                        // determine range
+                        const parseDate = (v) => {
+                          if (!v) return null;
+                          const d = new Date(v);
+                          if (isNaN(d)) return null;
+                          return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                        };
+
+                        const sd = parseDate(startDateStr) || rows.map(r => parseDate(r[dateKey])).filter(Boolean).reduce((a,b)=>a<b?a:b,new Date(8640000000000000));
+                        const ed = parseDate(endDateStr) || rows.map(r => parseDate(r[dateKey])).filter(Boolean).reduce((a,b)=>a>b?a:b,new Date(-8640000000000000));
+                        const diffDays = Math.max(1, Math.round((ed - sd) / (1000*60*60*24)));
+
+                        let gran = 'month';
+                        if (diffDays <= 31) gran = 'day';
+                        else if (diffDays <= 92) gran = 'week';
+                        else if (diffDays <= 365) gran = 'month';
+                        else gran = 'year';
+
+                        const bucketKey = (d) => {
+                          const year = d.getFullYear();
+                          const month = String(d.getMonth() + 1).padStart(2, '0');
+                          const day = String(d.getDate()).padStart(2, '0');
+                          if (gran === 'day') return `${year}-${month}-${day}`;
+                          if (gran === 'week') {
+                            const dayOfWeek = (d.getDay() + 6) % 7; // 0 = Monday
+                            const monday = new Date(d);
+                            monday.setDate(d.getDate() - dayOfWeek);
+                            return `${monday.getFullYear()}-${String(monday.getMonth()+1).padStart(2,'0')}-${String(monday.getDate()).padStart(2,'0')}`;
+                          }
+                          if (gran === 'month') return `${year}-${month}`;
+                          return `${year}`;
+                        };
+
+                        const map = {};
+                        rows.forEach(r => {
+                          const pd = parseDate(r[dateKey]);
+                          if (!pd) return;
+                          const key = bucketKey(pd);
+                          map[key] = map[key] || { name: key, value: 0, items: [] };
+                          map[key].value += 1;
+                          map[key].items.push(r);
+                        });
+
+                        // sort keys chronologically
+                        const keys = Object.keys(map).sort((a,b) => new Date(a) - new Date(b));
+                        return keys.map(k => map[k]);
+                      };
+
+                      // Build timeline buckets grouped by asset title/identifier so we can render bars per-asset
+                      const deriveTimelineBucketsByAsset = (rows = [], startDateStr, endDateStr) => {
+                        if (!rows || rows.length === 0) return { buckets: [], assets: [] };
+                        // detect date key
+                        const cols = Object.keys(rows[0] || {});
+                        const dateKey = cols.find(k => /borrow.*date|borrow_date|borrowdate|due_date|borrowDate|date$/i.test(k)) || cols.find(k => rows.some(r => typeof r[k] === 'string' && /\d{4}-\d{2}-\d{2}/.test(r[k])));
+                        if (!dateKey) return { buckets: [], assets: [] };
+
+                        // detect asset title/key
+                        const assetKey = cols.find(k => /title$|item_title|asset_title|asset_id|id|name$/i.test(k)) || cols.find(k => rows.some(r => r[k]));
+
+                        const parseDate = (v) => {
+                          if (!v) return null;
+                          const d = new Date(v);
+                          if (isNaN(d)) return null;
+                          return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+                        };
+
+                        // determine granularity using same logic
+                        const sd = parseDate(startDateStr) || rows.map(r => parseDate(r[dateKey])).filter(Boolean).reduce((a,b)=>a<b?a:b,new Date(8640000000000000));
+                        const ed = parseDate(endDateStr) || rows.map(r => parseDate(r[dateKey])).filter(Boolean).reduce((a,b)=>a>b?a:b,new Date(-8640000000000000));
+                        const diffDays = Math.max(1, Math.round((ed - sd) / (1000*60*60*24)));
+                        let gran = 'month';
+                        if (diffDays <= 31) gran = 'day';
+                        else if (diffDays <= 92) gran = 'week';
+                        else if (diffDays <= 365) gran = 'month';
+                        else gran = 'year';
+
+                        const bucketKey = (d) => {
+                          const year = d.getFullYear();
+                          const month = String(d.getMonth() + 1).padStart(2, '0');
+                          const day = String(d.getDate()).padStart(2, '0');
+                          if (gran === 'day') return `${year}-${month}-${day}`;
+                          if (gran === 'week') {
+                            const dayOfWeek = (d.getDay() + 6) % 7;
+                            const monday = new Date(d);
+                            monday.setDate(d.getDate() - dayOfWeek);
+                            return `${monday.getFullYear()}-${String(monday.getMonth()+1).padStart(2,'0')}-${String(monday.getDate()).padStart(2,'0')}`;
+                          }
+                          if (gran === 'month') return `${year}-${month}`;
+                          return `${year}`;
+                        };
+
+                        const map = {}; // map[bucketName] = { name, __itemsByAsset: { assetName: [items] }, assetCounts: { assetName: count } }
+                        const assetSet = new Set();
+
+                        rows.forEach(r => {
+                          const pd = parseDate(r[dateKey]);
+                          if (!pd) return;
+                          const key = bucketKey(pd);
+                          map[key] = map[key] || { name: key, __itemsByAsset: {}, assetCounts: {} };
+                          const assetName = (assetKey && (r[assetKey] || r.Title || r.Item_Title || r.Asset_Title || r.Asset_ID || r.id || r.Name)) || (r.Title || r.Item_Title || r.Asset_Title || r.Asset_ID || 'Unknown');
+                          const an = String(assetName || 'Unknown');
+                          assetSet.add(an);
+                          map[key].__itemsByAsset[an] = map[key].__itemsByAsset[an] || [];
+                          map[key].__itemsByAsset[an].push(r);
+                          map[key].assetCounts[an] = (map[key].assetCounts[an] || 0) + 1;
+                        });
+
+                        const keys = Object.keys(map).sort((a,b) => new Date(a) - new Date(b));
+                        const assets = Array.from(assetSet);
+                        const buckets = keys.map(k => {
+                          const entry = { name: k };
+                          entry.__itemsByAsset = map[k].__itemsByAsset || {};
+                          // add numeric keys for each asset for charting
+                          assets.forEach(a => {
+                            entry[a] = map[k].assetCounts && map[k].assetCounts[a] ? map[k].assetCounts[a] : 0;
+                          });
+                          return entry;
+                        });
+
+                        return { buckets, assets };
+                      };
+
+                      const TimelineTooltip = ({ active, payload }) => {
+                        if (!active || !payload || !payload.length) return null;
+                        const d = payload[0].payload || {};
+                        // build a small preview of top items across assets
+                        const itemsByAsset = d.__itemsByAsset || {};
+                        const sample = [];
+                        Object.keys(itemsByAsset).forEach(k => {
+                          (itemsByAsset[k] || []).slice(0,3).forEach(it => sample.push({ asset: k, title: it.Title || it.Item_Title || it.Asset_Title || '-', borrower: it.Borrower_Name || it.Username || it.username || (it.First_Name ? `${it.First_Name} ${it.Last_Name || ''}` : '') }));
+                        });
+                        return (
+                          <div style={{ background: '#fff', padding: 8, borderRadius: 8, boxShadow: '0 6px 20px rgba(2,6,23,0.08)', minWidth: 240 }}>
+                            <div style={{ fontWeight: 700, marginBottom: 6 }}>{d.name}</div>
+                            <div style={{ maxHeight: 140, overflowY: 'auto' }}>
+                              <ul style={{ margin: 0, paddingLeft: 14 }}>
+                                {sample.slice(0,6).map((it, i) => (
+                                  <li key={i} style={{ fontSize: 13 }}>
+                                    <strong style={{ color: '#111' }}>{it.title}</strong> <span style={{ color: '#6b7280' }}>— {it.asset}</span>
+                                  </li>
+                                ))}
+                                {Object.keys(d.__itemsByAsset || {}).reduce((sum, k) => sum + ((d.__itemsByAsset[k] || []).length || 0), 0) > 6 && <li style={{ fontSize: 13 }}>+ more</li>}
+                              </ul>
+                            </div>
+                          </div>
+                        );
+                      };
+
+                      const handleBucketClick = (payload) => {
+                        if (!payload) return;
+                        const items = payload.items || [];
+                        setBucketModalItems(items);
+                        setBucketModalTitle(`${payload.name} — ${payload.value} item${payload.value !== 1 ? 's' : ''}`);
+                        setShowBucketModal(true);
+                      };
+
+                      const handleAssetBarClick = (bucketPayload, assetName) => {
+                        if (!bucketPayload || !assetName) return;
+                        const items = (bucketPayload.__itemsByAsset && bucketPayload.__itemsByAsset[assetName]) || [];
+                        setAssetBucketModalItems(items);
+                        setAssetBucketModalTitle(`${assetName} — ${items.length} item${items.length !== 1 ? 's' : ''} in ${bucketPayload.name}`);
+                        setShowAssetBucketModal(true);
+                      };
+
+                      const byAsset = deriveTimelineBucketsByAsset(customReportData || [], customReportFilters.startDate, customReportFilters.endDate);
+                      const timelineBuckets = byAsset.buckets && byAsset.buckets.length ? byAsset.buckets : deriveTimelineBuckets(customReportData || [], customReportFilters.startDate, customReportFilters.endDate);
+                      // If byAsset produced assets list, we render grouped bars per asset across time buckets
+                      const assetsList = byAsset.assets || [];
+
+                      if (assetsList && assetsList.length) {
+                        const dataToUse = timelineBuckets;
+                        // compute totals per asset and pick top 10
+                        const totals = {};
+                        assetsList.forEach(a => {
+                          totals[a] = dataToUse.reduce((s, row) => s + (row[a] || 0), 0);
+                        });
+                        const sortedAssets = [...assetsList].sort((a,b) => (totals[b] || 0) - (totals[a] || 0));
+                        const topAssets = sortedAssets.slice(0, 10);
+
+                        return (
+                          <div style={{ height: 360, display: 'flex', gap: 16, alignItems: 'stretch' }}>
+                            <div style={{ flex: 1, minWidth: 360 }}>
+                              <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 8 }}>
+                                <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>{title || `${yLabel} by ${nameKey}`}</h4>
+                              </div>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={dataToUse} margin={{ top: 6, right: 12, left: 0, bottom: 6 }}>
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis dataKey="name" />
+                                  <YAxis />
+                                  <Tooltip content={<TimelineTooltip />} />
+                                  {topAssets.map((assetName, idx) => (
+                                    <Bar
+                                      key={`bar-${idx}`}
+                                      dataKey={assetName}
+                                      stackId="assetStack"
+                                      fill={COLORS[idx % COLORS.length]}
+                                      name={assetName}
+                                      onClick={(d) => handleAssetBarClick(d && d.payload, assetName)}
+                                    />
+                                  ))}
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                            <div style={{ width: 220, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <div style={{ width: '100%' }}>
+                                <CompactLegend items={topAssets.map((a, i) => ({ name: a, value: totals[a] || 0 }))} />
+                                {sortedAssets.length > topAssets.length && (
+                                  <div style={{ marginTop: 8, fontSize: 12, color: '#6b7280' }}>+{sortedAssets.length - topAssets.length} more</div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // fallback to original timeline buckets view (single series)
+                      const dataToUse = timelineBuckets && timelineBuckets.length ? timelineBuckets : chartData.map(d => ({ ...d, items: [] }));
+
+                      return (
+                        <div style={{ height: 360, display: 'flex', gap: 16, alignItems: 'stretch' }}>
+                          <div style={{ flex: 1, minWidth: 320 }}>
+                            <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 8 }}>
+                              <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>{title || `${yLabel} by ${nameKey}`}</h4>
+                            </div>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart data={dataToUse} margin={{ top: 6, right: 12, left: 0, bottom: 6 }}>
+                                <CartesianGrid strokeDasharray="3 3" />
+                                <XAxis dataKey="name" />
+                                <YAxis />
+                                <Tooltip content={<TimelineTooltip />} />
+                                <Bar dataKey="value" fill={COLORS[0]} name={yLabel} onClick={(d) => handleBucketClick(d && d.payload)} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div style={{ width: 220, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ width: '100%' }}>
+                              <Legend
+                                layout="vertical"
+                                verticalAlign="middle"
+                                align="left"
+                                iconType="square"
+                                wrapperStyle={{ paddingLeft: 8 }}
+                                payload={dataToUse.map((d, idx) => ({ value: `${d.name} (${d.value})`, type: 'square', color: COLORS[idx % COLORS.length] }))}
+                                formatter={(value) => <span style={{ fontSize: 13, color: '#374151' }}>{value}</span>}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (customReportType === 'pie') {
+                      // Compact legend renderer
+                      const CompactLegend = ({ items }) => {
+                        const count = (items || []).length;
+                        const fontSize = count > 12 ? 11 : count > 8 ? 12 : 13;
+                        return (
+                          <div style={{ maxHeight: 300, overflowY: 'auto', paddingLeft: 8 }}>
+                            {(items || []).map((it, idx) => (
+                              <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 4px' }}>
+                                <span style={{ width: 12, height: 12, background: COLORS[idx % COLORS.length], display: 'inline-block', borderRadius: 3 }} />
+                                <span style={{ fontSize, color: '#374151', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.name} <small style={{ color: '#6b7280' }}>({it.value})</small></span>
+                              </div>
+                            ))}
+                          </div>
+                        )
+                      }
+
+                      const pieData = chartData || [];
+                      return (
+                        <div style={{ height: 360, display: 'flex', gap: 16, alignItems: 'stretch' }}>
+                          <div style={{ flex: 1, minWidth: 320 }}>
+                            <div style={{ display: 'flex', justifyContent: 'flex-start', marginBottom: 8 }}>
+                              {pieActive ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <div style={{ fontSize: '1rem', fontWeight: 700, color: '#111' }}>{pieActive.name}</div>
+                                    <div style={{ fontSize: 12, color: '#6b7280' }}>Distribution</div>
+                                  </div>
+                                  <div style={{ marginLeft: 8 }}>
+                                    <span style={{ display: 'inline-block', background: '#eef2ff', color: '#1e40af', fontWeight: 700, padding: '6px 10px', borderRadius: 9999, fontSize: 13 }}>{pieActive.value}</span>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={pieData}
+                                  dataKey="value"
+                                  nameKey="name"
+                                  cx="50%"
+                                  cy="50%"
+                                  outerRadius={110}
+                                  label={({ name, value }) => `${name}: ${value}`}
+                                  onMouseEnter={(data) => setPieActive(data)}
+                                  onMouseLeave={() => setPieActive(null)}
+                                >
+                                  {pieData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                  ))}
+                                </Pie>
+                                <Tooltip formatter={(val) => [val, yLabel]} />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <div style={{ width: 220, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ width: '100%' }}>
+                              <CompactLegend items={pieData.map(d => ({ name: d.name, value: d.value }))} />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })()}
+
+                  {/* Pie chart already rendered above inside deriveChartConfig block; do not render twice. */}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -2070,7 +2994,6 @@ const handleDeleteUser = async () => {
       </div>
 
       <div className="table-container" style={{ marginTop: '20px' }}>
-        <h3>All Users</h3>
         <table className="data-table">
           <thead>
             <tr>
@@ -2090,8 +3013,8 @@ const handleDeleteUser = async () => {
               students.map((student) => (
                 <tr key={student.id}>
                   <td><strong>{student.studentId || student.username}</strong></td>
-                  <td>{student.firstname}</td>
-                  <td>{student.lastname}</td>
+                  <td>{getFirstName(student)}</td>
+                  <td>{getLastName(student)}</td>
                   <td>
                     <span className={`role-badge role-${mapRoleValueToName(student.role).toLowerCase()}`}>{mapRoleValueToName(student.role)}</span>
                   </td>
@@ -2198,6 +3121,8 @@ const handleDeleteUser = async () => {
 
   return (
     <div className="dashboard-container">
+      <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
+      <ErrorPopup errorMessage={error} onClose={() => setError('')} />
       <div className={`dashboard-layout ${sidebarCollapsed ? 'collapsed' : ''}`}>
         <aside className="admin-sidebar">
           <div className="sidebar-top">
@@ -2505,7 +3430,7 @@ const handleDeleteUser = async () => {
           <h2 className="text-xl font-semibold text-red-600">Delete User</h2>
           <p>
             Are you sure you want to delete{' '}
-            <strong>{selectedUser ? `${selectedUser.firstname || ''} ${selectedUser.lastname || ''}`.trim() : ''}</strong>?
+            <strong>{selectedUser ? `${getFirstName(selectedUser)} ${getLastName(selectedUser) || ''}`.trim() : ''}</strong>?
           </p>
           <div className="flex justify-end gap-3 pt-4">
             <button
@@ -2515,10 +3440,48 @@ const handleDeleteUser = async () => {
               Cancel
             </button>
             <button
-              onClick={handleDeleteUser}
+              onClick={handleDeleteUserWithForce}
               className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
             >
               Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {showForceDeleteConfirm && (
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+        <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-md space-y-4">
+          <h2 className="text-lg font-semibold text-yellow-700">Warning</h2>
+          <div style={{ whiteSpace: 'pre-wrap', color: '#374151' }}>{forceDeleteMessage}</div>
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              onClick={() => { setShowForceDeleteConfirm(false); setForceDeleteMessage(''); }}
+              className="px-4 py-2 rounded-lg bg-gray-300 hover:bg-gray-400"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                setShowForceDeleteConfirm(false);
+                try {
+                  const res = await fetch(`${API_URL}/members/${selectedUser.id}?force=true`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                  });
+                  const d = await res.json().catch(() => ({}));
+                  if (!res.ok) throw new Error(d.error || d.message || 'Failed to force delete user');
+                  setShowDeleteUserModal(false);
+                  setSuccessMessage(d.message || 'Member disabled and anonymized');
+                  await fetchStudents();
+                } catch (err) {
+                  setError(err.message || 'Failed to force delete');
+                }
+              }}
+              className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"
+            >
+              Force Delete
             </button>
           </div>
         </div>
@@ -2552,7 +3515,7 @@ const handleDeleteUser = async () => {
             </div>
               <div style={{ flex: 1 }}>
               <h2 style={{ fontWeight: 700, fontSize: '1.7rem', margin: 0 }}>
-                {selectedUser.firstname || '-'} {selectedUser.lastname || '-'}
+                {getFirstName(selectedUser)} {getLastName(selectedUser) || '-'}
               </h2>
               <span className={`role-badge role-${mapRoleValueToName(selectedUser.role).toLowerCase()}`} style={{ display: 'inline-block', marginTop: '8px', fontSize: '1rem' }}>{mapRoleValueToName(selectedUser.role)}</span>
             </div>
@@ -2615,9 +3578,37 @@ const handleDeleteUser = async () => {
                       </div>
                     </div>
                     <div className="info-row">
+                      <span className="info-label">First Name:</span>
+                      <div className="info-value-copy">
+                        <span className="info-value" title={getFirstName(selectedUser)}>{getFirstName(selectedUser)}</span>
+                      </div>
+                    </div>
+
+                    <div className="info-row">
+                      <span className="info-label">Last Name:</span>
+                      <div className="info-value-copy">
+                        <span className="info-value" title={getLastName(selectedUser)}>{getLastName(selectedUser) || '-'}</span>
+                      </div>
+                    </div>
+
+                    <div className="info-row">
                       <span className="info-label">Date of Birth:</span>
                       <div className="info-value-copy">
-                        <span className="info-value" title={formatDateForDisplay(selectedUser.dateOfBirth)}>{formatDateForDisplay(selectedUser.dateOfBirth)}</span>
+                        <span className="info-value" title={formatDateForDisplay(getUserDOB(selectedUser))}>{formatDateForDisplay(getUserDOB(selectedUser))}</span>
+                      </div>
+                    </div>
+
+                    <div className="info-row">
+                      <span className="info-label">Balance:</span>
+                      <div className="info-value-copy">
+                        <span className="info-value" title={selectedUser.balance || selectedUser.Balance || '0.00'}>${parseFloat(selectedUser.balance || selectedUser.Balance || 0).toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    <div className="info-row">
+                      <span className="info-label">Borrowed:</span>
+                      <div className="info-value-copy">
+                        <span className="info-value" title={selectedUser.borrowedBooks || selectedUser.Borrowed_Count || selectedUser.borrowed || 0}>{selectedUser.borrowedBooks ?? selectedUser.Borrowed_Count ?? selectedUser.borrowed ?? 0}</span>
                       </div>
                     </div>
                   </div>
