@@ -9,7 +9,8 @@ import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Leg
 // Use local server for development, production for deployed app
 const API_URL = window.location.hostname === 'localhost' 
   ? 'http://localhost:3000/api'
-  : 'https://librarymanagementsystem-z2yw.onrender.com/api'
+  : 'https://librarymanagementsystem-joseph.onrender.com/api';
+
 
 // Helper function to get image path for an asset
 const getAssetImagePath = (assetType, assetId, extension = 'png') => {

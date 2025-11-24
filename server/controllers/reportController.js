@@ -138,19 +138,32 @@ const getOverdueItems = async (req, res) => {
 
 // Bonus Report: Inventory Summary
 const getInventorySummary = (req, res) => {
-  // Build a safe inventory summary using the inventory views/tables that exist in the schema.
+  // Return a concise inventory summary grouped by asset type.
   const query = `
-    SELECT 
-      'Book' AS Asset_Type,
-      COUNT(DISTINCT b.Asset_ID) AS Unique_Items,
+    SELECT
+      CASE
+        WHEN bk.Asset_ID IS NOT NULL THEN 'Book'
+        WHEN cd.Asset_ID IS NOT NULL THEN 'CD'
+        WHEN ab.Asset_ID IS NOT NULL THEN 'Audiobook'
+        WHEN mv.Asset_ID IS NOT NULL THEN 'Movie'
+        WHEN t.Asset_ID IS NOT NULL THEN 'Technology'
+        WHEN sr.Asset_ID IS NOT NULL THEN 'Study Room'
+        ELSE 'Other'
+      END AS Asset_Type,
+      COUNT(DISTINCT a.Asset_ID) AS Unique_Items,
       COUNT(r.Rentable_ID) AS Total_Copies,
-      SUM(CASE WHEN r.Availability = 1 THEN 1 ELSE 0 END) AS Total_Available,
-      SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) AS Currently_Borrowed,
-      ROUND((SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(r.Rentable_ID), 0)) * 100, 2) AS Utilization_Percentage
-    FROM rentable r
-    JOIN asset a ON r.Asset_ID = a.Asset_ID
-    JOIN book b ON a.Asset_ID = b.Asset_ID
+      COALESCE(SUM(CASE WHEN r.Availability = 1 THEN 1 ELSE 0 END), 0) AS Total_Available,
+      COALESCE(SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END), 0) AS Currently_Borrowed
+    FROM asset a
+    LEFT JOIN rentable r ON a.Asset_ID = r.Asset_ID
+    LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
+    LEFT JOIN cd ON a.Asset_ID = cd.Asset_ID
+    LEFT JOIN audiobook ab ON a.Asset_ID = ab.Asset_ID
+    LEFT JOIN movie mv ON a.Asset_ID = mv.Asset_ID
+    LEFT JOIN technology t ON a.Asset_ID = t.Asset_ID
+    LEFT JOIN study_room sr ON a.Asset_ID = sr.Asset_ID
     GROUP BY Asset_Type
+    ORDER BY Total_Copies DESC
   `;
 
   db.query(query, (err, results) => {

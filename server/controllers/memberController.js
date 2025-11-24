@@ -40,7 +40,7 @@ exports.getAllMembers = async (req, res) => {
         THEN DATEDIFF(CURDATE(), b.Due_Date) * ? ELSE 0 END), 0) as Outstanding_Fines
     FROM user u
     LEFT JOIN borrow b ON u.User_ID = b.Borrower_ID
-    WHERE u.Role = 1
+    
   `;
 
   const params = [fineRate];
@@ -71,7 +71,7 @@ exports.getAllMembers = async (req, res) => {
     }
 
     // Get total count for pagination
-    let countQuery = `SELECT COUNT(DISTINCT u.User_ID) as total FROM user u WHERE u.Role = 1`;
+    let countQuery = `SELECT COUNT(DISTINCT u.User_ID) as total FROM user u`;
     const countParams = [];
 
     if (search) {
@@ -177,7 +177,7 @@ exports.getMemberProfile = async (req, res) => {
       u.User_Phone as Phone_Number,
       'active' as Account_Status
     FROM user u
-    WHERE u.User_ID = ? AND u.Role = 1
+    WHERE u.User_ID = ?
   `, [id], (err, members) => {
     if (err) {
       console.error('Error fetching member:', err);
@@ -398,7 +398,7 @@ exports.updateMember = (req, res) => {
   params.push(id);
 
   db.query(
-    `UPDATE user SET ${updates.join(', ')} WHERE User_ID = ? AND Role = 1`,
+    `UPDATE user SET ${updates.join(', ')} WHERE User_ID = ?`,
     params,
     (err, result) => {
       if (err) {
@@ -554,7 +554,7 @@ exports.updateMemberStatus = (req, res) => {
   }
 
   db.query(
-    'UPDATE user SET Account_Status = ? WHERE User_ID = ? AND Role = 1',
+    'UPDATE user SET Account_Status = ? WHERE User_ID = ?',
     [status, id],
     (err, result) => {
       if (err) {
