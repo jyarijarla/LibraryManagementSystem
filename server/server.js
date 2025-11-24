@@ -143,6 +143,8 @@ const routes = [
   { method: 'GET', path: '/api/members/:id', handler: memberController.getMemberProfile, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'POST', path: '/api/members', handler: memberController.addMember, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'PUT', path: '/api/members/:id', handler: memberController.updateMember, auth: true, roles: ROLE_GROUPS.STAFF },
+  // Admin-level user update (allows changing Role and other fields)
+  { method: 'PUT', path: '/api/users/:id', handler: memberController.updateUser, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'DELETE', path: '/api/members/:id', handler: memberController.deleteMember, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/members/:id/activity', handler: memberController.getMemberActivity, auth: true, roles: ROLE_GROUPS.STAFF },
 

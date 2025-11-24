@@ -2000,8 +2000,97 @@
 .dashboard-layout.collapsed .admin-sidebar { padding-left:10px; padding-right:10px }
 
 @media (max-width: 880px) {
-  .dashboard-layout { grid-template-columns: 72px 1fr }
-  .dashboard-layout.collapsed { grid-template-columns: 72px 1fr }
-  .admin-sidebar { height: auto; position: relative }
+  /* On small screens: allow expanded sidebar (when not collapsed) and
+     keep a compact collapsed state. This makes the toggle actually
+     expand the sidebar so the item backgrounds cover the label text. */
+  .dashboard-layout { grid-template-columns: 160px 1fr; }
+  .dashboard-layout.collapsed { grid-template-columns: 72px 1fr; }
+  .admin-sidebar { height: auto; position: relative; }
   .page-banner .banner-content, .dashboard-content { padding-left: 14px; padding-right: 14px }
+
+  /* Make sidebar items take full available width so their
+     background covers the label text on narrow screens */
+  .admin-sidebar { padding-left: 12px; padding-right: 12px; }
+
+  .admin-sidebar .sidebar-item {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border-radius: 8px;
+    justify-content: flex-start;
+  }
+
+  .admin-sidebar .sidebar-item .icon {
+    flex: 0 0 28px;
+  }
+
+  .admin-sidebar .sidebar-item .label {
+    display: inline-block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: calc(100% - 44px);
+    font-size: 13px;
+    color: inherit;
+  }
+
+  /* Force explicit widths so the expanded state actually expands on small screens */
+  .dashboard-layout:not(.collapsed) .admin-sidebar {
+    width: 160px !important;
+    min-width: 160px !important;
+    max-width: 160px !important;
+  }
+
+  .dashboard-layout.collapsed .admin-sidebar {
+    width: 72px !important;
+    min-width: 72px !important;
+    max-width: 72px !important;
+  }
+
+  /* Ensure the sidebar sits above main content if necessary */
+  .admin-sidebar {
+    z-index: 1100;
+  }
+
+  /* Make active item's background stretch the full width of the sidebar column */
+  .admin-sidebar .sidebar-item,
+  .admin-sidebar .sidebar-item.active {
+    display: flex;
+    width: 100%;
+    align-items: center;
+  }
+
+  .admin-sidebar .sidebar-item .icon { margin-right: 8px; }
+}
+
+/* Fancy User Management styles (extravagant cards and table tweaks) */
+.user-management-card {
+  background: linear-gradient(180deg,#ffffff,#fbfdff);
+  border: 1px solid rgba(15,23,42,0.04);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 12px 36px rgba(2,6,23,0.04);
+}
+.user-management-header { display:flex; justify-content:space-between; align-items:center; gap:16px }
+.fancy-title { font-size:22px; margin:0; font-weight:800; color:#0b2540 }
+.fancy-sub { margin:4px 0 0 0; color:#6b7280 }
+.user-actions { display:flex; gap:12px; align-items:center }
+.user-search input[type="search"] { padding:8px 12px; border-radius:10px; border:1px solid #e6e9ee; min-width:320px }
+.fancy-create { background: linear-gradient(90deg,#06b6d4,#3b82f6); box-shadow: 0 8px 24px rgba(59,130,246,0.12); }
+.user-stats-row { display:flex; gap:12px; margin-top:14px }
+.stat-card.large { flex:1; padding:18px; display:flex; gap:12px; align-items:center }
+.stat-card.large .stat-icon { width:56px; height:56px; border-radius:12px; font-size:24px }
+.fancy-table .data-table thead th { background: linear-gradient(90deg,#0b1220 0%, #111827 100%); }
+.fancy-row { transition: all 0.18s ease; }
+.fancy-row:hover { transform: translateY(-4px); box-shadow: 0 12px 28px rgba(2,6,23,0.06); }
+.id-cell { color:#0b1220; font-weight:800 }
+.role-badge.shiny { padding:6px 12px; border-radius:999px; background: linear-gradient(90deg,#eef2ff,#e0f2fe); color:#075985; font-weight:700 }
+.fancy-actions .fancy-btn { padding:8px 10px; border-radius:10px; border:none; cursor:pointer; font-weight:700 }
+.fancy-actions .danger { background: linear-gradient(90deg,#ef4444,#dc2626); color:#fff }
+.fancy-actions .fancy-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(2,6,23,0.06); }
+
+@media (max-width: 880px) {
+  .user-search input[type="search"] { min-width: 180px; }
+  .user-stats-row { flex-direction: column; }
+  .user-actions { flex-direction: column; gap:8px }
 }

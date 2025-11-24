@@ -40,7 +40,7 @@ exports.getAllMembers = async (req, res) => {
         THEN DATEDIFF(CURDATE(), b.Due_Date) * ? ELSE 0 END), 0) as Outstanding_Fines
     FROM user u
     LEFT JOIN borrow b ON u.User_ID = b.Borrower_ID
-    
+    WHERE u.Role = 1
   `;
 
   const params = [fineRate];
@@ -71,7 +71,7 @@ exports.getAllMembers = async (req, res) => {
     }
 
     // Get total count for pagination
-    let countQuery = `SELECT COUNT(DISTINCT u.User_ID) as total FROM user u`;
+    let countQuery = `SELECT COUNT(DISTINCT u.User_ID) as total FROM user u WHERE u.Role = 1`;
     const countParams = [];
 
     if (search) {
@@ -177,7 +177,7 @@ exports.getMemberProfile = async (req, res) => {
       u.User_Phone as Phone_Number,
       'active' as Account_Status
     FROM user u
-    WHERE u.User_ID = ?
+    WHERE u.User_ID = ? AND u.Role = 1
   `, [id], (err, members) => {
     if (err) {
       console.error('Error fetching member:', err);
@@ -398,7 +398,7 @@ exports.updateMember = (req, res) => {
   params.push(id);
 
   db.query(
-    `UPDATE user SET ${updates.join(', ')} WHERE User_ID = ?`,
+    `UPDATE user SET ${updates.join(', ')} WHERE User_ID = ? AND Role = 1`,
     params,
     (err, result) => {
       if (err) {
@@ -418,129 +418,131 @@ exports.updateMember = (req, res) => {
   );
 };
 
-// Soft-delete (anonymize) member to preserve history
-// This prevents breaking foreign keys and keeps audit/reporting intact.
+// Update general user (used by Admin UI to change role or other fields)
+exports.updateUser = (req, res) => {
+  const { id } = req.params;
+  const { firstName, lastName, email, phone, dateOfBirth, role } = req.body;
+
+  const updates = [];
+  const params = [];
+
+  if (firstName) {
+    updates.push('First_Name = ?');
+    params.push(firstName);
+  }
+  if (lastName !== undefined) {
+    updates.push('Last_Name = ?');
+    params.push(lastName);
+  }
+  if (email) {
+    updates.push('User_Email = ?');
+    params.push(email);
+  }
+  if (phone !== undefined) {
+    updates.push('User_Phone = ?');
+    params.push(phone || null);
+  }
+  if (dateOfBirth) {
+    updates.push('Date_Of_Birth = DATE(?)');
+    params.push(dateOfBirth);
+  }
+  if (role !== undefined && role !== null) {
+    // accept numeric or string role; convert string names to numeric if needed
+    let roleVal = role;
+    if (typeof roleVal === 'string') {
+      const s = roleVal.toLowerCase();
+      if (s.includes('admin')) roleVal = 2;
+      else if (s.includes('librarian')) roleVal = 3;
+      else if (s.includes('teacher')) roleVal = 4;
+      else roleVal = 1; // default to student
+    }
+    updates.push('Role = ?');
+    params.push(roleVal);
+  }
+
+  if (updates.length === 0) {
+    return res.writeHead(400, { 'Content-Type': 'application/json' })
+      && res.end(JSON.stringify({ error: 'No fields to update' }));
+  }
+
+  params.push(id);
+
+  db.query(
+    `UPDATE user SET ${updates.join(', ')} WHERE User_ID = ?`,
+    params,
+    (err, result) => {
+      if (err) {
+        console.error('Error updating user:', err);
+        return res.writeHead(500, { 'Content-Type': 'application/json' })
+          && res.end(JSON.stringify({ error: 'Failed to update user' }));
+      }
+
+      if (result.affectedRows === 0) {
+        return res.writeHead(404, { 'Content-Type': 'application/json' })
+          && res.end(JSON.stringify({ error: 'User not found' }));
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'User updated successfully' }));
+    }
+  );
+};
+
+// Delete member only when they have no borrows and no fines
 exports.deleteMember = (req, res) => {
   const { id } = req.params;
 
-  console.log(`deleteMember called for id=${id} query=`, req.query, 'headers=', { forceHeader: req.headers && (req.headers['x-force-delete'] || req.headers['x-force']) });
+  // Check total borrows (any historical borrows block deletion)
+  db.query('SELECT COUNT(*) as borrowCount FROM borrow WHERE Borrower_ID = ?', [id], (err, borrowRes) => {
+    if (err) {
+      console.error('Error checking borrow count:', err);
+      return res.writeHead(500, { 'Content-Type': 'application/json' })
+        && res.end(JSON.stringify({ error: 'Database error' }));
+    }
 
-  // Check if member has active borrows
-  db.query(
-    'SELECT COUNT(*) as count FROM borrow WHERE Borrower_ID = ? AND Return_Date IS NULL',
-    [id],
-    (err, result) => {
+    const borrowCount = borrowRes && borrowRes[0] ? parseInt(borrowRes[0].borrowCount, 10) : 0;
+
+    // Check total fines (any fine records block deletion)
+    db.query('SELECT COALESCE(SUM(Amount_Due),0) as totalFines, COUNT(*) as fineCount FROM fine WHERE User_ID = ?', [id], (err, fineRes) => {
       if (err) {
-        console.error('Error checking borrows:', err);
+        console.error('Error checking fines:', err);
         return res.writeHead(500, { 'Content-Type': 'application/json' })
           && res.end(JSON.stringify({ error: 'Database error' }));
       }
 
-      if (result[0].count > 0) {
+      const fineCount = fineRes && fineRes[0] ? parseInt(fineRes[0].fineCount, 10) : 0;
+      const totalFines = fineRes && fineRes[0] ? parseFloat(fineRes[0].totalFines || 0) : 0.0;
+
+      const blocks = [];
+      if (borrowCount > 0) blocks.push({ type: 'borrows', count: borrowCount });
+      if (fineCount > 0) blocks.push({ type: 'fines', count: fineCount, totalAmount: totalFines });
+
+      if (blocks.length > 0) {
         return res.writeHead(400, { 'Content-Type': 'application/json' })
           && res.end(JSON.stringify({
-            error: 'Cannot delete member with active borrowed items. Please return all items first.'
+            error: 'Cannot delete member: member has related borrows or fines',
+            blocks
           }));
       }
 
-      // Check for unpaid fines
-      db.query(
-        `SELECT COALESCE(SUM(CASE WHEN Return_Date IS NOT NULL AND Fee_Incurred > 0 
-          THEN Fee_Incurred ELSE 0 END), 0) as unpaid_fines
-         FROM borrow WHERE Borrower_ID = ?`,
-        [id],
-        (err, fineResult) => {
-          if (err) {
-            console.error('Error checking fines:', err);
-            return res.writeHead(500, { 'Content-Type': 'application/json' })
-              && res.end(JSON.stringify({ error: 'Database error' }));
-          }
-
-          const unpaid = parseFloat(fineResult[0].unpaid_fines || 0);
-
-          // Allow admin to force anonymize via ?force=true, JSON body { force: true }, or header 'x-force-delete: true'
-          const headerForce = req.headers && (String(req.headers['x-force-delete'] || req.headers['x-force'] || '').toLowerCase() === 'true');
-          const force = (req.query && String(req.query.force) === 'true') || (req.body && req.body.force === true) || headerForce;
-
-          if (unpaid > 0 && !force) {
-            return res.writeHead(400, { 'Content-Type': 'application/json' })
-              && res.end(JSON.stringify({
-                error: `Cannot delete member with unpaid fines ($${unpaid}). Please clear fines first or call DELETE with ?force=true to force anonymize.`
-              }));
-          }
-
-          // Soft-delete / anonymize the member row to preserve history
-          // Use parameterized query and explicit empty-string values for PII fields
-          // to avoid accidentally inserting NULL (ER_BAD_NULL_ERROR) if values are undefined.
-          const anonymizeParams = ['', '', '', '', '', id];
-          db.query(
-            `UPDATE user SET
-               Role = 0,
-               Username = CONCAT('deleted_', User_ID),
-               First_Name = ?,
-               Last_Name = ?,
-               User_Email = ?,
-               User_Phone = ?,
-               Password = ?,
-               Balance = 0.00
-             WHERE User_ID = ?`,
-            anonymizeParams,
-            (err, result) => {
-              if (err) {
-                console.error('Error anonymizing member:', err);
-                // If anonymization fails due to foreign key constraints, attempt a fallback
-                // disable; however, surface a user-friendly error instead of internal SQL details.
-                if (err && err.code === 'ER_NO_REFERENCED_ROW') {
-                  console.warn('Anonymization blocked by FK constraints; attempting disable-only fallback.');
-                  db.query(
-                    'UPDATE user SET Role = 0, Password = ?, Balance = 0.00 WHERE User_ID = ?',
-                    ['', id],
-                    (fallbackErr, fallbackRes) => {
-                      if (fallbackErr) {
-                        console.error('Fallback disable failed:', fallbackErr);
-                        // Return a friendly 400 error to the client for now
-                        return res.writeHead(400, { 'Content-Type': 'application/json' })
-                          && res.end(JSON.stringify({ error: 'Cannot delete member: user has active borrows or unpaid fines.' }));
-                      }
-
-                      if (fallbackRes.affectedRows === 0) {
-                        return res.writeHead(404, { 'Content-Type': 'application/json' })
-                          && res.end(JSON.stringify({ error: 'Member not found' }));
-                      }
-
-                      const msg = unpaid > 0 && force
-                        ? `Member disabled (could not anonymize due to FK constraints). Unpaid fines $${unpaid} bypassed.`
-                        : 'Member disabled (PII retained because of FK constraints)';
-
-                      return res.writeHead(200, { 'Content-Type': 'application/json' })
-                        && res.end(JSON.stringify({ message: msg }));
-                    }
-                  );
-                  return;
-                }
-
-                // For other errors, return a friendly 400 message instead of SQL internals
-                return res.writeHead(400, { 'Content-Type': 'application/json' })
-                  && res.end(JSON.stringify({ error: 'Cannot delete member: user has active borrows or unpaid fines.' }));
-              }
-
-              if (result.affectedRows === 0) {
-                return res.writeHead(404, { 'Content-Type': 'application/json' })
-                  && res.end(JSON.stringify({ error: 'Member not found' }));
-              }
-
-              const msg = unpaid > 0 && force
-                ? `Member force-anonymized (unpaid fines $${unpaid} bypassed)`
-                : 'Member disabled and anonymized to preserve history';
-
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ message: msg }));
-            }
-          );
+      // No borrows and no fines -> safe to delete
+      db.query('DELETE FROM user WHERE User_ID = ? AND Role = 1', [id], (err, delRes) => {
+        if (err) {
+          console.error('Error deleting user:', err);
+          return res.writeHead(500, { 'Content-Type': 'application/json' })
+            && res.end(JSON.stringify({ error: 'Database error deleting member' }));
         }
-      );
-    }
-  );
+
+        if (delRes.affectedRows === 0) {
+          return res.writeHead(404, { 'Content-Type': 'application/json' })
+            && res.end(JSON.stringify({ error: 'Member not found' }));
+        }
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Member deleted successfully' }));
+      });
+    });
+  });
 };
 
 // Update member account status
@@ -554,7 +556,7 @@ exports.updateMemberStatus = (req, res) => {
   }
 
   db.query(
-    'UPDATE user SET Account_Status = ? WHERE User_ID = ?',
+    'UPDATE user SET Account_Status = ? WHERE User_ID = ? AND Role = 1',
     [status, id],
     (err, result) => {
       if (err) {

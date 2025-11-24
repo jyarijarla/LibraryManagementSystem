@@ -2,10 +2,9 @@ import UserDropdown from '../../components/UserDropdown';
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import './Admin.css'
-import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
+import { LoadingOverlay, SuccessPopup, ErrorPopup, DeleteBlockedModal } from '../../components/FeedbackUI/FeedbackUI'
 import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 // import NotificationPanel from '../../components/NotificationPanel/NotificationPanel'
-
 // Use local server for development, production for deployed app
 const API_URL = window.location.hostname === 'localhost' 
   ? 'http://localhost:3000/api'
@@ -156,6 +155,12 @@ function Admin() {
   const [showDeleteUserModal, setShowDeleteUserModal] = useState(false);
   const [showForceDeleteConfirm, setShowForceDeleteConfirm] = useState(false);
   const [forceDeleteMessage, setForceDeleteMessage] = useState('');
+  // Delete-blocked modal state (Admin-only friendly warning)
+  const [showDeleteBlockedModal, setShowDeleteBlockedModal] = useState(false);
+  const [deleteBlockedInfo, setDeleteBlockedInfo] = useState([]);
+  const [deleteBlockedCurrentCount, setDeleteBlockedCurrentCount] = useState(null);
+  const [deleteBlockedTotalCount, setDeleteBlockedTotalCount] = useState(null);
+  
   const [showViewUserModal, setShowViewUserModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   // Modal to show items for a quick-action borrower
@@ -1001,16 +1006,31 @@ const handleEditUser = async (e) => {
     // Only use studentId for username
     const coercedUsername = (userForm.studentId && String(userForm.studentId).trim()) || '';
     if (!coercedUsername) throw new Error('Username is required and cannot be empty');
-    // Map frontend form to memberController expected keys and call members endpoint
+    // Convert role name to numeric value expected by backend
+    const roleName = userForm.role || '';
+    const roleNameToValue = (r) => {
+      if (r === null || r === undefined) return undefined;
+      const s = String(r).toLowerCase();
+      if (s === 'student' || s === '1') return 1;
+      if (s === 'admin' || s === '2') return 2;
+      if (s === 'librarian' || s === '3') return 3;
+      if (s === 'teacher' || s === '4') return 4;
+      return 1;
+    };
+
+    const roleVal = roleNameToValue(roleName);
+
+    // Map frontend form to admin user update endpoint and call users endpoint
     const payload = {
       firstName: userForm.firstname,
       lastName: userForm.lastname,
       email: userForm.email,
       phone: userForm.phone,
-      dateOfBirth: normalizedDOB
+      dateOfBirth: normalizedDOB,
+      role: roleVal
     };
 
-    const response = await fetch(`${API_URL}/members/${selectedUser.id}`, {
+    const response = await fetch(`${API_URL}/users/${selectedUser.id}`, {
       method: "PUT",
       headers: { 
         "Content-Type": "application/json",
@@ -1025,14 +1045,15 @@ const handleEditUser = async (e) => {
     // Apply updated values to the selectedUser and the edit form so the View modal
     // (which may be open underneath the Edit modal) shows the changes immediately.
     const updatedFields = {
-      firstname: (payload && payload.firstname) || userForm.firstname,
-      lastname: (payload && payload.lastname) || userForm.lastname,
+      firstname: (payload && payload.firstName) || userForm.firstname,
+      lastname: (payload && payload.lastName) || userForm.lastname,
       email: (payload && payload.email) || userForm.email,
       studentId: (payload && payload.studentId) || userForm.studentId || '',
       username: (payload && payload.studentId) || userForm.username || '',
       phone: (payload && payload.phone) || userForm.phone || '',
       dateOfBirth: normalizedDOB || userForm.dateOfBirth || '',
-      role: (payload && payload.role) || userForm.role
+      // keep role as numeric value so mapRoleValueToName works consistently elsewhere
+      role: (payload && payload.role) || roleVal
     };
 
     setSelectedUser(prev => ({ ...(prev || {}), ...updatedFields }));
@@ -1084,6 +1105,25 @@ const handleDeleteUserWithForce = async () => {
     if (response.ok) {
       setShowDeleteUserModal(false);
       await fetchStudents();
+      return;
+    }
+
+    // If server provided structured blockers, show friendly Admin-only modal
+    if (data && Array.isArray(data.blocks) && data.blocks.length) {
+      try {
+        // Compute counts from local borrowRecords (best-effort). If stale, the modal notes server-provided details.
+        const current = Array.isArray(borrowRecords) ? borrowRecords.filter(r => !r.Return_Date && userMatchesBorrow(r, selectedUser)).length : null;
+        const total = Array.isArray(borrowRecords) ? borrowRecords.filter(r => userMatchesBorrow(r, selectedUser)).length : null;
+        setDeleteBlockedCurrentCount(current);
+        setDeleteBlockedTotalCount(total);
+        setDeleteBlockedInfo(Array.isArray(data.blocks) ? data.blocks : []);
+        // Close the simple delete confirmation and open the nicer blocked modal
+        setShowDeleteUserModal(false);
+        setShowDeleteBlockedModal(true);
+      } catch (e) {
+        // Fallback: surface a generic error if computation fails
+        setError('Cannot delete user: account has active borrows or outstanding fines.');
+      }
       return;
     }
 
@@ -3487,6 +3527,26 @@ const handleDeleteUserWithForce = async () => {
           </div>
         </div>
       </div>
+    )}
+
+    {showDeleteBlockedModal && (
+      <DeleteBlockedModal
+        open={showDeleteBlockedModal}
+        blockers={deleteBlockedInfo}
+        currentBorrowCount={deleteBlockedCurrentCount}
+        totalBorrowCount={deleteBlockedTotalCount}
+        onClose={() => {
+          setShowDeleteBlockedModal(false);
+          setDeleteBlockedInfo([]);
+          setDeleteBlockedCurrentCount(null);
+          setDeleteBlockedTotalCount(null);
+        }}
+        onViewUser={() => {
+          setShowDeleteBlockedModal(false);
+          // open the View User modal for the selected user
+          if (selectedUser) setShowViewUserModal(true);
+        }}
+      />
     )}
 
     {/* VIEW USER MODAL */}
