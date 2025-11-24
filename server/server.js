@@ -150,7 +150,7 @@ const routes = [
   { method: 'PUT', path: '/api/borrow-records/:id/return', handler: borrowController.returnAsset, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'PUT', path: '/api/borrow-records/:id/renew', handler: borrowController.renewAsset, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/dashboard/stats', handler: borrowController.getDashboardStats, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'POST', path: '/api/borrow', handler: borrowController.borrowAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+  { method: 'POST', path: '/api/borrow/:assetID', handler: borrowController.borrowAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
 
   { method: "GET", path: '/api/borrow-records/user', handler: borrowController.getUserBorrows, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   { method: 'PUT', path: '/api/borrow/return/:borrowID', handler: borrowController.userReturnAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
@@ -161,10 +161,12 @@ const routes = [
   { method: 'GET', path: '/api/holds/user', handler: holdController.getUserHolds, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   { method: 'POST', path: '/api/holds', handler: holdController.createHold, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   { method: 'PUT', path: '/api/holds/:id/cancel', handler: holdController.cancelHold, auth: true, roles: ROLE_GROUPS.STAFF },
-  { method: 'POST', path: '/api/hold', handler: borrowController.holdAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+      //both used on borrower end mainly
+  { method: 'POST', path: '/api/hold/:assetID', handler: holdController.holdAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+  { method: 'PUT', path: '/api/hold/cancel/:holdID', handler: holdController.userCancelHold, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
 
   // Waitlist routes
-  { method: 'POST', path: '/api/waitlist', handler: borrowController.waitlistAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
+  { method: 'POST', path: '/api/waitlist/:assetID', handler: holdController.waitlistAsset, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
 
   // Report routes
   { method: 'GET', path: '/api/reports/most-borrowed', handler: reportController.getMostBorrowedAssets, auth: true, roles: ROLE_GROUPS.STAFF },
@@ -172,6 +174,7 @@ const routes = [
   { method: 'GET', path: '/api/reports/active-borrowers', handler: reportController.getActiveBorrowers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/overdue-items', handler: reportController.getOverdueItems, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/inventory-summary', handler: reportController.getInventorySummary, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/reports/borrower/history', handler: reportController.getUserHistory, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
 
   // Librarian Report routes
   { method: 'GET', path: '/api/reports/librarian/:id/summary', handler: reportController.getLibrarianSummary, auth: true, roles: ROLE_GROUPS.STAFF },
