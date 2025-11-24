@@ -112,11 +112,12 @@ const API_URL = window.location.hostname === 'localhost'
 function DashboardOverview() {
     const navigate = useNavigate()
     const [stats, setStats] = useState(null)
-    const [loading, setLoading] = useState(true)
+    const { setLoading } = useLoading();
 
     useEffect(() => {
         const fetchStats = async () => {
             try {
+                setLoading({ isLoading: true })
                 const token = localStorage.getItem('token');
                 const response = await fetch(`${API_URL}/dashboard/student/stats`, {
                     headers: {
@@ -132,14 +133,12 @@ function DashboardOverview() {
             } catch (error) {
                 console.error('Error fetching stats:', error);
             } finally {
-                setLoading(false);
+                setLoading({ isLoading: false });
             }
         };
 
         fetchStats();
     }, []);
-
-    if (loading) return <div className="student-loading">Loading dashboard...</div>
 
     // Safe access to stats
     const summary = stats?.summary || { borrowed: 0, overdue: 0, bookings: 0, reservations: 0, fines: 0 }
@@ -307,7 +306,6 @@ const StudentSidebar = ({ sidebarOpen, setSidebarOpen, onLogout }) => (
 )
 
 const StudentTopbar = ({ sidebarOpen, setSidebarOpen }) => {
-    const [searchValue, setSearchValue] = useState('')
     const navigate = useNavigate()
 
     const user = JSON.parse(localStorage.getItem('user') || '{}')
@@ -319,19 +317,10 @@ const StudentTopbar = ({ sidebarOpen, setSidebarOpen }) => {
                     {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
                 </button>
                 <div>
-                    <p>Welcome back, {user.First_Name || 'Student'} 👋</p>
+                    <p>Welcome back, {user.First_Name || 'Student'}</p>
                 </div>
             </div>
             <div className="student-topbar-right">
-                <div className="student-search">
-                    <Search size={18} />
-                    <input
-                        type="text"
-                        placeholder="Search..."
-                        value={searchValue}
-                        onChange={(event) => setSearchValue(event.target.value)}
-                    />
-                </div>
                 <button className="student-icon-button">
                     <Bell size={20} />
                     <span className="student-indicator" />
