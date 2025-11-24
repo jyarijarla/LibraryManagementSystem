@@ -12,6 +12,7 @@ export default function useBorrowerData() {
     const [loans, setLoans] = useState([]);
     const [holds, setHolds] = useState([]);
     const [history, setHistory] = useState([]);
+    const [allHistory, setAllHistory] = useState([]);
 
     const [error, setErrorState] = useState('');
     const setError = (sendError) => {
@@ -57,6 +58,14 @@ export default function useBorrowerData() {
                     setHistory(returnedLoans);
                 }
             }
+            
+            const histRes = await fetch(`${API_URL}/reports/borrower/history`, { headers });
+            if (histRes.ok) {
+                const borrowerHistory = await histRes.json();
+                if (Array.isArray(borrowerHistory)) {
+                    setAllHistory(borrowerHistory)
+                }
+            }
 
             // 3. Fetch Holds
             const holdsRes = await fetch(`${API_URL}/holds/user`, { headers });
@@ -79,15 +88,31 @@ export default function useBorrowerData() {
         setLoading({ isLoading: true });
         try {
             await axios.put(`${API_URL}/borrow/return/${borrowID}`,
-                { userID: localStorage.getItem('userId') }, {
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                null,
+                { headers: 
+                    {'Authorization': `Bearer ${localStorage.getItem('token')}`}
                 }
-            }
             );
             fetchAllData();
         } catch (error) {
             console.error('Error returning asset:', error);
+            setError(error.response?.data?.message || error.message);
+        } finally {
+            setLoading({ isLoading: false });
+        }
+    };
+    const handleHoldCancel = async (holdID) => {
+        setLoading({ isLoading: true });
+        try {
+            await axios.put(`${API_URL}/hold/cancel/${holdID}`,
+                null,
+                { headers: 
+                    {'Authorization': `Bearer ${localStorage.getItem('token')}`}
+                }
+            );
+            fetchAllData();
+        } catch (error) {
+            console.error('Error canceling hold:', error);
             setError(error.response?.data?.message || error.message);
         } finally {
             setLoading({ isLoading: false });
@@ -158,6 +183,7 @@ export default function useBorrowerData() {
         totalFinesAmount,
         activeHoldsCount,
         handleReturn,
+        handleHoldCancel,
         handlePayFine,
         fetchAllData
     };

@@ -39,6 +39,7 @@ const History = () => {
         totalFinesAmount,
         activeHoldsCount,
         handleReturn,
+        handleHoldCancel,
         handlePayFine
     } = useBorrowerData();
 
@@ -339,10 +340,13 @@ const History = () => {
                                                     <h4>{hold.Asset_Title}</h4>
                                                     <p>{hold.Asset_Type} • Expires: {new Date(hold.Hold_Expires).toLocaleDateString()}</p>
                                                 </div>
-                                                <div className="student-preview-status">
-                                                    <span className={`status-badge ${hold.Status.toLowerCase() === 'active' ? 'pending' : ''}`}>
-                                                        {hold.Status}
-                                                    </span>
+                                                <div className='student-preview-ui'>
+                                                    <div className="student-preview-status">
+                                                        <span className={`status-badge ${hold.Status.toLowerCase() === 'active' ? 'pending' : ''}`}>
+                                                            {hold.Status}
+                                                        </span>
+                                                        {hold.active_key && <button className="student-log-action-btn" onClick={() => handleHoldCancel(hold.Hold_ID)}>Cancel</button>}
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))
