@@ -10,7 +10,7 @@ import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Leg
 // Use local server for development, production for deployed app
 const API_URL = window.location.hostname === 'localhost' 
   ? 'http://localhost:3000/api'
-  : 'https://librarymanagementsystem-joseph.onrender.com/api';
+  : 'https://librarymanagementsystem-z2yw.onrender.com/api';
 
 
 // Helper function to get image path for an asset
@@ -2436,6 +2436,7 @@ const handleDeleteUserWithForce = async () => {
               <select value={customReportFilters.status} onChange={e => setCustomReportFilters(f => ({ ...f, status: e.target.value }))} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #e6eef8', background: '#fff' }}>
                 <option value="">Any</option>
                 <option value="current">Currently Borrowed</option>
+                <option value="overdue">Overdue</option>
                 <option value="returned">Returned</option>
               </select>
             </div>
@@ -2552,7 +2553,13 @@ const handleDeleteUserWithForce = async () => {
 
                     const buildTitleFromFilters = () => {
                       const parts = [];
-                      if (customReportFilters.status) parts.push(customReportFilters.status === 'current' ? 'Currently Borrowed' : 'Returned');
+                      if (customReportFilters.status) {
+                        const s = String(customReportFilters.status).toLowerCase();
+                        if (s === 'current') parts.push('Currently Borrowed');
+                        else if (s === 'returned') parts.push('Returned');
+                        else if (s === 'overdue') parts.push('Overdue');
+                        else parts.push(customReportFilters.status);
+                      }
                       if (customReportFilters.assetType && customReportFilters.assetType.length) parts.push(customReportFilters.assetType.map(a => a.replace(/-/g, ' ')).join(', '));
                       if (customReportFilters.userId && customReportFilters.userId.length && Array.isArray(students)) {
                         const names = students.filter(s => customReportFilters.userId.includes(s.studentId || s.username || s.id)).map(s => `${getFirstName(s)} ${getLastName(s)}`.trim()).filter(Boolean);
@@ -3129,27 +3136,41 @@ const handleDeleteUserWithForce = async () => {
       <ErrorPopup errorMessage={error} />
 
       <div className="stats-grid" style={{ marginBottom: '20px' }}>
-        <div className="stat-card">
-          <div className="stat-icon blue">👥</div>
-          <div className="stat-details">
-            <h3>{students.length}</h3>
-            <p>Students</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon green">📚</div>
-          <div className="stat-details">
-            <h3>1</h3>
-            <p>Librarians</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon purple">🔐</div>
-          <div className="stat-details">
-            <h3>2</h3>
-            <p>Admins</p>
-          </div>
-        </div>
+        {(() => {
+          const list = Array.isArray(students) ? students : [];
+          const counts = { student: 0, librarian: 0, admin: 0 };
+          list.forEach(u => {
+            const rn = mapRoleValueToName(u.role).toLowerCase();
+            if (rn === 'student') counts.student += 1;
+            else if (rn === 'librarian') counts.librarian += 1;
+            else if (rn === 'admin') counts.admin += 1;
+          });
+          return (
+            <>
+              <div className="stat-card">
+                <div className="stat-icon blue">👥</div>
+                <div className="stat-details">
+                  <h3>{counts.student}</h3>
+                  <p>Students</p>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon green">📚</div>
+                <div className="stat-details">
+                  <h3>{counts.librarian}</h3>
+                  <p>Librarians</p>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="stat-icon purple">🔐</div>
+                <div className="stat-details">
+                  <h3>{counts.admin}</h3>
+                  <p>Admins</p>
+                </div>
+              </div>
+            </>
+          )
+        })()}
       </div>
 
       {/* Filters placed under stat cards and above the table */}
