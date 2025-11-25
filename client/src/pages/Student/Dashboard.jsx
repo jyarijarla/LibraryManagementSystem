@@ -293,6 +293,10 @@ const StudentSidebar = ({ sidebarOpen, setSidebarOpen, onLogout }) => (
                     <HistoryIcon size={20} />
                     <span>History</span>
                 </NavLink>
+                <NavLink to="/student/all-history" className={({ isActive }) => `student-sidebar-link ${isActive ? 'active' : ''}`} onClick={() => setSidebarOpen(false)}>
+                    <HistoryIcon size={20} />
+                    <span>All History</span>
+                </NavLink>
             </nav>
             <div className="student-sidebar-footer">
                 <button className="student-sidebar-logout" onClick={onLogout}>
@@ -369,6 +373,7 @@ function StudentDashboard() {
                                 <Route path="overview" element={<DashboardOverview />} />
                                 <Route path="assets" element={<Assets />} />
                                 <Route path="history" element={<History />} />
+                                <Route path="all-history" element={<HistoryTable />} />
                                 {/* NEW */}
                                 <Route path="profile" element={<Profile />} />
                             </Routes>
@@ -382,5 +387,6 @@ function StudentDashboard() {
 
 // Helper icon for Quick Actions (missing import)
 import { DollarSign } from 'lucide-react'
+import HistoryTable from './HistoryTable'
 
 export default StudentDashboard

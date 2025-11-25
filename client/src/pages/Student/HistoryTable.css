@@ -1,0 +1,71 @@
+.all-history-table {
+    flex:1;
+    border-collapse: collapse;
+    width: 100%;
+    background-color: azure;
+    table-layout: fixed;
+}
+.history-fulfilled-text {
+    color: blue;
+}
+@keyframes flashHighlight {
+  0%    { background-color: #ffff99; }
+  33%   { background-color: inherit; }
+  66%   { background-color: #ffff99; }
+  100%  { background-color: inherit; }
+}
+.history-row.selected {
+    animation: flashHighlight .5s;
+}
+.all-history-table th,
+.all-history-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #ccc;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.history-report-filters {
+    display: flex;
+    margin: 6px;
+    gap:10px;
+}
+.history-report-filter-container {
+    text-align: center;
+    background-color: orange;
+    border-radius: 9px;
+    margin: 6px;
+    padding: 5px;
+    flex: 1;
+}
+.all-history-table-container {
+    display: flex;
+}
+.history-table-col-head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;    
+    justify-content: center;
+    cursor: pointer;
+    user-select: none;
+    gap: 6px
+}
+
+.sort-arrow {
+  font-size: 0.8rem;
+  color: #666;
+  line-height: 1;
+}
+
+.history-row.overdue {
+  background-color: #ffe5e5;
+}
+
+.history-row.fulfilled {
+  background-color: #e5f7ff;
+  cursor: pointer;
+}
+
+.history-row:hover {
+  background-color: #f0f0f0;
+}

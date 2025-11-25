@@ -6,6 +6,22 @@ const API_URL = window.location.hostname === 'localhost'
     ? 'http://localhost:3000/api'
     : 'https://librarymanagementsystem-z2yw.onrender.com/api';
 
+
+const formatDate = (isoString, time=false) => {
+    if (!isoString) return "";
+    const date = new Date(isoString);
+    const parts = {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+    }
+    if (time) {
+        parts.hour = "2-digit";
+        parts.minute = "2-digit";
+    }
+    return date.toLocaleDateString("en-US", parts);
+    
+};
 export default function useBorrowerData() {
     const { setLoading } = useLoading();
     const [fines, setFines] = useState([]);
@@ -63,7 +79,13 @@ export default function useBorrowerData() {
             if (histRes.ok) {
                 const borrowerHistory = await histRes.json();
                 if (Array.isArray(borrowerHistory)) {
-                    setAllHistory(borrowerHistory)
+                const histNormalDate = borrowerHistory.map((row) => ({
+                    ...row,
+                    start_date: formatDate(row.start_date, true),
+                    end_date: formatDate(row.end_date, true),
+                    due_or_expire: formatDate(row.due_or_expire),
+                }));
+                setAllHistory(histNormalDate);
                 }
             }
 
@@ -170,6 +192,7 @@ export default function useBorrowerData() {
         loans,
         holds,
         history,
+        allHistory,
         error,
         setError,
         processingId,
