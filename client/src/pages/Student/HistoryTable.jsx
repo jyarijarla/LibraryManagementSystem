@@ -99,6 +99,14 @@ const HistoryTable = () => {
 
     return (
         <div className="student-preview-list">
+            <div className="student-section-header">
+                <div>
+                    <h3>My History</h3>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
+                        View your transaction history
+                    </p>
+                </div>
+            </div>
             <div className="history-report-filters">
                 <div className="history-report-filter-container">
                     <label>
