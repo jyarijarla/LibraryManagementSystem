@@ -199,6 +199,7 @@ const routes = [
   { method: 'POST', path: '/api/fines/:id/pay', handler: fineController.processFinePayment, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'POST', path: '/api/fines/:id/pay-online', handler: fineController.payFineOnline, auth: true, roles: ROLE_GROUPS.ANY_AUTH },
   { method: 'POST', path: '/api/fines/:id/waive', handler: fineController.waiveFine, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/fines/borrower', handler: fineController.getBorrowerFines, auth: true, roles: ROLE_GROUPS.ANY_AUTH},
 
   // Configuration routes
   { method: 'GET', path: '/api/config', handler: configController.getAllConfig, auth: true, roles: ROLE_GROUPS.STAFF },

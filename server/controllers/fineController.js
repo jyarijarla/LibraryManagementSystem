@@ -494,6 +494,22 @@ exports.getUserFines = async (req, res) => {
     sendJSON(res, 500, { message: 'Error fetching user fines' });
   }
 };
+exports.getBorrowerFines = async (req, res) => {
+  const userID = req.user.id;
+  try {
+    db.promise().query(
+      `SELECT * FROM fine
+      WHERE User_ID = ?`, [userID]
+    )
+    console.log("Fines fetched successfuly")
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(historyResult))
+  } catch (error) {
+    console.error('Fines fetching data:', error);
+    res.writeHead(500, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ message: 'Database error', error: error.message }));
+  }
+}
 
 exports.payFineOnline = exports.processFinePayment; // Reuse logic for now
 module.exports = exports;

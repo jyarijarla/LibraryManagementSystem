@@ -57,7 +57,7 @@ export default function useBorrowerData() {
             const headers = { 'Authorization': `Bearer ${token}` };
 
             // 1. Fetch Fines
-            const finesRes = await fetch(`${API_URL}/fines/user/${userId}`, { headers });
+            const finesRes = await fetch(`${API_URL}/fines/borrower`, { headers });
             if (finesRes.ok) {
                 const finesData = await finesRes.json();
                 setFines(finesData);
