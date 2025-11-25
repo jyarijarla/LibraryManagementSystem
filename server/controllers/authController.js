@@ -15,12 +15,25 @@ async function login(req, res) {
   }
 
   try {
+    console.time('Login Process');
+
     // Allow login by username OR email. Trim input to avoid accidental spaces.
     const identifier = String(username || '').trim();
-    const userQuery = 'SELECT * FROM user WHERE Username = ? OR User_Email = ?';
+
+    console.time('User Lookup');
+    // Optimize: Get user and role in one query
+    const userQuery = `
+      SELECT u.*, rt.role_name 
+      FROM user u 
+      LEFT JOIN role_type rt ON u.Role = rt.role_id 
+      WHERE u.Username = ? OR u.User_Email = ?
+    `;
 
     const [userResult] = await db.promise().query(userQuery, [identifier, identifier]);
+    console.timeEnd('User Lookup');
+
     if (userResult.length === 0) {
+      console.timeEnd('Login Process');
       res.statusCode = 401;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ message: 'User does not exist' }));
@@ -30,6 +43,7 @@ async function login(req, res) {
 
     // Ensure a password is set for this account
     if (!user.Password) {
+      console.timeEnd('Login Process');
       res.statusCode = 403;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ message: 'Account does not have a password set. Ask an administrator to set or reset the password.' }));
@@ -38,6 +52,7 @@ async function login(req, res) {
 
     // Check if user is active and not deleted
     if (user.Is_Deleted || user.Is_Active === 0) {
+      console.timeEnd('Login Process');
       res.statusCode = 403;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ message: 'Account is inactive. Please contact support.' }));
@@ -45,8 +60,12 @@ async function login(req, res) {
     }
 
     // Verify password
+    console.time('Password Verify');
     const isValidPassword = await bcrypt.compare(password, user.Password);
+    console.timeEnd('Password Verify');
+
     if (!isValidPassword) {
+      console.timeEnd('Login Process');
       res.statusCode = 401;
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ message: 'Invalid credentials' }));
@@ -54,23 +73,14 @@ async function login(req, res) {
     }
 
     // Update Last_Login
-    await db.promise().query('UPDATE user SET Last_Login = NOW() WHERE User_ID = ?', [user.User_ID]);
+    // Fire and forget - don't await this to block the response
+    db.promise().query('UPDATE user SET Last_Login = NOW() WHERE User_ID = ?', [user.User_ID]).catch(err => console.error('Failed to update Last_Login', err));
 
-    // Fetch role name
-    const [roleResult] = await db.promise().query(
-      `SELECT role_name
-       FROM user u 
-       JOIN role_type rt ON u.Role = rt.role_id 
-       WHERE Username = ?`, [username]
-    );
-    if (roleResult.length === 0) {
-      res.statusCode = 404;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ message: 'User with that role does not exist' }));
-      return;
+    const userRole = user.role_name;
+    if (!userRole) {
+      console.error('User has no role assigned or role not found');
+      // Fallback or error? For now, proceed but log it.
     }
-
-    const userRole = roleResult[0].role_name;
 
     // Create security fingerprint based on IP and User-Agent
     const clientIp = req.headers['x-forwarded-for']?.split(',')[0] ||

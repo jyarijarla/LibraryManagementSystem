@@ -236,6 +236,10 @@ exports.getInventoryHealth = (req, res) => {
             CASE 
                 WHEN bk.Title IS NOT NULL THEN bk.Title
                 WHEN cd.Title IS NOT NULL THEN cd.Title
+                WHEN ab.Title IS NOT NULL THEN ab.Title
+                WHEN m.Title IS NOT NULL THEN m.Title
+                WHEN t.Model_Num IS NOT NULL THEN CONCAT(t.Type, ' - ', t.Model_Num)
+                WHEN sr.Room_Number IS NOT NULL THEN CONCAT('Study Room - ', sr.Room_Number)
                 ELSE 'Unknown'
             END as Title,
             (SELECT COUNT(*) FROM rentable WHERE Asset_ID = a.Asset_ID) as Total_Copies,
@@ -245,6 +249,10 @@ exports.getInventoryHealth = (req, res) => {
         JOIN asset_type at ON a.Asset_TypeID = at.type_id
         LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
         LEFT JOIN cd ON a.Asset_ID = cd.Asset_ID
+        LEFT JOIN audiobook ab ON a.Asset_ID = ab.Asset_ID
+        LEFT JOIN movie m ON a.Asset_ID = m.Asset_ID
+        LEFT JOIN technology t ON a.Asset_ID = t.Asset_ID
+        LEFT JOIN study_room sr ON a.Asset_ID = sr.Asset_ID
         LIMIT 100
     `;
 
