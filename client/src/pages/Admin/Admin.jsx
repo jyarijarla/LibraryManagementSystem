@@ -1,9 +1,11 @@
 import UserDropdown from '../../components/UserDropdown';
+import CustomSelect from '../../components/CustomSelect/CustomSelect';
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import './Admin.css'
+import AuditLogs from './AuditLogs/AuditLogs'
 import { LoadingOverlay, SuccessPopup, ErrorPopup, DeleteBlockedModal } from '../../components/FeedbackUI/FeedbackUI'
-import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
+import { BarChart, Bar, PieChart, Pie, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, LabelList } from 'recharts'
 // import NotificationPanel from '../../components/NotificationPanel/NotificationPanel'
 // Use local server for development, production for deployed app
 const API_URL = window.location.hostname === 'localhost' 
@@ -155,6 +157,11 @@ function Admin() {
   const [showDeleteUserModal, setShowDeleteUserModal] = useState(false);
   const [showForceDeleteConfirm, setShowForceDeleteConfirm] = useState(false);
   const [forceDeleteMessage, setForceDeleteMessage] = useState('');
+  // User list filters & search UI
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('all');
+  const [userStatusFilter, setUserStatusFilter] = useState('all');
+  const [userLimit, setUserLimit] = useState(200);
   // Delete-blocked modal state (Admin-only friendly warning)
   const [showDeleteBlockedModal, setShowDeleteBlockedModal] = useState(false);
   const [deleteBlockedInfo, setDeleteBlockedInfo] = useState([]);
@@ -569,7 +576,36 @@ const [userToDelete, setUserToDelete] = useState(null);
       setMostBorrowedReport(Array.isArray(mostBorrowed) ? mostBorrowed : [])
       setActiveBorrowersReport(Array.isArray(activeBorrowers) ? activeBorrowers : [])
       setOverdueItemsReport(Array.isArray(overdueItems) ? overdueItems : [])
-      setInventorySummaryReport(Array.isArray(inventorySummary) ? inventorySummary : [])
+      // Ensure each inventory item has a numeric Utilization_Percentage
+      const normalizedInventory = (Array.isArray(inventorySummary) ? inventorySummary : []).map(item => {
+        // Defensive numeric parsing for fields that may be strings or null
+        const totalCopies = Number(item.Total_Copies || item.TotalCopies || 0) || 0;
+        const currentlyBorrowed = Number(item.Currently_Borrowed || item.CurrentlyBorrowed || 0) || 0;
+
+        // Prefer server-provided Utilization if it's a valid number between 0 and 100
+        let util = null;
+        const rawUtil = item.Utilization_Percentage ?? item.UtilizationPercentage ?? item.utilization_percentage;
+        if (rawUtil !== undefined && rawUtil !== null && rawUtil !== '') {
+          const parsed = Number(rawUtil);
+          if (!Number.isNaN(parsed) && isFinite(parsed)) util = parsed;
+        }
+
+        // If server didn't provide a sensible value, compute it: borrowed / totalCopies * 100
+        if (util === null) {
+          util = totalCopies > 0 ? Math.round((currentlyBorrowed / totalCopies) * 100) : 0;
+        }
+
+        return {
+          Asset_Type: item.Asset_Type || item.AssetType || item.Type || 'Unknown',
+          Unique_Items: Number(item.Unique_Items || item.UniqueItems || 0) || 0,
+          Total_Copies: totalCopies,
+          Total_Available: Number(item.Total_Available || item.TotalAvailable || 0) || 0,
+          Currently_Borrowed: currentlyBorrowed,
+          Utilization_Percentage: Math.max(0, Math.min(100, Math.round(util)))
+        };
+      });
+
+      setInventorySummaryReport(normalizedInventory)
     } catch (error) {
       console.error('Error fetching reports:', error)
       // Set empty arrays as fallback
@@ -668,6 +704,20 @@ const [userToDelete, setUserToDelete] = useState(null);
       setStudents(sortedData)
     } catch (error) {
       console.error('❌ Error fetching users:', error)
+    }
+  }
+
+  // Helper to refresh the appropriate user list depending on active tab.
+  // When on the Admin 'users' tab we want the full users list; otherwise keep fetching students.
+  const refreshUserList = async () => {
+    try {
+      if (activeTab === 'users') {
+        await fetchAllUsers()
+      } else {
+        await fetchStudents()
+      }
+    } catch (err) {
+      console.error('Error refreshing user list:', err)
     }
   }
 
@@ -959,6 +1009,17 @@ const handleCreateUser = async (e) => {
     if (!normalizedDOB) throw new Error('Please enter a valid Date of Birth (MM/DD/YYYY or YYYY-MM-DD)')
 
     // Map form fields to server's member creation API and ensure password
+    // Convert role name to numeric value expected by backend
+    const roleNameToValue = (r) => {
+      if (r === null || r === undefined) return undefined;
+      const s = String(r).toLowerCase();
+      if (s === 'student' || s === '1') return 1;
+      if (s === 'admin' || s === '2') return 2;
+      if (s === 'librarian' || s === '3') return 3;
+      if (s === 'teacher' || s === '4') return 4;
+      return 1;
+    };
+
     const payload = {
       firstName: userForm.firstname,
       lastName: userForm.lastname,
@@ -966,7 +1027,8 @@ const handleCreateUser = async (e) => {
       phone: userForm.phone,
       username: (userForm.studentId && String(userForm.studentId).trim()) || (userForm.username && String(userForm.username).trim()) || '',
       dateOfBirth: normalizedDOB,
-      password: userForm.password && String(userForm.password).trim() ? userForm.password : generateInitialPassword()
+      password: userForm.password && String(userForm.password).trim() ? userForm.password : generateInitialPassword(),
+      role: roleNameToValue(userForm.role)
     }
 
     const response = await fetch(`${API_URL}/members`, {
@@ -977,6 +1039,8 @@ const handleCreateUser = async (e) => {
       },
       body: JSON.stringify(payload),
     });
+    // Diagnostic: log payload sent to server
+    try { console.log('Create member payload:', payload); } catch (e) { /* ignore */ }
 
     const data = await response.json();
 
@@ -986,7 +1050,7 @@ const handleCreateUser = async (e) => {
     }
 
     setShowCreateUserModal(false);
-    fetchStudents(); // refresh the list
+    await refreshUserList(); // refresh the list (respect current tab)
     setUserForm({ studentId: "", firstname: "", lastname: "", email: "", role: "Student", password: "", dateOfBirth: "", phone: "" });
   } catch (err) {
     setError(err.message);
@@ -1060,7 +1124,7 @@ const handleEditUser = async (e) => {
     setUserForm(prev => ({ ...prev, ...updatedFields }));
 
     setShowEditUserModal(false);
-    fetchStudents();
+    await refreshUserList();
   } catch (err) {
     setError(err.message);
     console.error("Edit error response:", err.message);
@@ -1083,7 +1147,7 @@ const handleDeleteUser = async () => {
     if (!response.ok) throw new Error(data.message || 'Failed to delete user');
 
     setShowDeleteUserModal(false);
-    fetchStudents();
+    await refreshUserList();
   } catch (err) {
     setError(err.message);
     console.error("Delete error response:", err.message);
@@ -1104,7 +1168,7 @@ const handleDeleteUserWithForce = async () => {
 
     if (response.ok) {
       setShowDeleteUserModal(false);
-      await fetchStudents();
+      await refreshUserList();
       return;
     }
 
@@ -1336,11 +1400,18 @@ const handleDeleteUserWithForce = async () => {
     <div className="tab-content overview-layout">
       <div className="overview-hero">
         <div>
-          <h1 className="title">Welcome back, Administrator</h1>
+          <h1 className="title">Welcome back, {getFirstName(currentUser)}</h1>
           <div className="subtitle">Quick summary of library activity and recent changes</div>
         </div>
-        <div className="overview-actions">
-          <button className="btn primary" onClick={() => changeTab('reports')}>Open Reports</button>
+          <div className="overview-actions">
+          <button className="btn primary" onClick={() => changeTab('reports')} title="Open Reports">
+            <span className="btn-icon" aria-hidden>📊</span>
+            <span className="btn-label">Open Reports</span>
+          </button>
+          <button className="btn logs" onClick={() => changeTab('audit-logs')} title="Open Audit Logs">
+            <span className="btn-icon" aria-hidden>📝</span>
+            <span className="btn-label">Open Logs</span>
+          </button>
         </div>
       </div>
 
@@ -1398,7 +1469,7 @@ const handleDeleteUserWithForce = async () => {
             <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '900px' }}>
               <h3 style={{ marginTop: 0 }}>All Assets</h3>
               <div className="counts-row" style={{ marginBottom: 8, color: '#444' }}>
-                <strong style={{ marginRight: 8, flex: '0 0 auto' }}>Counts:</strong>
+                {/*<strong style={{ marginRight: 8, flex: '0 0 auto' }}>Counts:</strong>
                 {[
                   { label: 'Books', count: books.length },
                   { label: 'CDs', count: cds.length },
@@ -1415,7 +1486,7 @@ const handleDeleteUserWithForce = async () => {
                       <span className="pill-label">{item.label}</span>
                     </span>
                   )
-                })}
+                })}*/}
               </div>
               <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
                 <table className="data-table overview-modal-table">
@@ -1583,25 +1654,72 @@ const handleDeleteUserWithForce = async () => {
 
       <div className="overview-grid">
         <div className="overview-panel overview-charts">
-          <h3 style={{ marginBottom: '18px' }}>Asset Type Breakdown</h3>
-          <div style={{ height: 260 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={[
-                { type: 'Books', count: books.length },
-                { type: 'CDs', count: cds.length },
-                { type: 'Audiobooks', count: audiobooks.length },
-                { type: 'Movies', count: movies.length },
-                { type: 'Technology', count: technology.length },
-                { type: 'Study Rooms', count: studyRooms.length }
-              ]}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="type" />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="count" fill="#6366f1" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <h3 className="chart-title" style={{ marginBottom: '12px' }}>
+            <span className="chart-title-icon" aria-hidden>📊</span>
+            <span>Asset Type Breakdown</span>
+            <small className="chart-sub">Counts & share by asset type</small>
+          </h3>
+          {(() => {
+            // Prepare breakdown data with percentages and color mapping
+            const raw = [
+              { type: 'Books', count: books.length },
+              { type: 'CDs', count: cds.length },
+              { type: 'Audiobooks', count: audiobooks.length },
+              { type: 'Movies', count: movies.length },
+              { type: 'Technology', count: technology.length },
+              { type: 'Study Rooms', count: studyRooms.length }
+            ];
+            const total = raw.reduce((s, r) => s + (Number(r.count) || 0), 0) || 1;
+            const COLORS_MAP = {
+              'Books': '#6366f1',
+              'CDs': '#f97316',
+              'Audiobooks': '#06b6d4',
+              'Movies': '#ef4444',
+              'Technology': '#10b981',
+              'Study Rooms': '#8b5cf6'
+            };
+
+            const data = raw.map(r => {
+              const cnt = Number(r.count) || 0;
+              const pct = Math.round((cnt / total) * 100);
+              return { ...r, percent: pct, label: `${cnt} (${pct}%)`, color: COLORS_MAP[r.type] || '#64748b' };
+            }).sort((a, b) => b.count - a.count);
+
+            return (
+              <div style={{ height: 320 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={data} margin={{ top: 58, right: 20, left: 0, bottom: 40 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e6eefc" />
+                    <XAxis dataKey="type" angle={-30} textAnchor="end" interval={0} height={70} tick={{ fontSize: 12 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                    <Tooltip
+                      formatter={(value, name, props) => {
+                        if (name === 'count') return [value, 'Count'];
+                        return [value, name];
+                      }}
+                      contentStyle={{ borderRadius: 8, border: '1px solid #e6eefc' }}
+                    />
+                    <Legend verticalAlign="top" align="center" layout="horizontal" wrapperStyle={{ top: 8 }} height={24} />
+                    <Bar dataKey="count" name="Count">
+                      {data.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                      <LabelList dataKey="label" position="top" style={{ fontSize: 12, fontWeight: 700 }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+                <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                  {data.map(d => (
+                    <div key={d.type} style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', padding: '6px 10px', borderRadius: 8, border: '1px solid #eef2ff' }}>
+                      <span style={{ width: 12, height: 12, borderRadius: 3, display: 'inline-block', background: d.color }} aria-hidden></span>
+                      <span style={{ fontWeight: 700 }}>{d.type}</span>
+                      <span style={{ color: '#6b7280' }}>· {d.count} ({d.percent}%)</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
         </div>
 
         <div className="overview-panel overview-mini">
@@ -2850,7 +2968,7 @@ const handleDeleteUserWithForce = async () => {
         </div>
       </div>
 
-      {/* Report 3: Overdue Items */}
+      {/* Report 3: Overdue Items 
       <div className="report-section">
         <h3>⚠️ Overdue Items</h3>
         <div className="table-container">
@@ -2902,7 +3020,7 @@ const handleDeleteUserWithForce = async () => {
             </tbody>
           </table>
         </div>
-      </div>
+      </div> */}
 
       {/* Report 4: Inventory Summary */}
       <div className="report-section">
@@ -3034,6 +3152,56 @@ const handleDeleteUserWithForce = async () => {
         </div>
       </div>
 
+      {/* Filters placed under stat cards and above the table */}
+      <div className="user-filter-bar">
+        <div className="filter-left">
+          <input
+            className="filter-input"
+            type="search"
+            placeholder="Search by name, username, or email..."
+            value={userSearch}
+            onChange={(e) => setUserSearch(e.target.value)}
+            aria-label="Search users"
+          />
+          <CustomSelect
+            value={userRoleFilter}
+            onChange={(v) => setUserRoleFilter(v)}
+            ariaLabel="Filter by role"
+            options={[
+              { value: 'all', label: 'All roles' },
+              { value: 'student', label: 'Student' },
+              { value: 'librarian', label: 'Librarian' },
+              { value: 'admin', label: 'Admin' }
+            ]}
+          />
+          <CustomSelect
+            value={userStatusFilter}
+            onChange={(v) => setUserStatusFilter(v)}
+            ariaLabel="Filter by status"
+            options={[
+              { value: 'all', label: 'All status' },
+              { value: 'active', label: 'Active' },
+              { value: 'anonymized', label: 'Anonymized' }
+            ]}
+          />
+        </div>
+        <div className="filter-right">
+          <label className="limit-label">Show</label>
+          <CustomSelect
+            value={userLimit}
+            onChange={(v) => setUserLimit(v)}
+            ariaLabel="Results limit"
+            options={[
+              { value: 50, label: '50' },
+              { value: 100, label: '100' },
+              { value: 200, label: '200' },
+              { value: 500, label: '500' }
+            ]}
+          />
+          <button className="btn ghost" onClick={() => { setUserSearch(''); setUserRoleFilter('all'); setUserStatusFilter('all'); setUserLimit(200); }}>Reset</button>
+        </div>
+      </div>
+
       <div className="table-container" style={{ marginTop: '20px' }}>
         <table className="data-table">
           <thead>
@@ -3046,12 +3214,50 @@ const handleDeleteUserWithForce = async () => {
             </tr>
           </thead>
           <tbody>
-            {students.length === 0 ? (
-              <tr>
-                <td colSpan="5" style={{ textAlign: 'center' }}>No users found</td>
-              </tr>
-            ) : (
-              students.map((student) => (
+            {(() => {
+              // Apply client-side filters: role, status (anonymized detection), and search
+              const isAnonymized = (u) => (u && u.username && String(u.username).startsWith('removed_'));
+              const q = String(userSearch || '').trim().toLowerCase();
+              let filtered = Array.isArray(students) ? students.slice() : [];
+
+              if (userRoleFilter && userRoleFilter !== 'all') {
+                filtered = filtered.filter(u => {
+                  const r = (u.role === undefined || u.role === null) ? (u.roleName || '') : u.role;
+                  // Normalize numeric roles if needed
+                  const roleName = typeof r === 'number' ? (r === 1 ? 'student' : r === 2 ? 'admin' : r === 3 ? 'librarian' : r === 4 ? 'teacher' : '') : String(r).toLowerCase();
+                  return roleName === userRoleFilter;
+                });
+              }
+
+              if (userStatusFilter && userStatusFilter !== 'all') {
+                if (userStatusFilter === 'anonymized') filtered = filtered.filter(u => isAnonymized(u));
+                else if (userStatusFilter === 'active') filtered = filtered.filter(u => !isAnonymized(u));
+              }
+
+              if (q) {
+                filtered = filtered.filter(u => {
+                  const fullname = `${u.firstname || ''} ${u.lastname || ''}`.toLowerCase();
+                  return (
+                    (u.username && String(u.username).toLowerCase().includes(q)) ||
+                    (u.email && String(u.email).toLowerCase().includes(q)) ||
+                    fullname.includes(q) ||
+                    (u.studentId && String(u.studentId).toLowerCase().includes(q))
+                  );
+                });
+              }
+
+              // limit
+              filtered = filtered.slice(0, userLimit);
+
+              if (!filtered || filtered.length === 0) {
+                return (
+                  <tr>
+                    <td colSpan="5" style={{ textAlign: 'center' }}>No users found</td>
+                  </tr>
+                )
+              }
+
+              return filtered.map((student) => (
                 <tr key={student.id}>
                   <td><strong>{student.studentId || student.username}</strong></td>
                   <td>{getFirstName(student)}</td>
@@ -3084,7 +3290,7 @@ const handleDeleteUserWithForce = async () => {
                   </td>
                 </tr>
               ))
-            )}
+            })()}
           </tbody>
         </table>
       </div>
@@ -3193,6 +3399,15 @@ const handleDeleteUserWithForce = async () => {
               {!sidebarCollapsed && <span className="label">Reports & Analytics</span>}
             </button>
 
+            <button
+              className={`sidebar-item ${activeTab === 'audit-logs' ? 'active' : ''}`}
+              onClick={() => changeTab('audit-logs')}
+              title="Audit Logs"
+            >
+              <span className="icon">📝</span>
+              {!sidebarCollapsed && <span className="label">Audit Logs</span>}
+            </button>
+
             {/* Note: 'All Users' and 'System Settings' intentionally hidden from sidebar */}
           </nav>
 
@@ -3224,6 +3439,11 @@ const handleDeleteUserWithForce = async () => {
             {activeTab === 'reports' && renderReports()}
             {activeTab === 'students' && renderStudents()}
             {activeTab === 'settings' && renderSystemSettings()}
+            {activeTab === 'audit-logs' && (
+              <div className="tab-content">
+                <AuditLogs />
+              </div>
+            )}
           </div>
         </main>
       </div>
@@ -3426,17 +3646,21 @@ const handleDeleteUserWithForce = async () => {
                 </div>
               )}
 
-              <div className="form-group">
-                <label>Role</label>
-                <select
-                  value={userForm.role}
-                  onChange={(e) => setUserForm({ ...userForm, role: e.target.value })}
-                >
-                  <option value="Student">Student</option>
-                  <option value="Librarian">Librarian</option>
-                  <option value="Admin">Admin</option>
-                </select>
-              </div>
+              {showCreateUserModal && (
+                <div className="form-group">
+                  <label>Role</label>
+                  <CustomSelect
+                    value={userForm.role}
+                    onChange={(v) => setUserForm({ ...userForm, role: v })}
+                    ariaLabel="Select role"
+                    options={[
+                      { value: 'Student', label: 'Student' },
+                      { value: 'Librarian', label: 'Librarian' },
+                      { value: 'Admin', label: 'Admin' }
+                    ]}
+                  />
+                </div>
+              )}
 
               {/* Status field removed */}
 
@@ -3515,7 +3739,7 @@ const handleDeleteUserWithForce = async () => {
                   if (!res.ok) throw new Error(d.error || d.message || 'Failed to force delete user');
                   setShowDeleteUserModal(false);
                   setSuccessMessage(d.message || 'Member disabled and anonymized');
-                  await fetchStudents();
+                  await refreshUserList();
                 } catch (err) {
                   setError(err.message || 'Failed to force delete');
                 }
@@ -3545,6 +3769,22 @@ const handleDeleteUserWithForce = async () => {
           setShowDeleteBlockedModal(false);
           // open the View User modal for the selected user
           if (selectedUser) setShowViewUserModal(true);
+        }}
+        onForce={async () => {
+          // perform force anonymize via API
+          try {
+            const res = await fetch(`${API_URL}/members/${selectedUser.id}?force=true`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            });
+            const d = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(d.error || d.message || 'Failed to force delete user');
+            setShowDeleteBlockedModal(false);
+            setSuccessMessage(d.message || 'Member disabled and anonymized');
+            await refreshUserList();
+          } catch (err) {
+            setError(err.message || 'Failed to force delete');
+          }
         }}
       />
     )}

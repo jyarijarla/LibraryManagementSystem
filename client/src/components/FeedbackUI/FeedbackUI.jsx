@@ -86,7 +86,7 @@ export const ErrorPopup = ({ errorMessage, onClose }) => {
 };
 
 // Enhanced Delete Blocked Modal
-export const DeleteBlockedModal = ({ open, blockers = [], currentBorrowCount = null, totalBorrowCount = null, onClose, onViewUser }) => {
+export const DeleteBlockedModal = ({ open, blockers = [], currentBorrowCount = null, totalBorrowCount = null, onClose, onViewUser, onForce }) => {
   if (!open) return null;
 
   const borrowBlock = (blockers || []).find(b => b.type === 'borrows');
@@ -134,6 +134,7 @@ export const DeleteBlockedModal = ({ open, blockers = [], currentBorrowCount = n
 
         <div className="blocked-modal-actions">
           {onViewUser && <button className="blocked-btn ghost" onClick={onViewUser}>View User</button>}
+          {onForce && <button className="blocked-btn danger" onClick={onForce}>Force Delete (Anonymize)</button>}
           <button className="blocked-btn primary" onClick={onClose}>OK</button>
         </div>
       </div>

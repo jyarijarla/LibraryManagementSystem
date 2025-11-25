@@ -138,32 +138,89 @@ const getOverdueItems = async (req, res) => {
 
 // Bonus Report: Inventory Summary
 const getInventorySummary = (req, res) => {
-  // Return a concise inventory summary grouped by asset type.
+  // Build a safe inventory summary using the inventory views/tables that exist in the schema.
   const query = `
-    SELECT
-      CASE
-        WHEN bk.Asset_ID IS NOT NULL THEN 'Book'
-        WHEN cd.Asset_ID IS NOT NULL THEN 'CD'
-        WHEN ab.Asset_ID IS NOT NULL THEN 'Audiobook'
-        WHEN mv.Asset_ID IS NOT NULL THEN 'Movie'
-        WHEN t.Asset_ID IS NOT NULL THEN 'Technology'
-        WHEN sr.Asset_ID IS NOT NULL THEN 'Study Room'
-        ELSE 'Other'
-      END AS Asset_Type,
-      COUNT(DISTINCT a.Asset_ID) AS Unique_Items,
+<<<<<<< HEAD
+    SELECT Asset_Type, Unique_Items, Total_Copies, Total_Available, Currently_Borrowed, Utilization_Percentage
+    FROM (
+      SELECT
+        'Book' AS Asset_Type,
+        COUNT(*) AS Unique_Items,
+        COALESCE(SUM(Copies),0) AS Total_Copies,
+        COALESCE(SUM(Available_Copies),0) AS Total_Available,
+        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
+      FROM book_inventory
+
+      UNION ALL
+
+      SELECT
+        'CD' AS Asset_Type,
+        COUNT(*) AS Unique_Items,
+        COALESCE(SUM(Copies),0) AS Total_Copies,
+        COALESCE(SUM(Available_Copies),0) AS Total_Available,
+        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
+      FROM cd_inventory
+
+      UNION ALL
+
+      SELECT
+        'Audiobook' AS Asset_Type,
+        COUNT(*) AS Unique_Items,
+        COALESCE(SUM(Copies),0) AS Total_Copies,
+        COALESCE(SUM(Available_Copies),0) AS Total_Available,
+        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
+      FROM audiobook_inventory
+
+      UNION ALL
+
+      SELECT
+        'Movie' AS Asset_Type,
+        COUNT(*) AS Unique_Items,
+        COALESCE(SUM(Copies),0) AS Total_Copies,
+        COALESCE(SUM(Available_Copies),0) AS Total_Available,
+        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
+      FROM movie_inventory
+
+      UNION ALL
+
+      SELECT
+        'Technology' AS Asset_Type,
+        COUNT(*) AS Unique_Items,
+        COALESCE(SUM(Copies),0) AS Total_Copies,
+        COALESCE(SUM(Available_Copies),0) AS Total_Available,
+        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
+      FROM technology_inventory
+
+      UNION ALL
+
+      SELECT
+        'Study Room' AS Asset_Type,
+        COUNT(*) AS Unique_Items,
+        COUNT(*) AS Total_Copies,
+        COALESCE(SUM(CASE WHEN Availability = 1 THEN 1 ELSE 0 END), 0) AS Total_Available,
+        COALESCE(COUNT(*) - SUM(CASE WHEN Availability = 1 THEN 1 ELSE 0 END), 0) AS Currently_Borrowed,
+        ROUND(COALESCE((COUNT(*) - SUM(CASE WHEN Availability = 1 THEN 1 ELSE 0 END)) / NULLIF(COUNT(*),0) * 100, 0), 2) AS Utilization_Percentage
+      FROM study_room
+    ) t
+    ORDER BY Total_Copies DESC;
+=======
+    SELECT 
+      'Book' AS Asset_Type,
+      COUNT(DISTINCT b.Asset_ID) AS Unique_Items,
       COUNT(r.Rentable_ID) AS Total_Copies,
-      COALESCE(SUM(CASE WHEN r.Availability = 1 THEN 1 ELSE 0 END), 0) AS Total_Available,
-      COALESCE(SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END), 0) AS Currently_Borrowed
-    FROM asset a
-    LEFT JOIN rentable r ON a.Asset_ID = r.Asset_ID
-    LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
-    LEFT JOIN cd ON a.Asset_ID = cd.Asset_ID
-    LEFT JOIN audiobook ab ON a.Asset_ID = ab.Asset_ID
-    LEFT JOIN movie mv ON a.Asset_ID = mv.Asset_ID
-    LEFT JOIN technology t ON a.Asset_ID = t.Asset_ID
-    LEFT JOIN study_room sr ON a.Asset_ID = sr.Asset_ID
+      SUM(CASE WHEN r.Availability = 1 THEN 1 ELSE 0 END) AS Total_Available,
+      SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) AS Currently_Borrowed,
+      ROUND((SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(r.Rentable_ID), 0)) * 100, 2) AS Utilization_Percentage
+    FROM rentable r
+    JOIN asset a ON r.Asset_ID = a.Asset_ID
+    JOIN book b ON a.Asset_ID = b.Asset_ID
     GROUP BY Asset_Type
-    ORDER BY Total_Copies DESC
+>>>>>>> main
   `;
 
   db.query(query, (err, results) => {
@@ -1260,7 +1317,7 @@ const getLibrarianRoomBookings = (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ bookings: results }));
   });
-};
+  }
 // Study room metadata (numbers, capacities, member roles)
 const getRoomReportMetadata = async (req, res) => {
   const runQuery = (sql, params = []) => new Promise((resolve, reject) => {

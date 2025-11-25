@@ -1,6 +1,7 @@
 const db = require('../db');
 const bcrypt = require('bcryptjs');
 const { getConfigValue } = require('./configController');
+const { auditIfAdmin } = require('../utils/auditLogger');
 
 // Generate random password for each new member
 const generateInitialPassword = () => {
@@ -299,7 +300,14 @@ exports.getMemberProfile = async (req, res) => {
 
 // Add new member
 exports.addMember = (req, res) => {
-  const { firstName, lastName, email, phone, username, dateOfBirth, status, password } = req.body;
+  const { firstName, lastName, email, phone, username, dateOfBirth, status, password, role } = req.body;
+
+  // Diagnostic logging to help debug role assignment issues
+  try {
+    console.log('addMember called with body:', JSON.stringify(req.body));
+  } catch (e) {
+    console.log('addMember called; could not stringify body');
+  }
 
   // Validate required fields
   if (!firstName || !email || !username || !dateOfBirth || !password) {
@@ -331,11 +339,24 @@ exports.addMember = (req, res) => {
             && res.end(JSON.stringify({ error: 'Error processing password' }));
         }
 
-        // Insert new member (Role = 1 for student/member)
+        // Determine Role value (default to 1 = Student)
+        let roleVal = 1;
+        if (role !== undefined && role !== null) {
+          if (typeof role === 'number') roleVal = role;
+          else if (typeof role === 'string') {
+            const s = role.toLowerCase();
+            if (s.includes('admin')) roleVal = 2;
+            else if (s.includes('librarian')) roleVal = 3;
+            else if (s.includes('teacher')) roleVal = 4;
+            else roleVal = 1;
+          }
+        }
+
+        // Insert new member with provided role
         db.query(
           `INSERT INTO user (Username, First_Name, Last_Name, User_Email, User_Phone, Date_Of_Birth, Password, Role, Balance) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0.00)`,
-          [username, firstName, lastName || '', email, phone || null, dateOfBirth, hashedPassword],
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00)`,
+          [username, firstName, lastName || '', email, phone || null, dateOfBirth, hashedPassword, roleVal],
           (err, result) => {
             if (err) {
               console.error('Error adding member:', err);
@@ -346,6 +367,9 @@ exports.addMember = (req, res) => {
             // TODO: Send email with credentials to member's email address
             // Log plain text password for admin to see (in real app, send via email)
             console.log(`Member created - Username: ${username}, Email: ${email}, Password: ${password}`);
+
+            // Audit log for admin actions (if performed by an admin)
+            auditIfAdmin(req, 'CREATE', 'user', result.insertId, `Created member ${username} (${email})`);
 
             res.writeHead(201, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
@@ -411,6 +435,9 @@ exports.updateMember = (req, res) => {
         return res.writeHead(404, { 'Content-Type': 'application/json' })
           && res.end(JSON.stringify({ error: 'Member not found' }));
       }
+
+      // Audit update
+      auditIfAdmin(req, 'UPDATE', 'user', id, `Updated member ${id}`);
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ message: 'Member updated successfully' }));
@@ -482,6 +509,9 @@ exports.updateUser = (req, res) => {
           && res.end(JSON.stringify({ error: 'User not found' }));
       }
 
+      // Audit admin-level user update
+      auditIfAdmin(req, 'UPDATE', 'user', id, `Admin updated user ${id}`);
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ message: 'User updated successfully' }));
     }
@@ -491,6 +521,8 @@ exports.updateUser = (req, res) => {
 // Delete member only when they have no borrows and no fines
 exports.deleteMember = (req, res) => {
   const { id } = req.params;
+  // allow forcing an anonymize (soft-delete) when user has borrows/fines
+  const force = (req.query && (req.query.force === '1' || String(req.query.force).toLowerCase() === 'true')) || (req.body && req.body.force === true);
 
   // Check total borrows (any historical borrows block deletion)
   db.query('SELECT COUNT(*) as borrowCount FROM borrow WHERE Borrower_ID = ?', [id], (err, borrowRes) => {
@@ -518,6 +550,32 @@ exports.deleteMember = (req, res) => {
       if (fineCount > 0) blocks.push({ type: 'fines', count: fineCount, totalAmount: totalFines });
 
       if (blocks.length > 0) {
+        // If admin requested a force delete/anonymize, perform a soft-delete (anonymize PII)
+        if (force) {
+          const anonUsername = `removed_${id}_${Date.now()}`;
+          const anonEmail = `removed+${id}@example.invalid`;
+          // Clear PII but keep historical records (borrows/fines) intact
+          // Do NOT change Role here (foreign-key to role_type may exist). Only clear username/email/password/balance.
+          db.query(
+            `UPDATE user SET Username = ?, First_Name = ?, Last_Name = ?, User_Email = ?, Password = '', Balance = 0 WHERE User_ID = ?`,
+            [anonUsername, 'Removed', '', anonEmail, id],
+            (anonErr, anonRes) => {
+              if (anonErr) {
+                console.error('Error anonymizing user:', anonErr);
+                return res.writeHead(500, { 'Content-Type': 'application/json' })
+                  && res.end(JSON.stringify({ error: 'Failed to anonymize member' }));
+              }
+
+              // Audit anonymize (soft-delete)
+              auditIfAdmin(req, 'ANONYMIZE', 'user', id, `Anonymized member ${id} (force)`);
+
+              return res.writeHead(200, { 'Content-Type': 'application/json' })
+                && res.end(JSON.stringify({ message: 'Member anonymized (soft-deleted) successfully', blocks }));
+            }
+          );
+          return;
+        }
+
         return res.writeHead(400, { 'Content-Type': 'application/json' })
           && res.end(JSON.stringify({
             error: 'Cannot delete member: member has related borrows or fines',
@@ -537,6 +595,9 @@ exports.deleteMember = (req, res) => {
           return res.writeHead(404, { 'Content-Type': 'application/json' })
             && res.end(JSON.stringify({ error: 'Member not found' }));
         }
+
+        // Audit delete
+        auditIfAdmin(req, 'DELETE', 'user', id, `Deleted member ${id}`);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ message: 'Member deleted successfully' }));
@@ -569,6 +630,9 @@ exports.updateMemberStatus = (req, res) => {
         return res.writeHead(404, { 'Content-Type': 'application/json' })
           && res.end(JSON.stringify({ message: 'Member not found' }));
       }
+
+      // Audit status update
+      auditIfAdmin(req, 'UPDATE', 'user', id, `Updated status to ${status}`);
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ message: `Member status updated to ${status}` }));
