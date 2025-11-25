@@ -18,6 +18,7 @@ const auditController = require('./controllers/auditController');
 const adminReportController = require('./controllers/adminReportController');
 const reportBuilderController = require('./controllers/reportBuilderController');
 const { authenticateRequest, enforceRoles, revokeToken } = require('./middleware/authMiddleware');
+const updateLastActivity = require('./middleware/activityMiddleware');
 
 const ROLES = {
   STUDENT: 'student',
@@ -327,6 +328,8 @@ async function handleMatchedRoute(req, res, matchedRoute, pathname, urlParts) {
     if (!enforceRoles(req, res, allowedRoles)) {
       return;
     }
+    // Update last activity
+    updateLastActivity(req, res, () => { });
   }
 
   // Special handling for upload route (multipart/form-data)

@@ -15,7 +15,8 @@ const generateInitialPassword = () => {
 
 // Get all members with search, filter, and pagination
 exports.getAllMembers = async (req, res) => {
-  const { search = '', status = 'all', page = 1, limit = 20 } = req.query;
+  console.log('getAllMembers called with query:', req.query);
+  const { search = '', status = 'all', role = 'student', page = 1, limit = 20 } = req.query;
   const offset = (page - 1) * limit;
 
   // Get fine rate from config
@@ -35,16 +36,31 @@ exports.getAllMembers = async (req, res) => {
       CONCAT(u.First_Name, ' ', COALESCE(u.Last_Name, '')) as Full_Name,
       u.User_Email,
       u.User_Phone as Phone_Number,
-      'active' as Account_Status,
-      COUNT(DISTINCT CASE WHEN b.Return_Date IS NULL THEN b.Borrow_ID END) as Borrowed_Count,
-      COALESCE(SUM(CASE WHEN b.Return_Date IS NULL AND DATEDIFF(CURDATE(), b.Due_Date) > 0 
-        THEN DATEDIFF(CURDATE(), b.Due_Date) * ? ELSE 0 END), 0) as Outstanding_Fines
+      u.Is_Active,
+      u.Is_Blocked,
+      u.Role,
+      u.Last_Login,
+      u.Last_Activity,
+      COUNT(DISTINCT CASE WHEN b.Return_Date IS NULL THEN b.Borrow_ID END) as Active_Loans,
+      (COALESCE(u.Balance, 0) + COALESCE(SUM(CASE WHEN b.Return_Date IS NULL AND DATEDIFF(CURDATE(), b.Due_Date) > 0 
+        THEN DATEDIFF(CURDATE(), b.Due_Date) * ? ELSE 0 END), 0)) as Fines_Balance
     FROM user u
     LEFT JOIN borrow b ON u.User_ID = b.Borrower_ID
-    WHERE u.Role = 1
+    WHERE 1=1
   `;
 
   const params = [fineRate];
+
+  // Role filter
+  if (role !== 'all') {
+    let roleId = 1; // Default to Student
+    if (role === 'admin') roleId = 2;
+    else if (role === 'librarian') roleId = 3;
+    else if (!isNaN(role)) roleId = parseInt(role);
+
+    query += ` AND u.Role = ?`;
+    params.push(roleId);
+  }
 
   // Add search filter
   if (search) {
@@ -72,8 +88,18 @@ exports.getAllMembers = async (req, res) => {
     }
 
     // Get total count for pagination
-    let countQuery = `SELECT COUNT(DISTINCT u.User_ID) as total FROM user u WHERE u.Role = 1`;
+    let countQuery = `SELECT COUNT(DISTINCT u.User_ID) as total FROM user u WHERE 1=1`;
     const countParams = [];
+
+    if (role !== 'all') {
+      let roleId = 1;
+      if (role === 'admin') roleId = 2;
+      else if (role === 'librarian') roleId = 3;
+      else if (!isNaN(role)) roleId = parseInt(role);
+
+      countQuery += ` AND u.Role = ?`;
+      countParams.push(roleId);
+    }
 
     if (search) {
       countQuery += ` AND (
@@ -178,7 +204,7 @@ exports.getMemberProfile = async (req, res) => {
       u.User_Phone as Phone_Number,
       'active' as Account_Status
     FROM user u
-    WHERE u.User_ID = ? AND u.Role = 1
+    WHERE u.User_ID = ?
   `, [id], (err, members) => {
     if (err) {
       console.error('Error fetching member:', err);
@@ -311,6 +337,7 @@ exports.addMember = (req, res) => {
 
   // Validate required fields
   if (!firstName || !email || !username || !dateOfBirth || !password) {
+    console.log('addMember failed: Missing required fields');
     return res.writeHead(400, { 'Content-Type': 'application/json' })
       && res.end(JSON.stringify({ error: 'Missing required fields: firstName, email, username, dateOfBirth, password' }));
   }
@@ -327,6 +354,7 @@ exports.addMember = (req, res) => {
       }
 
       if (existing.length > 0) {
+        console.log('addMember failed: Username or email already exists');
         return res.writeHead(400, { 'Content-Type': 'application/json' })
           && res.end(JSON.stringify({ error: 'Username or email already exists' }));
       }
@@ -351,6 +379,7 @@ exports.addMember = (req, res) => {
             else roleVal = 1;
           }
         }
+        console.log(`addMember: Role resolved to ${roleVal}`);
 
         // Insert new member with provided role
         db.query(
@@ -366,7 +395,7 @@ exports.addMember = (req, res) => {
 
             // TODO: Send email with credentials to member's email address
             // Log plain text password for admin to see (in real app, send via email)
-            console.log(`Member created - Username: ${username}, Email: ${email}, Password: ${password}`);
+            console.log(`Member created - Username: ${username}, Email: ${email}, Password: ${password}, ID: ${result.insertId}`);
 
             // Audit log for admin actions (if performed by an admin)
             auditIfAdmin(req, 'CREATE', 'user', result.insertId, `Created member ${username} (${email})`);
@@ -422,7 +451,7 @@ exports.updateMember = (req, res) => {
   params.push(id);
 
   db.query(
-    `UPDATE user SET ${updates.join(', ')} WHERE User_ID = ? AND Role = 1`,
+    `UPDATE user SET ${updates.join(', ')} WHERE User_ID = ?`,
     params,
     (err, result) => {
       if (err) {
@@ -584,7 +613,7 @@ exports.deleteMember = (req, res) => {
       }
 
       // No borrows and no fines -> safe to delete
-      db.query('DELETE FROM user WHERE User_ID = ? AND Role = 1', [id], (err, delRes) => {
+      db.query('DELETE FROM user WHERE User_ID = ?', [id], (err, delRes) => {
         if (err) {
           console.error('Error deleting user:', err);
           return res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -617,7 +646,7 @@ exports.updateMemberStatus = (req, res) => {
   }
 
   db.query(
-    'UPDATE user SET Account_Status = ? WHERE User_ID = ? AND Role = 1',
+    'UPDATE user SET Account_Status = ? WHERE User_ID = ?',
     [status, id],
     (err, result) => {
       if (err) {

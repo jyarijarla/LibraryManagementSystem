@@ -72,9 +72,9 @@ async function login(req, res) {
       return;
     }
 
-    // Update Last_Login
+    // Update Last_Login and Last_Activity
     // Fire and forget - don't await this to block the response
-    db.promise().query('UPDATE user SET Last_Login = NOW() WHERE User_ID = ?', [user.User_ID]).catch(err => console.error('Failed to update Last_Login', err));
+    db.promise().query('UPDATE user SET Last_Login = NOW(), Last_Activity = NOW() WHERE User_ID = ?', [user.User_ID]).catch(err => console.error('Failed to update Last_Login/Activity', err));
 
     const userRole = user.role_name;
     if (!userRole) {

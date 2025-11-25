@@ -364,9 +364,20 @@ function Admin() {
     }
   }
 
+  // Auto-refresh users every 30 seconds to keep "Online" status fresh
+  useEffect(() => {
+    let interval;
+    if (activeTab === 'users') {
+      interval = setInterval(() => {
+        fetchUsers();
+      }, 30000);
+    }
+    return () => clearInterval(interval);
+  }, [activeTab]);
+
   useEffect(() => {
     fetchData()
-  }, [activeTab])
+  }, [activeTab, statusFilter])
 
   // Asset Fetcher
   const fetchAssets = async (assetType) => {
@@ -1180,13 +1191,38 @@ function Admin() {
                       <td></td>
                     )}
                     <td className="px-6 py-4 text-sm text-gray-500">
-                      {user.Last_Login && new Date(user.Last_Login) > new Date(Date.now() - 15 * 60 * 1000) ? (
-                        <span className="inline-flex items-center text-green-600 font-medium">
-                          <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-                          Online
-                        </span>
+                      {user.Last_Activity && new Date(user.Last_Activity) > new Date(Date.now() - 5 * 60 * 1000) ? (
+                        <div className="flex flex-col">
+                          <span className="inline-flex items-center text-green-600 font-medium mb-1">
+                            <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
+                            Online
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            Login: {user.Last_Login ? new Date(user.Last_Login).toLocaleDateString() + ' ' + new Date(user.Last_Login).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Unknown'}
+                          </span>
+                        </div>
                       ) : (
-                        user.Last_Login ? new Date(user.Last_Login).toLocaleDateString() + ' ' + new Date(user.Last_Login).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Never'
+                        user.Last_Activity ? (
+                          <div className="flex flex-col">
+                            <span className="text-gray-900">
+                              {new Date(user.Last_Activity).toLocaleDateString()}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              Last Seen: {new Date(user.Last_Activity).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        ) : (
+                          user.Last_Login ? (
+                            <div className="flex flex-col">
+                              <span className="text-gray-900">
+                                {new Date(user.Last_Login).toLocaleDateString()}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                Login: {new Date(user.Last_Login).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          ) : 'Never'
+                        )
                       )}
                     </td>
                     <td className="px-6 py-4 text-right relative">
