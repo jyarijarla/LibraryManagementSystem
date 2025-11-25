@@ -1354,54 +1354,87 @@ const getUserHistory = async (req, res) => {
   try {
     const userId = req.user.id;
     const [historyResult] = await db.promise().query(
-      `SELECT Borrow_ID AS id,
-        Borrower_ID AS user_id,
-        Rentable_ID AS asset_id,
-        Borrow_Date AS start_date,
-        Return_Date AS end_date,
+      `
+      WITH rentable_enriched AS (
+        SELECT 
+          r.Rentable_ID,
+          r.Asset_ID,
+          a_t.Asset_Typename,
+          an.asset_title
+        FROM rentable r
+        JOIN asset_with_typename a_t ON r.Asset_ID = a_t.Asset_ID
+        JOIN asset_with_name an ON r.Asset_ID = an.Asset_ID
+      )
+      SELECT 
+        CONCAT('B_', b.Borrow_ID) AS id,
+        b.Borrower_ID AS user_id,
+        re.Rentable_ID AS rentable_id,
+        re.Asset_ID AS asset_id,
+        b.Borrow_Date AS start_date,
+        b.Return_Date AS end_date,
         'borrow' AS type,
-        Due_Date AS due_or_expire,
+        b.Due_Date AS due_or_expire,
         CASE 
-          WHEN Return_Date IS NOT NULL THEN 'returned'
-          WHEN Return_Date IS NULL AND CURDATE() > Due_Date THEN 'overdue'
+          WHEN b.Return_Date IS NOT NULL THEN 'returned'
+          WHEN b.Return_Date IS NULL AND CURDATE() > b.Due_Date THEN 'overdue'
           ELSE 'active'
-        END AS status
-      FROM borrow
-      WHERE Borrower_ID = ?
+        END AS status,
+        re.Asset_Typename AS asset_type,
+        re.asset_title,
+        NULL AS fulfilled_ref
+      FROM borrow b
+      JOIN rentable_enriched re ON b.Rentable_ID = re.Rentable_ID
+      WHERE b.Borrower_ID = ?
       UNION ALL
-      SELECT Hold_ID AS id,
-        Holder_ID AS user_id,
-        Rentable_ID AS asset_id,
-        Hold_Date AS start_date,
-        COALESCE(Canceled_At, Expired_At) AS end_date,
+      
+      SELECT 
+        CONCAT('H_', h.Hold_ID) AS id,
+        h.Holder_ID AS user_id,
+        re.Rentable_ID AS rentable_id,
+        re.Asset_ID AS asset_id,
+        h.Hold_Date AS start_date,
+        COALESCE(h.Canceled_At, h.Expired_At) AS end_date,
         'hold' AS type,
-        Hold_Expires AS due_or_expire,
+        h.Hold_Expires AS due_or_expire,
         CASE 
-          WHEN Canceled_At IS NOT NULL THEN 'canceled'
-          WHEN Expired_At IS NOT NULL THEN 'expired'
-          WHEN Fulfilling_Borrow_ID IS NOT NULL THEN 'fulfilled'
+          WHEN h.Canceled_At IS NOT NULL THEN 'canceled'
+          WHEN h.Expired_At IS NOT NULL THEN 'expired'
+          WHEN h.Fulfilling_Borrow_ID IS NOT NULL THEN 'fulfilled'
           ELSE 'active'
-      END AS status
-      FROM hold
-      WHERE Holder_ID = ?
+        END AS status,
+        re.Asset_Typename AS asset_type,
+        re.asset_title,
+        CONCAT('B_', h.Fulfilling_Borrow_ID) AS fulfilled_ref
+      FROM hold h
+      JOIN rentable_enriched re ON h.Rentable_ID = re.Rentable_ID
+      WHERE h.Holder_ID = ?
       UNION ALL
-      SELECT Waitlist_ID AS id,
-        Waitlister_ID AS user_id,
-        Asset_ID AS asset_id,
-        Waitlist_Date AS start_date,
-        Canceled_At AS end_date,
+      SELECT 
+        CONCAT('W_', w.Waitlist_ID) AS id,
+        w.Waitlister_ID AS user_id,
+        NULL AS rentable_id,
+        w.Asset_ID AS asset_id,
+        w.Waitlist_Date AS start_date,
+        w.Canceled_At AS end_date,
         'waitlist' AS type,
         NULL AS due_or_expire,
         CASE 
-          WHEN Canceled_At IS NOT NULL THEN 'canceled'
-          WHEN Fulfilling_Hold_ID IS NOT NULL THEN 'fulfilled'
+          WHEN w.Canceled_At IS NOT NULL THEN 'canceled'
+          WHEN w.Fulfilling_Hold_ID IS NOT NULL THEN 'fulfilled'
           ELSE 'active'
-        END AS status
-      FROM waitlist
-      WHERE Waitlister_ID = ?
+        END AS status,
+        a_t.Asset_Typename AS asset_type,
+        an.asset_title,
+        CONCAT('H_', w.Fulfilling_Hold_ID) AS fulfilled_ref
+      FROM waitlist w
+      JOIN asset_with_typename a_t ON w.Asset_ID = a_t.Asset_ID
+      JOIN asset_with_name an ON w.Asset_ID = an.Asset_ID
+      WHERE w.Waitlister_ID = ?
+
       ORDER BY 
-        (status = 'active') DESC,
-        COALESCE(end_date, start_date) DESC;`,
+      (status = 'active') DESC,
+      COALESCE(end_date, start_date) DESC;
+      `,
         [userId, userId, userId]
     )
     console.log("History fetched successfuly")

@@ -49,6 +49,7 @@ exports.borrowAsset = async (req, res) => {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + borrowDays);
     const dueDateString = dueDate.toISOString().split('T')[0]; //YYYY-MM-DD
+    console.log("Calculations ran")
     //borrow rentable
     let newBorrowID;
     try {
@@ -302,7 +303,7 @@ exports.returnAsset = async (req, res) => {
     try {
       // Get Asset_ID and Type
       const [assetInfo] = await connection.query(
-        `SELECT r.Asset_ID, a.Asset_Type 
+        `SELECT r.Asset_ID, a.Asset_TypeID 
          FROM rentable r 
          JOIN asset a ON r.Asset_ID = a.Asset_ID 
          WHERE r.Rentable_ID = ?`,
