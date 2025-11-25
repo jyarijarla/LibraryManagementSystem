@@ -146,6 +146,7 @@ function authenticateRequest(req, res) {
       console.log(`[SECURITY WARNING] Non-browser access: ${userAgent} from IP: ${clientIp}`);
     }
 
+    console.log(`DEBUG: IP=${clientIp}, UA=${userAgent}`);
     const fingerprint = createFingerprint(clientIp, userAgent);
 
     // Verify token with fingerprint check

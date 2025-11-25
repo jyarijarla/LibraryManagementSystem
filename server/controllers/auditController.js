@@ -15,7 +15,14 @@ exports.mockLogs = mockLogs;
  * GET /api/audit-logs
  */
 exports.getLogs = (req, res) => {
-    const query = 'SELECT * FROM system_logs ORDER BY Timestamp DESC LIMIT 100';
+    const query = `
+        SELECT 
+            l.Log_ID, l.User_ID, l.Action, CAST(l.Details AS CHAR) as Details, l.IP_Address, l.Timestamp,
+            u.First_Name, u.Last_Name, u.Username
+        FROM system_logs l
+        LEFT JOIN user u ON l.User_ID = u.User_ID
+        ORDER BY l.Timestamp DESC LIMIT 100
+    `;
     db.query(query, (err, results) => {
         if (err) {
             console.error('Error fetching audit logs:', err);

@@ -358,7 +358,7 @@ function StudentDashboard() {
         <div className="student-dashboard-shell">
             <LoadingProvider>
                 <OverlayProvider>
-                    <SuccessPopup successMessage={successMessage} />
+                    <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
                     <StudentSidebar
                         sidebarOpen={sidebarOpen}
                         setSidebarOpen={setSidebarOpen}

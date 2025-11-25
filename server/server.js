@@ -16,6 +16,7 @@ const holdController = require('./controllers/holdController');
 const configController = require('./controllers/configController');
 const auditController = require('./controllers/auditController');
 const adminReportController = require('./controllers/adminReportController');
+const reportBuilderController = require('./controllers/reportBuilderController');
 const { authenticateRequest, enforceRoles, revokeToken } = require('./middleware/authMiddleware');
 
 const ROLES = {
@@ -178,23 +179,22 @@ const routes = [
   { method: 'GET', path: '/api/reports/librarian/:id/members', handler: reportController.getLibrarianMembers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/librarian/:id/books', handler: reportController.getLibrarianBooks, auth: true, roles: ROLE_GROUPS.STAFF },
 
-  // Admin Report routes
-  { method: 'GET', path: '/api/reports/admin/activity', handler: adminReportController.getAdminActivitySummary, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/reports/admin/user-changes', handler: adminReportController.getUserRoleChanges, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/reports/admin/policy-changes', handler: adminReportController.getPolicyChanges, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/reports/admin/catalog-overrides', handler: adminReportController.getCatalogOverrides, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/reports/admin/financial', handler: adminReportController.getFinancialSummary, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/reports/admin/security', handler: adminReportController.getSecurityLogs, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/reports/admin/system-health', handler: adminReportController.getSystemHealth, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/reports/admin/generated', handler: adminReportController.getReportsGenerated, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/reports/admin/audit-trail', handler: adminReportController.getAuditTrail, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  // Admin Report routes (Legacy routes removed)
 
-  // Executive Dashboard Routes
+  // Dynamic Report Builder
+  { method: 'POST', path: '/api/reports/builder', handler: reportBuilderController.buildReport, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/reports/schema', handler: reportBuilderController.getSchema, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+
+  // Executive Dashboard Routes (Detailed)
   { method: 'GET', path: '/api/reports/admin/dashboard-stats', handler: adminReportController.getDashboardStats, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/reports/admin/activity-trends', handler: adminReportController.getActivityTrends, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/reports/admin/user-growth', handler: adminReportController.getUserGrowthStats, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
-  { method: 'GET', path: '/api/reports/admin/financial-trends', handler: adminReportController.getFinancialTrends, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/reports/admin/circulation', handler: adminReportController.getCirculationData, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/reports/admin/overdue', handler: adminReportController.getOverdueData, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/reports/admin/holds', handler: adminReportController.getHoldsData, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
   { method: 'GET', path: '/api/reports/admin/inventory-health', handler: adminReportController.getInventoryHealth, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/reports/admin/financial', handler: adminReportController.getFinancialData, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/reports/admin/user-staff', handler: adminReportController.getUserStaffData, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/reports/admin/policy', handler: adminReportController.getPolicyImpact, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
+  { method: 'GET', path: '/api/reports/admin/security', handler: adminReportController.getSecurityReport, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
 
   // Notification routes
   { method: 'GET', path: '/api/notifications', handler: notificationController.getAdminNotifications, auth: true, roles: ROLE_GROUPS.STAFF },

@@ -103,27 +103,27 @@ const syncFines = async () => {
                 if (daysSinceSync > 0) {
                   if (diffDays <= maxDays) {
                     const additionalFine = daysSinceSync * fineRate;
-                    updates.push([record.Amount_Due + additionalFine, record.Fine_ID]);
+                    updates.push([record.Amount_Due + additionalFine, record.Amount_Due + additionalFine, record.Fine_ID]);
                   }
                 }
               }
             }
           } else {
             // New fine to insert
-            inserts.push([record.Borrow_ID, record.Borrower_ID, amountDue, isPaid]);
+            inserts.push([record.Borrow_ID, record.Borrower_ID, amountDue, isPaid, amountDue]);
           }
         }
 
         if (inserts.length > 0) {
           const values = inserts.map(row => `(${row.join(',')}, CURDATE())`).join(',');
-          db.query(`INSERT INTO fine (Borrow_ID, User_ID, Amount_Due, Paid, Fine_Date) VALUES ${values}`, (err) => {
+          db.query(`INSERT INTO fine (Borrow_ID, User_ID, Amount_Due, Paid, Original_Amount, Fine_Date) VALUES ${values}`, (err) => {
             if (err) console.error('Error inserting synced fines:', err);
           });
         }
 
         if (updates.length > 0) {
           updates.forEach(update => {
-            db.query('UPDATE fine SET Amount_Due = ?, Fine_Date = CURDATE() WHERE Fine_ID = ?', update);
+            db.query('UPDATE fine SET Amount_Due = ?, Original_Amount = ?, Fine_Date = CURDATE() WHERE Fine_ID = ?', update);
           });
         }
 
@@ -324,8 +324,8 @@ exports.processFinePayment = (req, res) => {
         // Update fine table
         await new Promise((resolve, reject) => {
           connection.query(
-            'UPDATE fine SET Amount_Due = ?, Paid = ? WHERE Fine_ID = ?',
-            [newAmount, isPaid, fine.Fine_ID],
+            'UPDATE fine SET Amount_Due = ?, Paid = ?, Payment_Status = ? WHERE Fine_ID = ?',
+            [newAmount, isPaid, isPaid ? 'Paid' : 'Unpaid', fine.Fine_ID],
             (err) => {
               if (err) reject(err);
               else resolve();
@@ -372,7 +372,7 @@ exports.waiveFine = (req, res) => {
   const borrowId = req.params.id;
 
   db.query(
-    'UPDATE fine SET Amount_Due = 0, Paid = 1 WHERE Borrow_ID = ?',
+    'UPDATE fine SET Amount_Due = 0, Paid = 1, Payment_Status = "Waived" WHERE Borrow_ID = ?',
     [borrowId],
     (err, result) => {
       if (err) return sendJSON(res, 500, { message: 'Error waiving fine' });

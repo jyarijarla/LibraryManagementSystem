@@ -1,5 +1,4 @@
 const db = require('../db');
-const { mockLogs } = require('./auditController');
 
 // Helper to send JSON response
 const sendJSON = (res, data, statusCode = 200) => {
@@ -8,321 +7,18 @@ const sendJSON = (res, data, statusCode = 200) => {
     res.end(JSON.stringify(data));
 };
 
-// Fallback helpers so the Admin Reports tab still shows data even if system_logs is empty or missing
-const getFallbackLogs = () => Array.isArray(mockLogs) ? mockLogs : [];
-
-const buildSummaryFromLogs = (logs = []) => {
-    const uniqueUsers = new Set();
-    const summary = {
-        Total_Actions: logs.length,
-        Active_Admins: 0,
-        User_Role_Changes: 0,
-        Policy_Changes: 0,
-        New_Users: 0,
-        Data_Exports: 0,
-        Backup_Success: 0,
-        Backup_Fail: 0
-    };
-
-    logs.forEach(log => {
-        if (log.User_ID != null) uniqueUsers.add(log.User_ID);
-        const action = log.Action || '';
-        if (action.startsWith('USER_') || action.startsWith('ROLE_')) summary.User_Role_Changes++;
-        if (action.startsWith('CONFIG_') || action.startsWith('POLICY_')) summary.Policy_Changes++;
-        if (action === 'USER_CREATE') summary.New_Users++;
-        if (action === 'DATA_EXPORT') summary.Data_Exports++;
-        if (action === 'BACKUP_SUCCESS') summary.Backup_Success++;
-        if (action === 'BACKUP_FAIL') summary.Backup_Fail++;
-    });
-
-    summary.Active_Admins = uniqueUsers.size;
-    return summary;
-};
-
-const shouldUseFallback = (err, results) => err?.code === 'ER_NO_SUCH_TABLE' || (Array.isArray(results) && results.length === 0);
-const filterFallbackLogs = (predicate) => getFallbackLogs().filter(predicate);
-
-// 1. Admin Activity Summary & KPI Cards
-exports.getAdminActivitySummary = (req, res) => {
-    const { startDate, endDate } = req.query;
-
-    // Default to last 30 days if no dates provided
-    let end = endDate || new Date().toISOString();
-    let start = startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-
-    // Ensure full day coverage if only date is provided (YYYY-MM-DD)
-    if (!start.includes('T')) start = `${start}T00:00:00.000Z`;
-    if (!end.includes('T')) end = `${end}T23:59:59.999Z`;
-
-    const query = `
-    SELECT 
-      COUNT(*) as Total_Actions,
-      COUNT(DISTINCT User_ID) as Active_Admins,
-      SUM(CASE WHEN Action LIKE 'USER_%' OR Action LIKE 'ROLE_%' THEN 1 ELSE 0 END) as User_Role_Changes,
-      SUM(CASE WHEN Action LIKE 'CONFIG_%' THEN 1 ELSE 0 END) as Policy_Changes,
-      SUM(CASE WHEN Action = 'USER_CREATE' THEN 1 ELSE 0 END) as New_Users,
-      SUM(CASE WHEN Action = 'DATA_EXPORT' THEN 1 ELSE 0 END) as Data_Exports,
-      SUM(CASE WHEN Action = 'BACKUP_SUCCESS' THEN 1 ELSE 0 END) as Backup_Success,
-      SUM(CASE WHEN Action = 'BACKUP_FAIL' THEN 1 ELSE 0 END) as Backup_Fail
-    FROM system_logs
-    WHERE Timestamp BETWEEN ? AND ?
-  `;
-
-    db.query(query, [start, end], (err, results) => {
-        if (err) {
-            console.error('Error fetching admin activity summary:', err);
-            if (err.code === 'ER_NO_SUCH_TABLE') {
-                return sendJSON(res, buildSummaryFromLogs(getFallbackLogs()));
-            }
-            return sendJSON(res, { error: 'Database error' }, 500);
-        }
-        const row = results?.[0];
-        const isEmptySummary = row && Object.values(row).every(val => val === 0 || val === null);
-        if (!row || isEmptySummary) {
-            return sendJSON(res, buildSummaryFromLogs(getFallbackLogs()));
-        }
-        sendJSON(res, row);
-    });
-};
-
-// 2. User & Role Management Section
-exports.getUserRoleChanges = (req, res) => {
-    const query = `
-        SELECT Log_ID, User_ID, Action, Details, Timestamp, IP_Address
-        FROM system_logs
-        WHERE Action IN ('USER_CREATE', 'USER_UPDATE', 'USER_DELETE', 'ROLE_CHANGE', 'PASSWORD_RESET', 'USER_DEACTIVATE', 'USER_ACTIVATE')
-        ORDER BY Timestamp DESC
-        LIMIT 100
-    `;
-    const fallback = filterFallbackLogs(log =>
-        ['USER_CREATE', 'USER_UPDATE', 'USER_DELETE', 'ROLE_CHANGE', 'PASSWORD_RESET', 'USER_DEACTIVATE', 'USER_ACTIVATE'].includes(log.Action)
-    );
-    db.query(query, (err, results) => {
-        if (shouldUseFallback(err, results)) return sendJSON(res, fallback);
-        if (err) return sendJSON(res, { error: 'Database error' }, 500);
-        sendJSON(res, results);
-    });
-};
-
-// 3. Policy / System Configuration Changes
-exports.getPolicyChanges = (req, res) => {
-    const query = `
-        SELECT Log_ID, User_ID, Action, Details, Timestamp
-        FROM system_logs
-        WHERE Action LIKE 'CONFIG_%'
-        ORDER BY Timestamp DESC
-        LIMIT 50
-    `;
-    const fallback = filterFallbackLogs(log => (log.Action || '').startsWith('CONFIG_'));
-    db.query(query, (err, results) => {
-        if (shouldUseFallback(err, results)) return sendJSON(res, fallback);
-        if (err) return sendJSON(res, { error: 'Database error' }, 500);
-        sendJSON(res, results);
-    });
-};
-
-// 4. Catalog & Inventory Overrides
-exports.getCatalogOverrides = (req, res) => {
-    const query = `
-        SELECT Log_ID, User_ID, Action, Details, Timestamp
-        FROM system_logs
-        WHERE Action LIKE 'CATALOG_%' OR Action LIKE 'INVENTORY_%'
-        ORDER BY Timestamp DESC
-        LIMIT 50
-    `;
-    const fallback = filterFallbackLogs(log => {
-        const action = log.Action || '';
-        return action.startsWith('CATALOG_') || action.startsWith('INVENTORY_');
-    });
-    db.query(query, (err, results) => {
-        if (shouldUseFallback(err, results)) return sendJSON(res, fallback);
-        if (err) return sendJSON(res, { error: 'Database error' }, 500);
-        sendJSON(res, results);
-    });
-};
-
-// 5. Financial / Fine Control Summary
-exports.getFinancialSummary = (req, res) => {
-    const query = `
-        SELECT Log_ID, User_ID, Action, Details, Timestamp
-        FROM system_logs
-        WHERE Action LIKE 'FINE_%' OR Action LIKE 'PAYMENT_%'
-        ORDER BY Timestamp DESC
-        LIMIT 50
-    `;
-    const fallback = filterFallbackLogs(log => {
-        const action = log.Action || '';
-        return action.startsWith('FINE_') || action.startsWith('PAYMENT_');
-    });
-    db.query(query, (err, results) => {
-        if (shouldUseFallback(err, results)) return sendJSON(res, fallback);
-        if (err) return sendJSON(res, { error: 'Database error' }, 500);
-        sendJSON(res, results);
-    });
-};
-
-// 6. Data / Security / Compliance Logs
-exports.getSecurityLogs = (req, res) => {
-    const query = `
-        SELECT Log_ID, User_ID, Action, Details, Timestamp, IP_Address
-        FROM system_logs
-        WHERE Action IN ('LOGIN_FAILED', 'UNAUTHORIZED_ACCESS', 'DATA_EXPORT')
-        ORDER BY Timestamp DESC
-        LIMIT 50
-    `;
-    const fallback = filterFallbackLogs(log => ['LOGIN_FAILED', 'UNAUTHORIZED_ACCESS', 'DATA_EXPORT'].includes(log.Action));
-    db.query(query, (err, results) => {
-        if (shouldUseFallback(err, results)) return sendJSON(res, fallback);
-        if (err) return sendJSON(res, { error: 'Database error' }, 500);
-        sendJSON(res, results);
-    });
-};
-
-// 7. System Health & Maintenance
-exports.getSystemHealth = (req, res) => {
-    const queryLogs = `
-        SELECT Log_ID, User_ID, Action, Details, Timestamp
-        FROM system_logs
-        WHERE Action IN ('BACKUP_SUCCESS', 'BACKUP_FAIL', 'RESTORE', 'MIGRATION', 'SYSTEM_STARTUP')
-        ORDER BY Timestamp DESC
-        LIMIT 50
-    `;
-
-    const queryStats = `
-        SELECT 
-            COUNT(*) as total,
-            SUM(CASE WHEN Action LIKE '%FAIL%' OR Action LIKE '%ERROR%' THEN 1 ELSE 0 END) as errors,
-            SUM(CASE WHEN Action = 'BACKUP_SUCCESS' THEN 1 ELSE 0 END) as backupSuccess,
-            SUM(CASE WHEN Action = 'BACKUP_FAIL' THEN 1 ELSE 0 END) as backupFail
-        FROM system_logs
-        WHERE Timestamp > NOW() - INTERVAL 24 HOUR
-    `;
-
-    db.query(queryLogs, (err, logs) => {
-        if (err) return sendJSON(res, { error: 'Database error' }, 500);
-
-        db.query(queryStats, (err2, stats) => {
-            if (err2) return sendJSON(res, { error: 'Database error' }, 500);
-
-            const total = stats[0].total || 1;
-            const errors = stats[0].errors || 0;
-            const errorRate = ((errors / total) * 100).toFixed(2);
-
-            const backupTotal = (stats[0].backupSuccess || 0) + (stats[0].backupFail || 0);
-            const backupSuccessRate = backupTotal > 0 ? ((stats[0].backupSuccess / backupTotal) * 100).toFixed(1) : 100;
-
-            sendJSON(res, {
-                logs,
-                stats: {
-                    errorRate: `${errorRate}%`,
-                    backupSuccessRate: `${backupSuccessRate}%`,
-                    totalErrors: errors,
-                    recentBackups: backupTotal
-                }
-            });
-        });
-    });
-};
-
-// 8. Reports Generated / Exports
-exports.getReportsGenerated = (req, res) => {
-    const query = `
-        SELECT Log_ID, User_ID, Action, Details, Timestamp
-        FROM system_logs
-        WHERE Action = 'REPORT_GENERATED' OR Action = 'DATA_EXPORT'
-        ORDER BY Timestamp DESC
-        LIMIT 50
-    `;
-    const fallback = filterFallbackLogs(log => ['REPORT_GENERATED', 'DATA_EXPORT'].includes(log.Action));
-    db.query(query, (err, results) => {
-        if (shouldUseFallback(err, results)) return sendJSON(res, fallback);
-        if (err) return sendJSON(res, { error: 'Database error' }, 500);
-        sendJSON(res, results);
-    });
-};
-
-// 9. Appendix: Detailed Audit Trail (Raw)
-exports.getAuditTrail = (req, res) => {
-    const { page = 1, limit = 50, action, userId, startDate, endDate, role, search } = req.query;
-    const pageNum = parseInt(page) || 1;
-    const limitNum = parseInt(limit) || 50;
-    const offset = (pageNum - 1) * limitNum;
-
-    let query = `
-        SELECT s.*, u.Username, r.role_name as Role_Name
-        FROM system_logs s
-        LEFT JOIN user u ON s.User_ID = u.User_ID
-        LEFT JOIN role_type r ON u.Role = r.role_id
-        WHERE 1=1
-    `;
-    const params = [];
-
-    if (action) {
-        query += ` AND s.Action = ?`;
-        params.push(action);
-    }
-    if (userId) {
-        query += ` AND s.User_ID = ?`;
-        params.push(userId);
-    }
-    if (role) {
-        query += ` AND r.role_name = ?`;
-        params.push(role);
-    }
-    if (search) {
-        query += ` AND (u.Username LIKE ? OR s.Action LIKE ? OR s.Details LIKE ? OR s.IP_Address LIKE ?)`;
-        const term = `%${search}%`;
-        params.push(term, term, term, term);
-    }
-    if (startDate && endDate) {
-        query += ` AND s.Timestamp BETWEEN ? AND ?`;
-        // Append time to ensure full day coverage if only date is provided
-        const start = startDate.includes('T') ? startDate : `${startDate}T00:00:00.000Z`;
-        const end = endDate.includes('T') ? endDate : `${endDate}T23:59:59.999Z`;
-        params.push(start, end);
-    }
-
-    query += ` ORDER BY s.Timestamp DESC LIMIT ? OFFSET ?`;
-    params.push(parseInt(limit), parseInt(offset));
-
-    console.log('🔍 getAuditTrail Query:', query);
-    console.log('🔍 getAuditTrail Params:', params);
-
-    const fallbackResults = filterFallbackLogs(log => {
-        if (action && log.Action !== action) return false;
-        if (userId && String(log.User_ID) !== String(userId)) return false;
-        if (startDate && endDate) {
-            const ts = new Date(log.Timestamp).getTime();
-            const startTs = new Date(startDate.includes('T') ? startDate : `${startDate}T00:00:00.000Z`).getTime();
-            const endTs = new Date(endDate.includes('T') ? endDate : `${endDate}T23:59:59.999Z`).getTime();
-            if (Number.isFinite(ts) && (ts < startTs || ts > endTs)) return false;
-        }
-        return true;
-    });
-
-    db.query(query, params, (err, results) => {
-        if (err) {
-            console.error('❌ getAuditTrail Error:', err);
-            if (err.code === 'ER_NO_SUCH_TABLE') return sendJSON(res, fallbackResults.slice(0, limitNum));
-            return sendJSON(res, { error: 'Database error' }, 500);
-        }
-        console.log('✅ getAuditTrail Results:', results.length);
-        if (shouldUseFallback(err, results)) {
-            return sendJSON(res, fallbackResults.slice(offset, offset + limitNum));
-        }
-        sendJSON(res, results);
-    });
-};
-
-// --- Executive Dashboard Aggregations ---
-
-// 10. High-level Dashboard Stats
+// --- 1. Overall Library Health (KPIs + System Jobs) ---
 exports.getDashboardStats = (req, res) => {
     const queries = {
-        totalUsers: "SELECT COUNT(*) as count FROM user WHERE Is_Deleted = 0",
-        activeLoans: "SELECT COUNT(*) as count FROM borrow WHERE Status = 'Borrowed'",
-        revenue: "SELECT SUM(Fine_Amount) as total FROM fine WHERE Payment_Status = 'Paid'",
-        systemHealth: "SELECT COUNT(*) as errors FROM system_logs WHERE Action LIKE '%FAIL%' AND Timestamp > NOW() - INTERVAL 24 HOUR"
+        activeLoans: "SELECT COUNT(*) as count FROM borrow WHERE Return_Date IS NULL",
+        overdueLoans: "SELECT COUNT(*) as count FROM borrow WHERE Return_Date IS NULL AND Due_Date < CURDATE()",
+        totalItems: "SELECT COUNT(*) as count FROM rentable WHERE Availability = 1",
+        activeHolds: "SELECT COUNT(*) as count FROM hold WHERE Canceled_At IS NULL AND Fulfilling_Borrow_ID IS NULL",
+        outstandingFines: "SELECT SUM(Amount_Due) as value FROM fine WHERE Paid = 0",
+        blockedStudents: "SELECT COUNT(*) as count FROM user WHERE Role = 1 AND Is_Blocked = 1",
+        // System jobs status (mocked for now as we don't have a jobs table)
+        lastBackup: "SELECT 'Success' as status, NOW() - INTERVAL 2 HOUR as time",
+        overdueScan: "SELECT 'Completed' as status, CURDATE() as time"
     };
 
     const stats = {};
@@ -330,99 +26,324 @@ exports.getDashboardStats = (req, res) => {
     const keys = Object.keys(queries);
 
     keys.forEach(key => {
+        // For mocked queries that don't use DB, just return the value directly
+        if (key === 'lastBackup' || key === 'overdueScan') {
+            stats[key] = key === 'lastBackup' ? { status: 'Success', time: new Date(Date.now() - 7200000) } : { status: 'Completed', time: new Date() };
+            completed++;
+            if (completed === keys.length) sendResponse();
+            return;
+        }
+
         db.query(queries[key], (err, results) => {
             if (err) {
                 console.error(`Error fetching ${key}:`, err);
                 stats[key] = 0;
             } else {
-                stats[key] = results[0].count || results[0].total || 0;
+                stats[key] = results[0]?.value || results[0]?.count || 0;
             }
             completed++;
-            if (completed === keys.length) {
-                sendJSON(res, stats);
+            if (completed === keys.length) sendResponse();
+        });
+    });
+
+    function sendResponse() {
+        const overdueRate = stats.activeLoans > 0 ? ((stats.overdueLoans / stats.activeLoans) * 100).toFixed(1) : 0;
+        sendJSON(res, {
+            ...stats,
+            overdueRate: `${overdueRate}%`
+        });
+    }
+};
+
+// --- 2. Circulation Truth (Raw Loans Table) ---
+exports.getCirculationData = (req, res) => {
+    const { startDate, endDate, branch, category, status } = req.query;
+
+    let query = `
+        SELECT 
+            b.Borrow_ID,
+            u.First_Name, u.Last_Name, u.User_ID,
+            CASE 
+                WHEN bk.Title IS NOT NULL THEN bk.Title
+                WHEN cd.Title IS NOT NULL THEN cd.Title
+                WHEN ab.Title IS NOT NULL THEN ab.Title
+                WHEN m.Title IS NOT NULL THEN m.Title
+                WHEN t.Model_Num IS NOT NULL THEN CONCAT(t.Type, ' - ', t.Model_Num)
+                ELSE 'Unknown Item'
+            END as Title,
+            at.type_name as Category,
+            b.Borrow_Date,
+            b.Due_Date,
+            b.Return_Date,
+            CASE 
+                WHEN b.Return_Date IS NOT NULL THEN 'Returned'
+                WHEN b.Due_Date < CURDATE() THEN 'Overdue'
+                ELSE 'Active'
+            END as Loan_Status,
+            f.Amount_Due as Fine_Amount
+        FROM borrow b
+        JOIN user u ON b.Borrower_ID = u.User_ID
+        JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
+        JOIN asset a ON r.Asset_ID = a.Asset_ID
+        JOIN asset_type at ON a.Asset_TypeID = at.type_id
+        LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
+        LEFT JOIN cd ON a.Asset_ID = cd.Asset_ID
+        LEFT JOIN audiobook ab ON a.Asset_ID = ab.Asset_ID
+        LEFT JOIN movie m ON a.Asset_ID = m.Asset_ID
+        LEFT JOIN technology t ON a.Asset_ID = t.Asset_ID
+        LEFT JOIN fine f ON b.Borrow_ID = f.Borrow_ID
+        WHERE 1=1
+    `;
+
+    const params = [];
+
+    if (startDate) {
+        query += " AND b.Borrow_Date >= ?";
+        params.push(startDate);
+    }
+    if (endDate) {
+        query += " AND b.Borrow_Date <= ?";
+        params.push(endDate);
+    }
+    if (category) {
+        query += " AND at.type_name = ?";
+        params.push(category);
+    }
+    if (status) {
+        if (status === 'Active') query += " AND b.Return_Date IS NULL AND b.Due_Date >= CURDATE()";
+        else if (status === 'Overdue') query += " AND b.Return_Date IS NULL AND b.Due_Date < CURDATE()";
+        else if (status === 'Returned') query += " AND b.Return_Date IS NOT NULL";
+    }
+
+    query += " ORDER BY b.Borrow_Date DESC LIMIT 100";
+
+    db.query(query, params, (err, results) => {
+        if (err) {
+            console.error('Error in getCirculationData:', err);
+            return sendJSON(res, { error: 'Database error' }, 500);
+        }
+        sendJSON(res, results);
+    });
+};
+
+// --- 3. Overdue & Risk Control ---
+exports.getOverdueData = (req, res) => {
+    const query = `
+        SELECT 
+            b.Borrow_ID,
+            u.First_Name, u.Last_Name, u.User_Email,
+            CASE 
+                WHEN bk.Title IS NOT NULL THEN bk.Title
+                ELSE 'Item'
+            END as Title,
+            at.type_name as Category,
+            b.Due_Date,
+            DATEDIFF(CURDATE(), b.Due_Date) as Days_Overdue,
+            COALESCE(f.Amount_Due, 0) as Current_Fine,
+            CASE
+                WHEN DATEDIFF(CURDATE(), b.Due_Date) BETWEEN 1 AND 7 THEN '1-7 Days'
+                WHEN DATEDIFF(CURDATE(), b.Due_Date) BETWEEN 8 AND 30 THEN '8-30 Days'
+                WHEN DATEDIFF(CURDATE(), b.Due_Date) BETWEEN 31 AND 90 THEN '31-90 Days'
+                ELSE '90+ Days'
+            END as Aging_Bucket
+        FROM borrow b
+        JOIN user u ON b.Borrower_ID = u.User_ID
+        JOIN rentable r ON b.Rentable_ID = r.Rentable_ID
+        JOIN asset a ON r.Asset_ID = a.Asset_ID
+        JOIN asset_type at ON a.Asset_TypeID = at.type_id
+        LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
+        LEFT JOIN fine f ON b.Borrow_ID = f.Borrow_ID
+        WHERE b.Return_Date IS NULL AND b.Due_Date < CURDATE()
+        ORDER BY Days_Overdue DESC
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Error in getOverdueData:', err);
+            return sendJSON(res, { error: 'Database error' }, 500);
+        }
+
+        // Calculate buckets
+        const buckets = {
+            '1-7 Days': 0,
+            '8-30 Days': 0,
+            '31-90 Days': 0,
+            '90+ Days': 0
+        };
+
+        results.forEach(row => {
+            if (buckets[row.Aging_Bucket] !== undefined) {
+                buckets[row.Aging_Bucket]++;
+            }
+        });
+
+        sendJSON(res, {
+            rawTable: results,
+            buckets
+        });
+    });
+};
+
+// --- 4. Holds / Waitlist Pressure ---
+exports.getHoldsData = (req, res) => {
+    const query = `
+        SELECT 
+            h.Hold_ID,
+            u.First_Name, u.Last_Name,
+            CASE 
+                WHEN bk.Title IS NOT NULL THEN bk.Title
+                ELSE 'Item'
+            END as Title,
+            h.Hold_Date,
+            DATEDIFF(CURDATE(), h.Hold_Date) as Wait_Days,
+            '1' as Queue_Position, -- Placeholder as queue logic is complex
+            h.Hold_Expires
+        FROM hold h
+        JOIN user u ON h.Holder_ID = u.User_ID
+        JOIN rentable r ON h.Rentable_ID = r.Rentable_ID
+        JOIN asset a ON r.Asset_ID = a.Asset_ID
+        LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
+        WHERE h.Canceled_At IS NULL AND h.Fulfilling_Borrow_ID IS NULL
+        ORDER BY h.Hold_Date ASC
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Error in getHoldsData:', err);
+            return sendJSON(res, { error: 'Database error' }, 500);
+        }
+
+        const avgWaitTime = results.length > 0
+            ? (results.reduce((acc, curr) => acc + curr.Wait_Days, 0) / results.length).toFixed(1)
+            : 0;
+
+        sendJSON(res, {
+            rawTable: results,
+            metrics: {
+                totalHolds: results.length,
+                avgWaitTime: `${avgWaitTime} Days`
             }
         });
     });
 };
 
-// 11. Activity Trends (Line Chart)
-exports.getActivityTrends = (req, res) => {
-    const query = `
-        SELECT DATE(Timestamp) as date, COUNT(*) as count
-        FROM system_logs
-        WHERE Timestamp > NOW() - INTERVAL 30 DAY
-        GROUP BY DATE(Timestamp)
-        ORDER BY date ASC
-    `;
-    db.query(query, (err, results) => {
-        if (err) return sendJSON(res, { error: 'Database error' }, 500);
-        sendJSON(res, results);
-    });
-};
-
-// 12. User Growth Stats (Bar Chart)
-exports.getUserGrowthStats = (req, res) => {
-    const query = `
-        SELECT 
-            DATE(Timestamp) as date,
-            SUM(CASE WHEN Action = 'USER_CREATE' THEN 1 ELSE 0 END) as newUsers,
-            SUM(CASE WHEN Action = 'USER_DELETE' THEN 1 ELSE 0 END) as deletedUsers
-        FROM system_logs
-        WHERE Timestamp > NOW() - INTERVAL 90 DAY
-        GROUP BY DATE(Timestamp)
-        ORDER BY date ASC
-    `;
-    db.query(query, (err, results) => {
-        if (err) return sendJSON(res, { error: 'Database error' }, 500);
-        sendJSON(res, results);
-    });
-};
-
-// 13. Financial Trends (Area Chart)
-exports.getFinancialTrends = (req, res) => {
-    // Note: This relies on logs for historical trend. 
-    // Ideally, we'd have a 'transactions' table. Using logs as proxy.
-    const query = `
-        SELECT 
-            DATE(Timestamp) as date,
-            SUM(CASE WHEN Action = 'PAYMENT_PROCESSED' THEN CAST(JSON_UNQUOTE(JSON_EXTRACT(Details, '$.amount')) AS DECIMAL(10,2)) ELSE 0 END) as revenue
-        FROM system_logs
-        WHERE Action = 'PAYMENT_PROCESSED' AND Timestamp > NOW() - INTERVAL 90 DAY
-        GROUP BY DATE(Timestamp)
-        ORDER BY date ASC
-    `;
-    db.query(query, (err, results) => {
-        if (err) return sendJSON(res, { error: 'Database error' }, 500);
-        sendJSON(res, results);
-    });
-};
-
-// 14. Inventory Health (Pie Chart)
+// --- 5. Inventory & Collection Health ---
 exports.getInventoryHealth = (req, res) => {
-    // Aggregating from multiple inventory tables
-    const queries = [
-        "SELECT 'Books' as type, SUM(Copies) as total, SUM(Available_Copies) as available FROM book_inventory",
-        "SELECT 'Movies' as type, SUM(Copies) as total, SUM(Available_Copies) as available FROM movie_inventory",
-        "SELECT 'Tech' as type, SUM(Copies) as total, SUM(Available_Copies) as available FROM technology_inventory"
-    ];
+    const query = `
+        SELECT 
+            a.Asset_ID,
+            at.type_name as Type,
+            CASE 
+                WHEN bk.Title IS NOT NULL THEN bk.Title
+                WHEN cd.Title IS NOT NULL THEN cd.Title
+                ELSE 'Unknown'
+            END as Title,
+            (SELECT COUNT(*) FROM rentable WHERE Asset_ID = a.Asset_ID) as Total_Copies,
+            (SELECT COUNT(*) FROM rentable WHERE Asset_ID = a.Asset_ID AND Availability = 1) as Available_Copies,
+            (SELECT COUNT(*) FROM borrow b JOIN rentable r ON b.Rentable_ID = r.Rentable_ID WHERE r.Asset_ID = a.Asset_ID) as Lifetime_Borrows
+        FROM asset a
+        JOIN asset_type at ON a.Asset_TypeID = at.type_id
+        LEFT JOIN book bk ON a.Asset_ID = bk.Asset_ID
+        LEFT JOIN cd ON a.Asset_ID = cd.Asset_ID
+        LIMIT 100
+    `;
 
-    const finalResults = [];
-    let completed = 0;
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Error in getInventoryHealth:', err);
+            return sendJSON(res, { error: 'Database error' }, 500);
+        }
+        sendJSON(res, results);
+    });
+};
 
-    queries.forEach(q => {
-        db.query(q, (err, results) => {
-            if (!err && results[0].total) {
-                finalResults.push({
-                    type: results[0].type,
-                    total: results[0].total,
-                    available: results[0].available,
-                    borrowed: results[0].total - results[0].available
-                });
-            }
-            completed++;
-            if (completed === queries.length) {
-                sendJSON(res, finalResults);
-            }
+// --- 6. Financial Picture ---
+exports.getFinancialData = (req, res) => {
+    const query = `
+        SELECT 
+            f.Fine_ID,
+            u.First_Name, u.Last_Name,
+            f.Original_Amount as Amount_Due,
+            f.Paid,
+            f.Fine_Date,
+            CASE 
+                WHEN f.Payment_Status = 'Paid' THEN 'Collected'
+                ELSE f.Payment_Status
+            END as Status
+        FROM fine f
+        JOIN borrow b ON f.Borrow_ID = b.Borrow_ID
+        JOIN user u ON b.Borrower_ID = u.User_ID
+        ORDER BY f.Fine_Date DESC
+        LIMIT 100
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Error in getFinancialData:', err);
+            return sendJSON(res, { error: 'Database error' }, 500);
+        }
+        sendJSON(res, results);
+    });
+};
+
+// --- 7. User & Staff Oversight ---
+exports.getUserStaffData = (req, res) => {
+    const studentQuery = `
+        SELECT 
+            COUNT(*) as Total_Students,
+            SUM(CASE WHEN created_at > NOW() - INTERVAL 30 DAY THEN 1 ELSE 0 END) as New_Registrations,
+            SUM(CASE WHEN Is_Blocked = 1 AND Is_Deleted = 0 THEN 1 ELSE 0 END) as Blocked_Users,
+            SUM(CASE WHEN Is_Deleted = 1 THEN 1 ELSE 0 END) as Deleted_Users
+        FROM user WHERE Role = 1
+    `;
+
+    const staffQuery = `
+        SELECT 
+            u.First_Name, u.Last_Name,
+            COUNT(b.Borrow_ID) as Transactions_Handled
+        FROM user u
+        LEFT JOIN borrow b ON u.User_ID = b.Processed_By
+        WHERE u.Role IN (2, 3) -- Admin and Librarian
+        GROUP BY u.User_ID
+    `;
+
+    db.query(studentQuery, (err, studentResults) => {
+        if (err) return sendJSON(res, { error: 'Database error' }, 500);
+
+        db.query(staffQuery, (err2, staffResults) => {
+            if (err2) return sendJSON(res, { error: 'Database error' }, 500);
+
+            sendJSON(res, {
+                students: studentResults[0],
+                staff: staffResults
+            });
         });
+    });
+};
+
+// --- 8. Policy Impact ---
+exports.getPolicyImpact = (req, res) => {
+    // Mock data for policy changes as we don't have a dedicated table yet
+    const changes = [
+        { Date: '2025-11-01', Setting: 'Fine Rate', Old: '$0.50', New: '$0.75', Changed_By: 'Admin' },
+        { Date: '2025-10-15', Setting: 'Max Loans', Old: '5', New: '10', Changed_By: 'Admin' }
+    ];
+    sendJSON(res, changes);
+};
+
+// --- 9. Audit & Security ---
+exports.getSecurityReport = (req, res) => {
+    const query = `
+        SELECT Log_ID, User_ID, Action, CAST(Details AS CHAR) as Details, Timestamp, IP_Address
+        FROM system_logs
+        ORDER BY Timestamp DESC LIMIT 100
+    `;
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Error fetching security report:', err);
+            return sendJSON(res, []);
+        }
+        sendJSON(res, results);
     });
 };

@@ -76,7 +76,7 @@ const UserProfileDrawer = ({ isOpen, onClose, userId }) => {
                 ) : error ? (
                     <div className="flex-1 flex items-center justify-center text-red-500">
                         <AlertCircle className="w-6 h-6 mr-2" />
-                        {error}
+                        {typeof error === 'string' ? error : (error?.message || JSON.stringify(error))}
                     </div>
                 ) : data ? (
                     <>

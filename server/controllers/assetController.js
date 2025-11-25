@@ -797,6 +797,132 @@ const updateAsset = async (req, res) => {
   }
 };
 
+// Search assets
+const searchAssets = async (req, res) => {
+  const { q } = req.query;
+  if (!q) {
+    return res.writeHead(400, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ error: 'Query parameter q is required' }));
+  }
+
+  const query = `
+    SELECT 'Book' as Type, Asset_ID, Title, Image_URL FROM book WHERE Title LIKE ? OR Author LIKE ? OR ISBN LIKE ?
+    UNION
+    SELECT 'CD' as Type, Asset_ID, Title, Image_URL FROM cd WHERE Title LIKE ? OR Artist LIKE ?
+    UNION
+    SELECT 'Audiobook' as Type, Asset_ID, Title, Image_URL FROM audiobook WHERE Title LIKE ? OR Author LIKE ?
+    UNION
+    SELECT 'Movie' as Type, Asset_ID, Title, Image_URL FROM movie WHERE Title LIKE ?
+    UNION
+    SELECT 'Technology' as Type, Asset_ID, Description as Title, Image_URL FROM technology WHERE Description LIKE ? OR Model_Num LIKE ?
+    LIMIT 20
+  `;
+
+  const searchParam = `%${q}%`;
+  const params = [
+    searchParam, searchParam, searchParam,
+    searchParam, searchParam,
+    searchParam, searchParam,
+    searchParam,
+    searchParam, searchParam
+  ];
+
+  db.query(query, params, (err, results) => {
+    if (err) {
+      console.error('Error searching assets:', err);
+      return res.writeHead(500, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ error: 'Database error' }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(results));
+  });
+};
+
+// Get asset by ID (generic)
+const getAssetById = async (req, res) => {
+  const { id } = req.params;
+
+  // Try to find in all tables. This is inefficient but works for a generic endpoint without type.
+  // Better approach: Join all tables or use a stored procedure.
+  // For now, let's try a big UNION or just check the asset table and then fetch details.
+
+  const query = `
+    SELECT 
+      a.Asset_ID, a.Asset_TypeID,
+      COALESCE(b.Title, c.Title, ab.Title, m.Title, t.Description, sr.Room_Number) as Title,
+      COALESCE(b.Image_URL, c.Image_URL, ab.Image_URL, m.Image_URL, t.Image_URL, sr.Image_URL) as Image_URL,
+      CASE 
+        WHEN b.Asset_ID IS NOT NULL THEN 'Book'
+        WHEN c.Asset_ID IS NOT NULL THEN 'CD'
+        WHEN ab.Asset_ID IS NOT NULL THEN 'Audiobook'
+        WHEN m.Asset_ID IS NOT NULL THEN 'Movie'
+        WHEN t.Asset_ID IS NOT NULL THEN 'Technology'
+        WHEN sr.Asset_ID IS NOT NULL THEN 'Study Room'
+        ELSE 'Unknown'
+      END as Type
+    FROM asset a
+    LEFT JOIN book b ON a.Asset_ID = b.Asset_ID
+    LEFT JOIN cd c ON a.Asset_ID = c.Asset_ID
+    LEFT JOIN audiobook ab ON a.Asset_ID = ab.Asset_ID
+    LEFT JOIN movie m ON a.Asset_ID = m.Asset_ID
+    LEFT JOIN technology t ON a.Asset_ID = t.Asset_ID
+    LEFT JOIN study_room sr ON a.Asset_ID = sr.Asset_ID
+    WHERE a.Asset_ID = ?
+  `;
+
+  db.query(query, [id], (err, results) => {
+    if (err) {
+      console.error('Error fetching asset:', err);
+      return res.writeHead(500, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ error: 'Database error' }));
+    }
+    if (results.length === 0) {
+      return res.writeHead(404, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ error: 'Asset not found' }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(results[0]));
+  });
+};
+
+// Get book by ISBN
+const getBookByISBN = async (req, res) => {
+  const { isbn } = req.params;
+  const query = `SELECT * FROM book WHERE ISBN = ?`;
+
+  db.query(query, [isbn], (err, results) => {
+    if (err) {
+      console.error('Error fetching book by ISBN:', err);
+      return res.writeHead(500, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ error: 'Database error' }));
+    }
+    if (results.length === 0) {
+      return res.writeHead(404, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ error: 'Book not found' }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(results[0]));
+  });
+};
+
+// Generic Add Asset (Dispatcher)
+const addAsset = async (req, res) => {
+  // This is a placeholder. The frontend should use specific endpoints.
+  // But to prevent crashes, we'll return a 400 with instructions.
+  res.writeHead(400, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    error: 'Please use specific endpoints for adding assets',
+    endpoints: [
+      '/api/assets/books',
+      '/api/assets/cds',
+      '/api/assets/audiobooks',
+      '/api/assets/movies',
+      '/api/assets/technology',
+      '/api/assets/study-rooms'
+    ]
+  }));
+};
+
 module.exports = {
   getAllBooks,
   getAllCDs,
@@ -812,5 +938,9 @@ module.exports = {
   addStudyRoom,
   deleteAsset,
   updateAsset,
-  updateStudyRoomStatus
+  updateStudyRoomStatus,
+  searchAssets,
+  getAssetById,
+  getBookByISBN,
+  addAsset
 };

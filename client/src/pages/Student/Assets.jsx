@@ -289,7 +289,7 @@ export function Assets() {
         <div className="tab-content">
             <div className="section-header"></div>
 
-            <ErrorPopup errorMessage={error} />
+            <ErrorPopup errorMessage={error} onClose={() => setError('')} />
 
             {/* Sub-tabs for different asset types */}
             <div className="student-asset-toolbar">
@@ -395,7 +395,7 @@ export function Assets() {
                             </div>
 
                             <div className="card-body">
-                                {columns.slice(1).filter(col => ['Title','Available_Copies','Availability'].includes(col.key)).map(col => (
+                                {columns.slice(1).filter(col => ['Title', 'Available_Copies', 'Availability'].includes(col.key)).map(col => (
                                     <div key={col.key} className="outer-card-field outer-attribute-row">
                                         <span className="outer-attribute-label">{col.label}:</span>
                                         <span className="outer-attribute-value">

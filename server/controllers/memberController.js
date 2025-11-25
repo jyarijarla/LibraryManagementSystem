@@ -290,12 +290,25 @@ exports.getMemberProfile = async (req, res) => {
 
 // Add new member
 exports.addMember = (req, res) => {
-  const { firstName, lastName, email, phone, username, dateOfBirth, status, password } = req.body;
+  const { firstName, lastName, email, phone, username, dateOfBirth, status, password, role } = req.body;
 
   // Validate required fields
   if (!firstName || !email || !username || !dateOfBirth || !password) {
     return res.writeHead(400, { 'Content-Type': 'application/json' })
       && res.end(JSON.stringify({ error: 'Missing required fields: firstName, email, username, dateOfBirth, password' }));
+  }
+
+  // Determine Role ID
+  let roleId = 1; // Default to Student
+  if (role) {
+    if (typeof role === 'string') {
+      const normalizedRole = role.toLowerCase();
+      if (normalizedRole === 'admin') roleId = 2;
+      else if (normalizedRole === 'librarian') roleId = 3;
+      else roleId = 1;
+    } else if (typeof role === 'number') {
+      roleId = role;
+    }
   }
 
   // Check if username or email already exists
@@ -322,11 +335,11 @@ exports.addMember = (req, res) => {
             && res.end(JSON.stringify({ error: 'Error processing password' }));
         }
 
-        // Insert new member (Role = 1 for student/member)
+        // Insert new member
         db.query(
           `INSERT INTO user (Username, First_Name, Last_Name, User_Email, User_Phone, Date_Of_Birth, Password, Role, Balance) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0.00)`,
-          [username, firstName, lastName || '', email, phone || null, dateOfBirth, hashedPassword],
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00)`,
+          [username, firstName, lastName || '', email, phone || null, dateOfBirth, hashedPassword, roleId],
           (err, result) => {
             if (err) {
               console.error('Error adding member:', err);
@@ -355,9 +368,26 @@ exports.updateMember = async (req, res) => {
   const { id } = req.params;
   const { firstName, lastName, email, phone, dateOfBirth, status, role, password, isActive, isBlocked, blockedReason } = req.body;
 
-  // Build update query dynamically
   const updates = [];
   const params = [];
+
+  // Check for duplicate email or username if they are being updated
+  if (email || req.body.username) {
+    const checkQuery = 'SELECT User_ID FROM user WHERE (User_Email = ? OR Username = ?) AND User_ID != ?';
+    const checkParams = [email || '', req.body.username || '', id];
+
+    try {
+      const [existing] = await db.promise().query(checkQuery, checkParams);
+      if (existing.length > 0) {
+        return res.writeHead(400, { 'Content-Type': 'application/json' })
+          && res.end(JSON.stringify({ error: 'Username or email already exists' }));
+      }
+    } catch (err) {
+      console.error('Error checking duplicates:', err);
+      return res.writeHead(500, { 'Content-Type': 'application/json' })
+        && res.end(JSON.stringify({ error: 'Database error' }));
+    }
+  }
 
   if (firstName) {
     updates.push('First_Name = ?');
@@ -479,8 +509,8 @@ exports.deleteMember = (req, res) => {
 
       // Check for unpaid fines
       db.query(
-        `SELECT COALESCE(SUM(Amount), 0) as unpaid_fines
-         FROM fine WHERE Member_ID = ? AND Payment_Status = 'Unpaid'`,
+        `SELECT COALESCE(SUM(Amount_Due), 0) as unpaid_fines
+         FROM fine WHERE User_ID = ? AND Paid = 0`,
         [id],
         (err, fineResult) => {
           if (err) {

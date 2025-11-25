@@ -16,6 +16,7 @@ import { LoadingOverlay, SuccessPopup, ErrorPopup } from '../../components/Feedb
 import UserDropdown from '../../components/UserDropdown';
 import UserProfileDrawer from './UserProfileDrawer';
 import AdminReport from './AdminReport';
+import DateFilter from './Reports/components/DateFilter';
 import './Admin.css'
 
 // Use local server for development, production for deployed app
@@ -24,7 +25,8 @@ const API_URL = window.location.hostname === 'localhost'
   : 'https://librarymanagementsystem-z2yw.onrender.com/api'
 
 // Helper function to get image path for an asset
-const getAssetImagePath = (assetType, assetId, extension = 'png') => {
+// Helper function to get image path for an asset
+const getAssetImagePath = (assetType, assetId, extension = 'jpg') => {
   return `/assets/${assetType}/${assetId}.${extension}`
 }
 
@@ -113,10 +115,8 @@ const AdminSidebar = ({ activePage, setActivePage, sidebarOpen, setSidebarOpen }
   const navItems = [
     { label: 'Dashboard', icon: Home, id: 'overview' },
     { label: 'User Management', icon: Users, id: 'users' },
-    { label: 'Roles & Permissions', icon: Shield, id: 'roles' },
+
     { label: 'Asset Management', icon: BookOpen, id: 'assets' },
-    { label: 'Room Management', icon: Building2, id: 'rooms' },
-    { label: 'Policy & Settings', icon: Settings, id: 'settings' },
     { label: 'Reports & Analytics', icon: BarChart3, id: 'reports' },
     { label: 'Audit Logs', icon: FileText, id: 'logs' }
   ]
@@ -277,6 +277,7 @@ function Admin() {
   const [showAssetModal, setShowAssetModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [itemToDelete, setItemToDelete] = useState(null)
+
   const [isEditMode, setIsEditMode] = useState(false)
   const [imageRefreshKey, setImageRefreshKey] = useState(Date.now())
 
@@ -323,6 +324,12 @@ function Admin() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedUserIds, setSelectedUserIds] = useState([])
 
+  // Log Filters
+  const [logSearch, setLogSearch] = useState('')
+  const [logActionFilter, setLogActionFilter] = useState('All')
+  const [logStartDate, setLogStartDate] = useState('')
+  const [logEndDate, setLogEndDate] = useState('')
+
   // Fetch Data
   const fetchData = async () => {
     setLoading(true)
@@ -349,7 +356,7 @@ function Admin() {
       }
     } catch (err) {
       console.error('Error fetching data:', err)
-      setError('Failed to load some data')
+      setError(err.message || 'Failed to load some data')
     } finally {
       setLoading(false)
     }
@@ -559,7 +566,10 @@ function Admin() {
         body: JSON.stringify(assetData)
       })
 
-      if (!response.ok) throw new Error('Failed to save asset')
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || errorData.error || 'Failed to save asset')
+      }
 
       await fetchAssets(activeAssetTab)
       setImageRefreshKey(Date.now())
@@ -569,7 +579,7 @@ function Admin() {
       setSuccessMessage(`Asset ${isEditMode ? 'updated' : 'added'} successfully`)
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (err) {
-      setError(err.message)
+      setError(err.message || 'An error occurred')
     } finally {
       setLoading(false)
     }
@@ -580,13 +590,16 @@ function Admin() {
     setLoading(true)
     try {
       const response = await fetch(`${API_URL}/assets/${activeAssetTab}/${itemToDelete.Asset_ID}`, { method: 'DELETE' })
-      if (!response.ok) throw new Error('Failed to delete asset')
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || errorData.error || 'Failed to delete asset')
+      }
       await fetchAssets(activeAssetTab)
       setShowDeleteModal(false)
       setSuccessMessage('Asset deleted successfully')
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (err) {
-      setError(err.message)
+      setError(err.message || 'An error occurred')
     } finally {
       setLoading(false)
     }
@@ -595,19 +608,29 @@ function Admin() {
   const handleCreateUser = async (e) => {
     e.preventDefault()
     try {
-      const payload = { ...userForm, studentId: userForm.studentId }
-      const response = await fetch(`${API_URL}/students`, {
+      const payload = {
+        username: userForm.studentId, // Map studentId input to username
+        firstName: userForm.firstname,
+        lastName: userForm.lastname,
+        email: userForm.email,
+        phone: userForm.phone,
+        dateOfBirth: userForm.dateOfBirth,
+        role: userForm.role,
+        password: userForm.password,
+        status: userForm.status
+      }
+      const response = await fetch(`${API_URL}/members`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${localStorage.getItem('token')}` },
         body: JSON.stringify(payload)
       })
       if (!response.ok) throw new Error('Failed to create user')
       setShowCreateUserModal(false)
-      fetchStudents()
+      fetchData()
       setSuccessMessage('User created successfully')
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (err) {
-      setError(err.message)
+      setError(err.message || 'An error occurred')
     }
   }
 
@@ -615,6 +638,7 @@ function Admin() {
 
   const [activeActionMenuId, setActiveActionMenuId] = useState(null)
   const [userToDelete, setUserToDelete] = useState(null)
+
   const [showProfileDrawer, setShowProfileDrawer] = useState(false)
   const [selectedProfileUserId, setSelectedProfileUserId] = useState(null)
 
@@ -635,7 +659,7 @@ function Admin() {
       })
 
       if (response.ok) {
-        fetchUsers()
+        fetchData()
         setActiveActionMenuId(null)
       } else {
         console.error('Failed to toggle block status')
@@ -660,7 +684,7 @@ function Admin() {
       })
 
       if (response.ok) {
-        fetchUsers()
+        fetchData()
         setActiveActionMenuId(null)
       } else {
         console.error('Failed to toggle activation status')
@@ -680,11 +704,11 @@ function Admin() {
       if (!response.ok) throw new Error('Failed to delete user')
       setShowDeleteUserModal(false)
       setUserToDelete(null)
-      fetchUsers()
+      fetchData()
       setSuccessMessage('User deleted successfully')
       setTimeout(() => setSuccessMessage(''), 3000)
     } catch (err) {
-      setError(err.message)
+      setError(err.message || 'An error occurred')
     }
   }
 
@@ -708,12 +732,12 @@ function Admin() {
         setSuccessMessage(result.message)
         setTimeout(() => setSuccessMessage(''), 3000)
         setSelectedUserIds([])
-        fetchUsers()
+        fetchData()
       } else {
         throw new Error('Failed to perform bulk action')
       }
     } catch (error) {
-      setError(error.message)
+      setError(error.message || 'An error occurred')
     }
   }
 
@@ -735,6 +759,18 @@ function Admin() {
   }
 
   const formatLogDetails = (details) => {
+    if (!details) return '-'
+    if (typeof details === 'object') {
+      try {
+        return Object.entries(details).map(([key, value]) => {
+          const label = key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim()
+          return `${label}: ${typeof value === 'object' ? JSON.stringify(value) : value}`
+        }).join(', ')
+      } catch (e) {
+        return JSON.stringify(details)
+      }
+    }
+
     try {
       const parsed = JSON.parse(details)
       return Object.entries(parsed).map(([key, value]) => {
@@ -743,7 +779,7 @@ function Admin() {
         return `${label}: ${value}`
       }).join(', ')
     } catch (e) {
-      return details
+      return String(details)
     }
   }
 
@@ -802,10 +838,6 @@ function Admin() {
           <button onClick={() => setActiveTab('rooms')} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:bg-indigo-50 transition-all">
             <div className="p-3 bg-indigo-100 rounded-full mb-2 text-indigo-600"><Building2 className="w-6 h-6" /></div>
             <span className="text-sm font-medium text-gray-700">Manage Rooms</span>
-          </button>
-          <button onClick={() => setActiveTab('settings')} className="flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md hover:bg-gray-50 transition-all">
-            <div className="p-3 bg-gray-100 rounded-full mb-2 text-gray-600"><Settings className="w-6 h-6" /></div>
-            <span className="text-sm font-medium text-gray-700">Settings</span>
           </button>
         </div>
       </div>
@@ -1286,17 +1318,17 @@ function Admin() {
       </div>
 
       {/* Asset Tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
+      <div className="bg-white p-1 rounded-xl border border-gray-200 inline-flex mb-6 shadow-sm">
         {['books', 'cds', 'audiobooks', 'movies', 'technology', 'study-rooms'].map(tab => (
           <button
             key={tab}
             onClick={() => setActiveAssetTab(tab)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${activeAssetTab === tab
-              ? 'bg-indigo-600 text-white'
-              : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${activeAssetTab === tab
+              ? 'bg-indigo-600 text-white shadow-md'
+              : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
               }`}
           >
-            {tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}
+            {tab === 'study-rooms' ? 'Study Rooms' : tab.charAt(0).toUpperCase() + tab.slice(1)}
           </button>
         ))}
       </div>
@@ -1327,35 +1359,46 @@ function Admin() {
             <div key={item.Asset_ID} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow group">
               <div className="relative aspect-[2/3] bg-gray-100 overflow-hidden">
                 <img
-                  src={item.Image_URL ? `${item.Image_URL}?t=${imageRefreshKey}` : getAssetImagePath(activeAssetTab, item.Asset_ID)}
+                  src={item.Image_URL ? `${item.Image_URL}?t=${imageRefreshKey}` : getAssetImagePath(activeAssetTab, item.Asset_ID, 'jpg')}
                   alt={item.Title}
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   onError={(e) => {
-                    e.target.style.display = 'none'
-                    e.target.nextElementSibling.style.display = 'flex'
+                    const target = e.target;
+                    const src = target.src;
+                    if (src.includes('.jpg')) {
+                      target.src = src.replace('.jpg', '.png');
+                    } else if (src.includes('.png')) {
+                      target.src = src.replace('.png', '.jpeg');
+                    } else {
+                      target.onerror = null;
+                      target.style.display = 'none';
+                      target.nextElementSibling.classList.remove('hidden');
+                    }
                   }}
                 />
                 <div className="hidden absolute inset-0 flex items-center justify-center bg-gray-100 text-gray-400">
                   <Image className="w-12 h-12" />
                 </div>
-                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-20">
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation()
                       setAssetForm(item)
                       setImagePreview(item.Image_URL)
                       setIsEditMode(true)
                       setShowAssetModal(true)
                     }}
-                    className="p-2 bg-white/90 rounded-full text-blue-600 hover:text-blue-700 shadow-sm"
+                    className="p-2 bg-white/90 rounded-full text-blue-600 hover:text-blue-700 shadow-sm hover:bg-white transition-colors"
                   >
                     <Edit2 className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation()
                       setItemToDelete(item)
                       setShowDeleteModal(true)
                     }}
-                    className="p-2 bg-white/90 rounded-full text-red-600 hover:text-red-700 shadow-sm"
+                    className="p-2 bg-white/90 rounded-full text-red-600 hover:text-red-700 shadow-sm hover:bg-white transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -1396,9 +1439,7 @@ function Admin() {
           ...commonFields,
           { name: 'Author', label: 'Author', type: 'text', required: true },
           { name: 'ISBN', label: 'ISBN', type: 'text', required: true },
-          { name: 'Publisher', label: 'Publisher', type: 'text' },
-          { name: 'Publication_Year', label: 'Year', type: 'number' },
-          { name: 'Genre', label: 'Genre', type: 'text' }
+          { name: 'Page_Count', label: 'Page Count', type: 'number', required: true }
         ]
       case 'cds':
         return [
@@ -1484,39 +1525,122 @@ function Admin() {
 
 
 
-  const renderLogs = () => (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-800">Audit Logs</h2>
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <table className="w-full text-left">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Time</th>
-              <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">User ID</th>
-              <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Action</th>
-              <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Details</th>
-              <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">IP</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {logs.map(log => (
-              <tr key={log.Log_ID} className="hover:bg-gray-50">
-                <td className="px-6 py-4 text-sm text-gray-600">{new Date(log.Timestamp).toLocaleString()}</td>
-                <td className="px-6 py-4 text-sm text-gray-900 font-medium">{log.User_ID}</td>
-                <td className="px-6 py-4">
-                  <span className="px-2 py-1 text-xs font-semibold bg-gray-100 text-gray-700 rounded-full">
-                    {log.Action}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-sm text-gray-500 font-mono text-xs">{log.Details}</td>
-                <td className="px-6 py-4 text-sm text-gray-500">{log.IP_Address}</td>
+  const renderLogs = () => {
+    const uniqueActions = ['All', ...new Set(logs.map(l => l.Action))]
+
+    const filteredLogs = logs.filter(log => {
+      const matchesSearch = (
+        (log.Action && log.Action.toLowerCase().includes(logSearch.toLowerCase())) ||
+        (log.Details && String(log.Details).toLowerCase().includes(logSearch.toLowerCase())) ||
+        (log.User_ID && String(log.User_ID).includes(logSearch)) ||
+        (log.IP_Address && log.IP_Address.includes(logSearch))
+      )
+      const matchesAction = logActionFilter === 'All' || log.Action === logActionFilter
+      const matchesDate = (!logStartDate || new Date(log.Timestamp) >= new Date(logStartDate)) &&
+        (!logEndDate || new Date(log.Timestamp) <= new Date(logEndDate))
+
+      return matchesSearch && matchesAction && matchesDate
+    })
+
+    // Calculate Metrics
+    const metrics = {
+      totalEvents: logs.length,
+      failedLogins: logs.filter(l => l.Action === 'LOGIN_FAILED').length,
+      uniqueUsers: new Set(logs.map(l => l.User_ID)).size,
+      todayEvents: logs.filter(l => new Date(l.Timestamp).toDateString() === new Date().toDateString()).length
+    }
+
+    return (
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold text-gray-800">Audit Logs</h2>
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard title="Total Events" value={metrics.totalEvents} icon={Activity} gradient="bg-gradient-to-r from-blue-500 to-blue-600" />
+          <StatCard title="Failed Logins" value={metrics.failedLogins} icon={Shield} gradient="bg-gradient-to-r from-red-500 to-red-600" />
+          <StatCard title="Unique Users" value={metrics.uniqueUsers} icon={Users} gradient="bg-gradient-to-r from-purple-500 to-purple-600" />
+          <StatCard title="Events Today" value={metrics.todayEvents} icon={Clock} gradient="bg-gradient-to-r from-green-500 to-green-600" />
+        </div>
+
+        <div className="flex flex-col md:flex-row justify-between items-end gap-4">
+          <h3 className="text-lg font-semibold text-gray-700">Log Entries</h3>
+
+          {/* Filters */}
+          <div className="flex flex-wrap gap-3 items-center bg-white p-2 rounded-lg border border-gray-200 shadow-sm">
+            <div className="relative">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search logs..."
+                value={logSearch}
+                onChange={(e) => setLogSearch(e.target.value)}
+                className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <select
+              value={logActionFilter}
+              onChange={(e) => setLogActionFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+            >
+              {uniqueActions.map(action => (
+                <option key={action} value={action}>{action}</option>
+              ))}
+            </select>
+
+            <DateFilter
+              startDate={logStartDate}
+              endDate={logEndDate}
+              onDateChange={(start, end) => {
+                setLogStartDate(start)
+                setLogEndDate(end)
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <table className="w-full text-left">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Time</th>
+                <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">User</th>
+                <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Action</th>
+                <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Details</th>
+                <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">IP</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {filteredLogs.length > 0 ? (
+                filteredLogs.map(log => (
+                  <tr key={log.Log_ID} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 text-sm text-gray-600">{new Date(log.Timestamp).toLocaleString()}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900 font-medium">
+                      {log.First_Name ? `${log.First_Name} ${log.Last_Name}` : (log.Username || `User ${log.User_ID}`)}
+                      <span className="block text-xs text-gray-500">ID: {log.User_ID}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getActionColor(log.Action)}`}>
+                        {log.Action}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-500 font-mono text-xs">{formatLogDetails(log.Details)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500">{log.IP_Address}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
+                    No logs found matching your filters.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
 
 
@@ -1576,6 +1700,7 @@ function Admin() {
           lastName: userForm.lastname,
           email: userForm.email,
           phone: userForm.phone,
+          dateOfBirth: userForm.dateOfBirth,
           role: userForm.role,
           status: userForm.status,
           password: userForm.password || undefined // Only send if set
@@ -1592,7 +1717,7 @@ function Admin() {
       }
     } catch (err) {
       console.error('Error updating user:', err)
-      setError('Failed to update user')
+      setError(err.message || 'Failed to update user')
     }
   }
 
@@ -1620,7 +1745,7 @@ function Admin() {
         <main className="flex-1 overflow-y-auto p-6">
           <LoadingOverlay isLoading={loading} />
           <SuccessPopup message={successMessage} onClose={() => setSuccessMessage('')} />
-          {error && <ErrorPopup errorMessage={error} />}
+          {error && <ErrorPopup errorMessage={error} onClose={() => setError('')} />}
 
           <AnimatePresence mode="wait">
             <motion.div
@@ -1744,6 +1869,10 @@ function Admin() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
                     <input type="tel" value={userForm.phone} onChange={e => setUserForm({ ...userForm, phone: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+                    <input type="date" value={userForm.dateOfBirth} onChange={e => setUserForm({ ...userForm, dateOfBirth: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg" required />
+                  </div>
                   {showCreateUserModal && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Username / ID</label>
@@ -1818,9 +1947,38 @@ function Admin() {
           </div>
         </div>
       )}
+      {/* Delete Asset Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <div className="flex items-center justify-center w-12 h-12 mx-auto bg-red-100 rounded-full mb-4">
+              <Trash2 className="w-6 h-6 text-red-600" />
+            </div>
+            <h3 className="text-xl font-bold text-center mb-2">Delete Asset?</h3>
+            <p className="text-gray-500 text-center mb-6">
+              Are you sure you want to delete <strong>{itemToDelete?.Title}</strong>? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteAsset}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Delete Asset
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete User Confirmation Modal */}
       {showDeleteUserModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
             <div className="flex items-center justify-center w-12 h-12 mx-auto bg-red-100 rounded-full mb-4">
               <Trash2 className="w-6 h-6 text-red-600" />

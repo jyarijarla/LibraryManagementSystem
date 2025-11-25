@@ -24,12 +24,12 @@ function generateToken(payload, options = {}) {
   const issuedAt = Math.floor(Date.now() / 1000);
   const expiresIn = options.expiresIn || TOKEN_TTL_SECONDS;
   const exp = issuedAt + expiresIn;
-  
+
   // Add security fingerprint to prevent token theft
   const fingerprint = options.fingerprint || null;
-  const tokenPayload = { 
-    ...payload, 
-    iat: issuedAt, 
+  const tokenPayload = {
+    ...payload,
+    iat: issuedAt,
     exp,
     fp: fingerprint, // fingerprint hash
     jti: crypto.randomBytes(16).toString('hex') // unique token ID for revocation
@@ -88,7 +88,7 @@ function createFingerprint(ip, userAgent) {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
 
-console.log(generateToken({ userId: 35, role: "librarian" }, { fingerprint: createFingerprint('unknown', 'unknown') }));
+
 
 module.exports = {
   generateToken,
