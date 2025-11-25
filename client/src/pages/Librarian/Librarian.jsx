@@ -38,6 +38,14 @@ const DEFAULT_LOW_STOCK_THRESHOLDS = {
   'study-rooms': 0
 }
 
+function to12Hour(timeStr) {
+  if (!timeStr) return ""
+  const [h, m] = timeStr.split(":").map(Number)
+  const period = h >= 12 ? "PM" : "AM"
+  const hour12 = h % 12 || 12
+  return `${hour12}:${m.toString().padStart(2, "0")} ${period}`
+}
+
 // Modern Stat Card Component with Animation
 const StatCard = ({ title, value, change, isIncrease, icon: Icon, gradient, delay = 0 }) => {
   return (
@@ -2802,11 +2810,22 @@ function Librarian() {
     // Only include server calendar rows (Calendar table). Expect Event_Date in ISO/YYYY-MM-DD format.
     if (Array.isArray(events)) {
       events.forEach((ev) => {
-        const evDate = ev.Event_Date ? String(ev.Event_Date).slice(0, 10) : null
+        //const evDate = ev.Event_Date ? String(ev.Event_Date).slice(0, 10) : null
+
+        // Parse in LOCAL time, not UTC
+        function parseLocalDate(dateStr) {
+          if (!dateStr) return null
+          const [y, m, d] = String(dateStr).slice(0, 10).split('-').map(Number)
+          return new Date(y, m - 1, d)
+        }
+
+        const evDateLocal = parseLocalDate(ev.Event_Date)
+        const evKey = evDateLocal ? isoDate(evDateLocal) : null
+
         const id = ev.Event_ID ?? ev.id ?? ev.EventId ?? null
 
         // If exact date matches, add once and skip recurring logic for this event
-        if (evDate === dayKey) {
+        if (evKey === dayKey) {
           if (!id || !seen.has(id)) {
             out.push({
               type: 'event',
@@ -3113,9 +3132,9 @@ function Librarian() {
                       <div className="text-xs text-gray-600 mt-1">{ev.raw.Details}</div>
                     )}
                     <div className="text-xs text-gray-500 mt-1">
-                      {ev.raw?.Start_Time && `${ev.raw.Start_Time.slice(0, 5)}`}
+                      {ev.raw?.Start_Time && to12Hour(ev.raw.Start_Time)}
                       {ev.raw?.Start_Time && ev.raw?.End_Time && ' - '}
-                      {ev.raw?.End_Time && `${ev.raw.End_Time.slice(0, 5)}`}
+                      {ev.raw?.End_Time && to12Hour(ev.raw.End_Time)}
                     </div>
                   </div>
                   {ev.raw?.Event_ID && (
