@@ -140,17 +140,39 @@ const routes = [
 
 
   // Member routes
+  // Admin UI: get all users (students + staff)
+  { method: 'GET', path: '/api/users', handler: memberController.getAllUsers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/members', handler: memberController.getAllMembers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/members/:id', handler: memberController.getMemberProfile, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/members/:id/details', handler: memberController.getMemberDetails, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'POST', path: '/api/members/bulk-action', handler: memberController.bulkAction, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
   { method: 'POST', path: '/api/members', handler: memberController.addMember, auth: true, roles: ROLE_GROUPS.STAFF },
-
   { method: 'PUT', path: '/api/members/:id', handler: memberController.updateMember, auth: true, roles: ROLE_GROUPS.ADMIN },
   { method: 'PUT', path: '/api/members/:id/block', handler: memberController.toggleBlockStatus, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'PUT', path: '/api/members/:id/activate', handler: memberController.toggleActivationStatus, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'DELETE', path: '/api/members/:id', handler: memberController.deleteMember, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY },
   { method: 'GET', path: '/api/roles', handler: memberController.getRoles, auth: true, roles: ROLE_GROUPS.STAFF },
+
+  // Audit logs (admin only)
+
+  // Delete audit log (requires admin + password confirmation)
+  {
+    method: 'POST', path: '/api/audit-logs/:id/delete', handler: (req, res) => {
+      if (auditController && typeof auditController.deleteAuditLog === 'function') return auditController.deleteAuditLog(req, res);
+      console.error('Missing auditController.deleteAuditLog');
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ message: 'Server misconfiguration: audit delete handler not available' }));
+    }, auth: true, roles: ROLE_GROUPS.ADMIN_ONLY
+  },
+  // Member activity route - controller function may be missing in some branches; handle gracefully
+  {
+    method: 'GET', path: '/api/members/:id/activity', handler: (req, res) => {
+      if (memberController && typeof memberController.getMemberActivity === 'function') return memberController.getMemberActivity(req, res);
+      console.error('Missing memberController.getMemberActivity');
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ message: 'Member activity endpoint not implemented' }));
+    }, auth: true, roles: ROLE_GROUPS.STAFF
+  },
 
   // Borrow routes
   { method: 'GET', path: '/api/borrow-records', handler: borrowController.getAllRecords, auth: true, roles: ROLE_GROUPS.STAFF },
@@ -178,6 +200,7 @@ const routes = [
 
   // Report routes
   { method: 'GET', path: '/api/reports/most-borrowed', handler: reportController.getMostBorrowedAssets, auth: true, roles: ROLE_GROUPS.STAFF },
+  { method: 'GET', path: '/api/reports/custom', handler: reportController.getCustomReport, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/most-borrowed-assets', handler: reportController.getMostBorrowedAssets, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/active-borrowers', handler: reportController.getActiveBorrowers, auth: true, roles: ROLE_GROUPS.STAFF },
   { method: 'GET', path: '/api/reports/overdue-items', handler: reportController.getOverdueItems, auth: true, roles: ROLE_GROUPS.STAFF },
@@ -239,6 +262,32 @@ const routes = [
   // Audit Log routes
   { method: 'GET', path: '/api/audit-logs', handler: auditController.getLogs, auth: true, roles: ROLE_GROUPS.STAFF },
 ];
+
+// Diagnostic: print route handler types to help debug "Invalid route handler" errors
+try {
+  console.log('Registered routes and handler types:');
+  routes.forEach(r => {
+    let info = typeof r.handler;
+    if (r.handler && typeof r.handler === 'object') {
+      try {
+        info = `object(${Object.keys(r.handler).join(',')})`;
+      } catch (e) {
+        info = 'object(unknown)';
+      }
+    }
+    console.log(` - ${r.method} ${r.path} -> ${info}`);
+  });
+} catch (diagErr) {
+  console.error('Failed to print route diagnostics:', diagErr);
+}
+
+// Extra focused diagnostics for audit controller
+try {
+  console.log('auditController export keys:', Object.keys(auditController || {}));
+  console.log('typeof auditController.getAuditLogs =>', typeof (auditController && auditController.getAuditLogs));
+} catch (e) {
+  console.error('Error inspecting auditController exports:', e);
+}
 
 // Helper to set CORS headers
 function setCorsHeaders(req, res) {
@@ -302,10 +351,10 @@ async function handleMatchedRoute(req, res, matchedRoute, pathname, urlParts) {
 
   // Call the handler
   if (typeof matchedRoute.handler !== 'function') {
-    console.error(`Error: Handler for route ${req.method} ${pathname} is not a function`);
+    console.error(`Error: Handler for route ${req.method} ${pathname} is not a function. Handler value:`, matchedRoute.handler);
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ message: 'Internal server error: Invalid route handler' }));
+    res.end(JSON.stringify({ message: 'Internal server error: Invalid route handler', route: `${req.method} ${pathname}`, handlerType: typeof matchedRoute.handler }));
     return;
   }
   await matchedRoute.handler(req, res);
@@ -338,6 +387,8 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ message: 'Internal server error', error: error.message }));
     }
   } else {
+    // Log unmatched requests to aid debugging when routes return 404
+    console.warn(`No route matched for ${req.method} ${pathname}`);
     res.statusCode = 404;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ message: 'Route not found' }));

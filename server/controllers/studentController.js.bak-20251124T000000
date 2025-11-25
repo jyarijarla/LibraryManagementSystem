@@ -1,32 +1,10 @@
 const db = require('../db');
 const { getConfigValue } = require('./configController');
 
-// Get student by ID
-exports.getStudentById = (req, res) => {
-  const { id } = req.params;
-
-  const query = `SELECT * FROM user WHERE User_ID = ? AND Role = 1`;
-
-  db.query(query, [id], (err, results) => {
-    if (err) {
-      console.error('Error fetching student:', err);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ message: 'Database error', error: err.message }));
-    }
-
-    if (results.length === 0) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ message: 'Student not found' }));
-    }
-
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(results[0]));
-  });
-};
-
 // Get all students
 exports.getAllStudents = async (req, res) => {
   try {
+    // Get fine rate from database config
     const fineRate = await getConfigValue('FINE_RATE_PER_DAY');
 
     const query = `
@@ -44,8 +22,10 @@ exports.getAllStudents = async (req, res) => {
         COALESCE(
           SUM(
             CASE 
-              WHEN b.Return_Date IS NULL AND b.Due_Date < CURDATE() THEN DATEDIFF(CURDATE(), b.Due_Date) * ?
-              WHEN b.Return_Date IS NOT NULL AND b.Fee_Incurred > 0 THEN b.Fee_Incurred
+              WHEN b.Return_Date IS NULL AND b.Due_Date < CURDATE() 
+              THEN DATEDIFF(CURDATE(), b.Due_Date) * ?
+              WHEN b.Return_Date IS NOT NULL AND b.Fee_Incurred > 0
+              THEN b.Fee_Incurred
               ELSE 0 
             END
           ), 
@@ -64,7 +44,7 @@ exports.getAllStudents = async (req, res) => {
         return res.writeHead(500, { 'Content-Type': 'application/json' })
           && res.end(JSON.stringify({ message: 'Database error', error: err.message }));
       }
-
+      // Normalize to include expected frontend fields (firstname, lastname, username, role)
       const normalized = results.map(r => ({
         id: r.id,
         firstname: r.firstname || '',
@@ -92,18 +72,21 @@ exports.getAllStudents = async (req, res) => {
 
 // Update student
 exports.updateStudent = (req, res) => {
-  const { First_Name, Last_Name, User_Email, User_Phone, Date_Of_Birth } = req.body;
   const { id } = req.params;
+  const { name, email, studentId, phone } = req.body;
 
-  const cleanDate = Date_Of_Birth ? Date_Of_Birth.slice(0, 10) : null;
+  // Split name into first and last
+  const nameParts = name.trim().split(' ');
+  const firstName = nameParts[0];
+  const lastName = nameParts.slice(1).join(' ') || null;
 
   const query = `
     UPDATE user 
-    SET First_Name = ?, Last_Name = ?, User_Email = ?, User_Phone = ?, Date_Of_Birth = ?
+    SET First_Name = ?, Last_Name = ?, User_Email = ?, Username = ?, User_Phone = ?
     WHERE User_ID = ? AND Role = 1
   `;
 
-  db.query(query, [First_Name, Last_Name, User_Email, User_Phone || null, cleanDate, id], (err, result) => {
+  db.query(query, [firstName, lastName, email, studentId, phone || null, id], (err, result) => {
     if (err) {
       console.error('Error updating student:', err);
       return res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -124,6 +107,7 @@ exports.updateStudent = (req, res) => {
 exports.deleteStudent = (req, res) => {
   const { id } = req.params;
 
+  // Check if student has active borrows
   db.query(
     'SELECT COUNT(*) as count FROM borrow WHERE Borrower_ID = ? AND Return_Date IS NULL',
     [id],

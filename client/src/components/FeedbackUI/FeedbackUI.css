@@ -1,1 +1,229 @@
-/* Styles replaced by Tailwind CSS in FeedbackUI.jsx */
+
+/*Feedback Overlay */
+.overlay-wrapper {
+  position: fixed;
+  display: flex;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 5000;
+}
+
+/* Loading Overlay */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #10b981;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-message {
+  color: white;
+  margin-top: 20px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* Popup Overlay - No dark background for toast style */
+.popup-overlay {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10000;
+  pointer-events: none;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Popup Content - Toast notification style */
+.popup-content {
+  background: white;
+  padding: 16px 20px;
+  border-radius: 12px;
+  min-width: 320px;
+  max-width: 400px;
+  position: relative;
+  animation: slideInRight 0.3s ease-out;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: auto;
+  border-left: 4px solid;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.popup-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+  font-weight: bold;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.success-popup {
+  border-left-color: #10b981;
+  background: linear-gradient(to right, #f0fdf4, #ffffff);
+}
+
+.success-popup .popup-icon {
+  color: #10b981;
+  background: #d1fae5;
+}
+
+.error-popup {
+  border-left-color: #ef4444;
+  background: linear-gradient(to right, #fef2f2, #ffffff);
+}
+
+.error-popup .popup-icon {
+  color: #ef4444;
+  background: #fee2e2;
+}
+
+.popup-message {
+  font-size: 15px;
+  color: #374151;
+  margin: 0;
+  line-height: 1.5;
+  flex: 1;
+  text-align: left;
+  font-weight: 500;
+}
+
+.popup-close {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  font-size: 24px;
+  color: #9ca3af;
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+  margin-left: auto;
+}
+
+.popup-close:hover {
+  background: #f3f4f6;
+  color: #374151;
+  transform: scale(1.1);
+}
+
+/* Delete blocked modal (centered) */
+.blocked-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 11000;
+}
+
+.blocked-modal-content {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  width: 420px;
+  max-width: calc(100% - 40px);
+  box-shadow: 0 18px 40px rgba(2,6,23,0.12);
+}
+
+.blocked-modal-content h3 {
+  margin: 0 0 8px 0;
+}
+
+.blocked-modal-content .cancel-button {
+  background: #f3f4f6;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.blocked-modal-content .submit-button {
+  background: #6366f1;
+  color: #fff;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* Enhanced modal styles */
+.blocked-modal-content.nice {
+  padding: 18px;
+  width: 560px;
+  max-width: calc(100% - 48px);
+  background: linear-gradient(180deg, #ffffff 0%, #fbfbff 100%);
+  border-radius: 12px;
+  border: 1px solid rgba(100,110,150,0.06);
+  box-shadow: 0 12px 36px rgba(10,20,50,0.12);
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+}
+
+.blocked-modal-header { display:flex; gap:12px; align-items:center; margin-bottom: 12px; }
+.blocked-modal-icon { width:46px; height:46px; border-radius:10px; display:flex; align-items:center; justify-content:center; background: linear-gradient(135deg,#ffefef,#fff5ef); font-size:22px; box-shadow: 0 6px 20px rgba(250,120,100,0.06); }
+.blocked-modal-title { margin:0; font-size:18px; font-weight:700; color:#0b2540; }
+.blocked-modal-sub { color:#52607a; font-size:13px; margin-top:4px }
+.blocked-modal-body { margin-top:6px }
+.blocked-stat-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:12px; margin: 14px 0 18px 0; }
+.blocked-card { background: linear-gradient(180deg,#ffffff,#fbfcff); border-radius:10px; padding:14px; text-align:center; border:1px solid rgba(100,110,150,0.04); }
+.blocked-card.blocked-fines { border-color: rgba(254,226,226,0.8); }
+.card-label { color:#6b7588; font-size:12px; }
+.card-value { font-size:20px; font-weight:700; color:#0b2540; margin-top:8px; }
+.blocked-note { margin-top:12px; color:#6b7280 }
+.blocked-modal-actions { display:flex; justify-content: flex-end; gap:10px; margin-top:6px; }
+.blocked-btn { padding:8px 12px; border-radius:8px; border:none; cursor:pointer; font-weight:600; }
+.blocked-btn.primary { background: linear-gradient(90deg,#3b82f6,#06b6d4); color:#fff; }
+.blocked-btn.ghost { background:transparent; color:#334155; border:1px solid rgba(60,70,90,0.06); }

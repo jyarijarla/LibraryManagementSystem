@@ -3,6 +3,7 @@ import Login from './pages/Login/Login'
 import Student from './pages/Student/Dashboard'
 import Admin from './pages/Admin/Admin'
 import Librarian from './pages/Librarian/Librarian'
+import AuditLogs from './pages/Admin/AuditLogs/AuditLogs'
 import BookItem from './pages/BookItem/BookItem'
 import MovieItem from './pages/MovieItem/MovieItem'
 import Home from './pages/Home/Home'
@@ -32,6 +33,7 @@ function AppContent() {
         <Route path="/login" element={<Login />} />
         <Route path="/student/*" element={<Student />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/admin/audit-logs" element={<AuditLogs />} />
         <Route path="/librarian" element={<Librarian />} />
         <Route path="/book-item" element={<BookItem />} />
         <Route path="/about" element={<About />} />     

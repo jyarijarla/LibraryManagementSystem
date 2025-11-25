@@ -1,0 +1,6 @@
+.custom-dropdown { display: inline-block; position: relative; }
+.custom-dropdown .filter-select { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 140px; }
+.custom-list { position: absolute; left: 0; right: 0; background: white; border-radius: 12px; box-shadow: 0 10px 30px rgba(2,6,23,0.12); border: 1px solid rgba(15,23,42,0.06); margin-top: 8px; z-index: 80; overflow: auto; max-height: 320px; }
+.custom-item { padding: 12px 14px; cursor: pointer; border-radius: 10px; transition: background 0.12s ease, transform 0.08s ease; }
+.custom-item:hover, .custom-item.highlighted { background: linear-gradient(180deg,#eef2ff,#e6e8ff); transform: translateY(-2px); }
+.custom-item.selected { background: linear-gradient(180deg,#dbeafe,#bfdbfe); }

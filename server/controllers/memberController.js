@@ -1,7 +1,7 @@
 const db = require('../db');
-console.log("LOADING MEMBER CONTROLLER MODULE");
 const bcrypt = require('bcryptjs');
 const { getConfigValue } = require('./configController');
+const { auditIfAdmin } = require('../utils/auditLogger');
 
 // Generate random password for each new member
 const generateInitialPassword = () => {
@@ -15,7 +15,7 @@ const generateInitialPassword = () => {
 
 // Get all members with search, filter, and pagination
 exports.getAllMembers = async (req, res) => {
-  const { search = '', status = 'all', role = '1', page = 1, limit = 20 } = req.query;
+  const { search = '', status = 'all', page = 1, limit = 20 } = req.query;
   const offset = (page - 1) * limit;
 
   // Get fine rate from config
@@ -35,26 +35,16 @@ exports.getAllMembers = async (req, res) => {
       CONCAT(u.First_Name, ' ', COALESCE(u.Last_Name, '')) as Full_Name,
       u.User_Email,
       u.User_Phone as Phone_Number,
-      u.Role,
-      u.Status,
-      u.Is_Active,
-      u.Is_Blocked,
-      u.Blocked_Reason,
-      u.Created_At,
-      u.Last_Login,
-      (SELECT COUNT(*) FROM borrow b WHERE b.Borrower_ID = u.User_ID AND b.Return_Date IS NULL) as Active_Loans,
-      (SELECT COALESCE(SUM(Amount_Due), 0) FROM fine f WHERE f.User_ID = u.User_ID AND f.Paid = 0) as Fines_Balance
+      'active' as Account_Status,
+      COUNT(DISTINCT CASE WHEN b.Return_Date IS NULL THEN b.Borrow_ID END) as Borrowed_Count,
+      COALESCE(SUM(CASE WHEN b.Return_Date IS NULL AND DATEDIFF(CURDATE(), b.Due_Date) > 0 
+        THEN DATEDIFF(CURDATE(), b.Due_Date) * ? ELSE 0 END), 0) as Outstanding_Fines
     FROM user u
-    WHERE u.Is_Deleted = 0
+    LEFT JOIN borrow b ON u.User_ID = b.Borrower_ID
+    WHERE u.Role = 1
   `;
 
-  const params = [];
-
-  // Add role filter
-  if (role !== 'all') {
-    query += ` AND u.Role = ?`;
-    params.push(role);
-  }
+  const params = [fineRate];
 
   // Add search filter
   if (search) {
@@ -68,21 +58,10 @@ exports.getAllMembers = async (req, res) => {
     params.push(searchParam, searchParam, searchParam, searchParam);
   }
 
-  // Add status filter
-  if (status !== 'all') {
-    if (status === 'Active') {
-      query += ` AND u.Is_Active = 1`;
-    } else if (status === 'Blocked') {
-      query += ` AND u.Is_Blocked = 1`;
-    } else if (status === 'Inactive') {
-      query += ` AND u.Is_Active = 0`;
-    } else if (status === 'Pending') {
-      // Legacy support or map to Inactive
-      query += ` AND u.Is_Active = 0`;
-    }
-  }
+  // Add status filter - removed since Account_Status column doesn't exist
+  // All members are treated as active
 
-  query += ` ORDER BY u.User_ID DESC LIMIT ? OFFSET ?`;
+  query += ` GROUP BY u.User_ID ORDER BY u.User_ID DESC LIMIT ? OFFSET ?`;
   params.push(parseInt(limit), parseInt(offset));
 
   db.query(query, params, (err, members) => {
@@ -93,13 +72,8 @@ exports.getAllMembers = async (req, res) => {
     }
 
     // Get total count for pagination
-    let countQuery = `SELECT COUNT(DISTINCT u.User_ID) as total FROM user u WHERE u.Is_Deleted = 0`;
+    let countQuery = `SELECT COUNT(DISTINCT u.User_ID) as total FROM user u WHERE u.Role = 1`;
     const countParams = [];
-
-    if (role !== 'all') {
-      countQuery += ` AND u.Role = ?`;
-      countParams.push(role);
-    }
 
     if (search) {
       countQuery += ` AND (
@@ -113,13 +87,7 @@ exports.getAllMembers = async (req, res) => {
     }
 
     if (status !== 'all') {
-      if (status === 'Active') {
-        countQuery += ` AND u.Is_Active = 1`;
-      } else if (status === 'Blocked') {
-        countQuery += ` AND u.Is_Blocked = 1`;
-      } else if (status === 'Inactive') {
-        countQuery += ` AND u.Is_Active = 0`;
-      }
+      // Status filter removed - Account_Status column doesn't exist
     }
 
     db.query(countQuery, countParams, (err, countResult) => {
@@ -142,6 +110,48 @@ exports.getAllMembers = async (req, res) => {
         }
       }));
     });
+  });
+};
+
+// Get all users (students, admins, librarians) - used by Admin UI
+exports.getAllUsers = (req, res) => {
+  const query = `
+    SELECT
+      u.User_ID as id,
+      u.Student_ID as studentId,
+      u.Username as username,
+      u.First_Name as firstname,
+      u.Last_Name as lastname,
+      u.User_Email as email,
+      u.User_Phone as phone,
+      u.Role as role,
+      u.Date_Of_Birth as dateOfBirth
+    FROM user u
+    ORDER BY u.User_ID DESC
+  `;
+
+  db.query(query, [], (err, results) => {
+    if (err) {
+      console.error('Error fetching users:', err);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ message: 'Failed to fetch users', error: err.message }));
+    }
+
+    // Normalize results to expected frontend shape
+    const users = results.map(u => ({
+      id: u.id,
+      studentId: u.studentId,
+      username: u.username,
+      firstname: u.firstname,
+      lastname: u.lastname,
+      email: u.email,
+      phone: u.phone,
+      role: u.role,
+      dateOfBirth: u.dateOfBirth
+    }));
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(users));
   });
 };
 
@@ -292,23 +302,17 @@ exports.getMemberProfile = async (req, res) => {
 exports.addMember = (req, res) => {
   const { firstName, lastName, email, phone, username, dateOfBirth, status, password, role } = req.body;
 
+  // Diagnostic logging to help debug role assignment issues
+  try {
+    console.log('addMember called with body:', JSON.stringify(req.body));
+  } catch (e) {
+    console.log('addMember called; could not stringify body');
+  }
+
   // Validate required fields
   if (!firstName || !email || !username || !dateOfBirth || !password) {
     return res.writeHead(400, { 'Content-Type': 'application/json' })
       && res.end(JSON.stringify({ error: 'Missing required fields: firstName, email, username, dateOfBirth, password' }));
-  }
-
-  // Determine Role ID
-  let roleId = 1; // Default to Student
-  if (role) {
-    if (typeof role === 'string') {
-      const normalizedRole = role.toLowerCase();
-      if (normalizedRole === 'admin') roleId = 2;
-      else if (normalizedRole === 'librarian') roleId = 3;
-      else roleId = 1;
-    } else if (typeof role === 'number') {
-      roleId = role;
-    }
   }
 
   // Check if username or email already exists
@@ -335,11 +339,24 @@ exports.addMember = (req, res) => {
             && res.end(JSON.stringify({ error: 'Error processing password' }));
         }
 
-        // Insert new member
+        // Determine Role value (default to 1 = Student)
+        let roleVal = 1;
+        if (role !== undefined && role !== null) {
+          if (typeof role === 'number') roleVal = role;
+          else if (typeof role === 'string') {
+            const s = role.toLowerCase();
+            if (s.includes('admin')) roleVal = 2;
+            else if (s.includes('librarian')) roleVal = 3;
+            else if (s.includes('teacher')) roleVal = 4;
+            else roleVal = 1;
+          }
+        }
+
+        // Insert new member with provided role
         db.query(
           `INSERT INTO user (Username, First_Name, Last_Name, User_Email, User_Phone, Date_Of_Birth, Password, Role, Balance) 
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0.00)`,
-          [username, firstName, lastName || '', email, phone || null, dateOfBirth, hashedPassword, roleId],
+          [username, firstName, lastName || '', email, phone || null, dateOfBirth, hashedPassword, roleVal],
           (err, result) => {
             if (err) {
               console.error('Error adding member:', err);
@@ -350,6 +367,9 @@ exports.addMember = (req, res) => {
             // TODO: Send email with credentials to member's email address
             // Log plain text password for admin to see (in real app, send via email)
             console.log(`Member created - Username: ${username}, Email: ${email}, Password: ${password}`);
+
+            // Audit log for admin actions (if performed by an admin)
+            auditIfAdmin(req, 'CREATE', 'user', result.insertId, `Created member ${username} (${email})`);
 
             res.writeHead(201, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
@@ -364,30 +384,13 @@ exports.addMember = (req, res) => {
 };
 
 // Update member information
-exports.updateMember = async (req, res) => {
+exports.updateMember = (req, res) => {
   const { id } = req.params;
-  const { firstName, lastName, email, phone, dateOfBirth, status, role, password, isActive, isBlocked, blockedReason } = req.body;
+  const { firstName, lastName, email, phone, dateOfBirth, status } = req.body;
 
+  // Build update query dynamically
   const updates = [];
   const params = [];
-
-  // Check for duplicate email or username if they are being updated
-  if (email || req.body.username) {
-    const checkQuery = 'SELECT User_ID FROM user WHERE (User_Email = ? OR Username = ?) AND User_ID != ?';
-    const checkParams = [email || '', req.body.username || '', id];
-
-    try {
-      const [existing] = await db.promise().query(checkQuery, checkParams);
-      if (existing.length > 0) {
-        return res.writeHead(400, { 'Content-Type': 'application/json' })
-          && res.end(JSON.stringify({ error: 'Username or email already exists' }));
-      }
-    } catch (err) {
-      console.error('Error checking duplicates:', err);
-      return res.writeHead(500, { 'Content-Type': 'application/json' })
-        && res.end(JSON.stringify({ error: 'Database error' }));
-    }
-  }
 
   if (firstName) {
     updates.push('First_Name = ?');
@@ -409,52 +412,79 @@ exports.updateMember = async (req, res) => {
     updates.push('Date_Of_Birth = DATE(?)');
     params.push(dateOfBirth);
   }
-  if (status) {
-    updates.push('Status = ?');
-    params.push(status);
-    // Sync new flags
-    if (status === 'Active') {
-      updates.push('Is_Active = 1');
-      updates.push('Is_Blocked = 0');
-    } else if (status === 'Blocked') {
-      updates.push('Is_Blocked = 1');
-    } else if (status === 'Pending') {
-      updates.push('Is_Active = 0');
+  // Status field removed - Account_Status column doesn't exist
+
+  if (updates.length === 0) {
+    return res.writeHead(400, { 'Content-Type': 'application/json' })
+      && res.end(JSON.stringify({ error: 'No fields to update' }));
+  }
+
+  params.push(id);
+
+  db.query(
+    `UPDATE user SET ${updates.join(', ')} WHERE User_ID = ? AND Role = 1`,
+    params,
+    (err, result) => {
+      if (err) {
+        console.error('Error updating member:', err);
+        return res.writeHead(500, { 'Content-Type': 'application/json' })
+          && res.end(JSON.stringify({ error: 'Failed to update member' }));
+      }
+
+      if (result.affectedRows === 0) {
+        return res.writeHead(404, { 'Content-Type': 'application/json' })
+          && res.end(JSON.stringify({ error: 'Member not found' }));
+      }
+
+      // Audit update
+      auditIfAdmin(req, 'UPDATE', 'user', id, `Updated member ${id}`);
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'Member updated successfully' }));
     }
+  );
+};
+
+// Update general user (used by Admin UI to change role or other fields)
+exports.updateUser = (req, res) => {
+  const { id } = req.params;
+  const { firstName, lastName, email, phone, dateOfBirth, role } = req.body;
+
+  const updates = [];
+  const params = [];
+
+  if (firstName) {
+    updates.push('First_Name = ?');
+    params.push(firstName);
   }
-  if (isActive !== undefined) {
-    updates.push('Is_Active = ?');
-    params.push(isActive ? 1 : 0);
+  if (lastName !== undefined) {
+    updates.push('Last_Name = ?');
+    params.push(lastName);
   }
-  if (isBlocked !== undefined) {
-    updates.push('Is_Blocked = ?');
-    params.push(isBlocked ? 1 : 0);
+  if (email) {
+    updates.push('User_Email = ?');
+    params.push(email);
   }
-  if (blockedReason !== undefined) {
-    updates.push('Blocked_Reason = ?');
-    params.push(blockedReason);
+  if (phone !== undefined) {
+    updates.push('User_Phone = ?');
+    params.push(phone || null);
   }
-  if (role) {
-    // Map role name to ID if necessary, or expect ID
-    let roleId = role;
-    if (typeof role === 'string') {
-      if (role.toLowerCase() === 'student') roleId = 1;
-      else if (role.toLowerCase() === 'admin') roleId = 2;
-      else if (role.toLowerCase() === 'librarian') roleId = 3;
+  if (dateOfBirth) {
+    updates.push('Date_Of_Birth = DATE(?)');
+    params.push(dateOfBirth);
+  }
+  if (role !== undefined && role !== null) {
+    // accept numeric or string role; convert string names to numeric if needed
+    let roleVal = role;
+    if (typeof roleVal === 'string') {
+      const s = roleVal.toLowerCase();
+      if (s.includes('admin')) roleVal = 2;
+      else if (s.includes('librarian')) roleVal = 3;
+      else if (s.includes('teacher')) roleVal = 4;
+      else roleVal = 1; // default to student
     }
     updates.push('Role = ?');
-    params.push(roleId);
-  }
-  if (password) {
-    try {
-      const hashedPassword = await bcrypt.hash(password, 10);
-      updates.push('Password = ?');
-      params.push(hashedPassword);
-    } catch (error) {
-      console.error('Error hashing password:', error);
-      return res.writeHead(500, { 'Content-Type': 'application/json' })
-        && res.end(JSON.stringify({ error: 'Error processing password' }));
-    }
+    params.push(roleVal);
   }
 
   if (updates.length === 0) {
@@ -469,113 +499,126 @@ exports.updateMember = async (req, res) => {
     params,
     (err, result) => {
       if (err) {
-        console.error('Error updating member:', err);
+        console.error('Error updating user:', err);
         return res.writeHead(500, { 'Content-Type': 'application/json' })
-          && res.end(JSON.stringify({ error: 'Failed to update member' }));
+          && res.end(JSON.stringify({ error: 'Failed to update user' }));
       }
 
       if (result.affectedRows === 0) {
         return res.writeHead(404, { 'Content-Type': 'application/json' })
-          && res.end(JSON.stringify({ error: 'Member not found' }));
+          && res.end(JSON.stringify({ error: 'User not found' }));
       }
 
+      // Audit admin-level user update
+      auditIfAdmin(req, 'UPDATE', 'user', id, `Admin updated user ${id}`);
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: 'Member updated successfully' }));
+      res.end(JSON.stringify({ message: 'User updated successfully' }));
     }
   );
 };
 
-// Delete member (Soft Delete)
+// Delete member only when they have no borrows and no fines
 exports.deleteMember = (req, res) => {
   const { id } = req.params;
+  // allow forcing an anonymize (soft-delete) when user has borrows/fines
+  const force = (req.query && (req.query.force === '1' || String(req.query.force).toLowerCase() === 'true')) || (req.body && req.body.force === true);
 
-  // Check if member has active borrows
-  db.query(
-    'SELECT COUNT(*) as count FROM borrow WHERE Borrower_ID = ? AND Return_Date IS NULL',
-    [id],
-    (err, result) => {
+  // Check total borrows (any historical borrows block deletion)
+  db.query('SELECT COUNT(*) as borrowCount FROM borrow WHERE Borrower_ID = ?', [id], (err, borrowRes) => {
+    if (err) {
+      console.error('Error checking borrow count:', err);
+      return res.writeHead(500, { 'Content-Type': 'application/json' })
+        && res.end(JSON.stringify({ error: 'Database error' }));
+    }
+
+    const borrowCount = borrowRes && borrowRes[0] ? parseInt(borrowRes[0].borrowCount, 10) : 0;
+
+    // Check total fines (any fine records block deletion)
+    db.query('SELECT COALESCE(SUM(Amount_Due),0) as totalFines, COUNT(*) as fineCount FROM fine WHERE User_ID = ?', [id], (err, fineRes) => {
       if (err) {
-        console.error('Error checking borrows:', err);
+        console.error('Error checking fines:', err);
         return res.writeHead(500, { 'Content-Type': 'application/json' })
           && res.end(JSON.stringify({ error: 'Database error' }));
       }
 
-      if (result[0].count > 0) {
+      const fineCount = fineRes && fineRes[0] ? parseInt(fineRes[0].fineCount, 10) : 0;
+      const totalFines = fineRes && fineRes[0] ? parseFloat(fineRes[0].totalFines || 0) : 0.0;
+
+      const blocks = [];
+      if (borrowCount > 0) blocks.push({ type: 'borrows', count: borrowCount });
+      if (fineCount > 0) blocks.push({ type: 'fines', count: fineCount, totalAmount: totalFines });
+
+      if (blocks.length > 0) {
+        // If admin requested a force delete/anonymize, perform a soft-delete (anonymize PII)
+        if (force) {
+          const anonUsername = `removed_${id}_${Date.now()}`;
+          const anonEmail = `removed+${id}@example.invalid`;
+          // Clear PII but keep historical records (borrows/fines) intact
+          // Do NOT change Role here (foreign-key to role_type may exist). Only clear username/email/password/balance.
+          db.query(
+            `UPDATE user SET Username = ?, First_Name = ?, Last_Name = ?, User_Email = ?, Password = '', Balance = 0 WHERE User_ID = ?`,
+            [anonUsername, 'Removed', '', anonEmail, id],
+            (anonErr, anonRes) => {
+              if (anonErr) {
+                console.error('Error anonymizing user:', anonErr);
+                return res.writeHead(500, { 'Content-Type': 'application/json' })
+                  && res.end(JSON.stringify({ error: 'Failed to anonymize member' }));
+              }
+
+              // Audit anonymize (soft-delete)
+              auditIfAdmin(req, 'ANONYMIZE', 'user', id, `Anonymized member ${id} (force)`);
+
+              return res.writeHead(200, { 'Content-Type': 'application/json' })
+                && res.end(JSON.stringify({ message: 'Member anonymized (soft-deleted) successfully', blocks }));
+            }
+          );
+          return;
+        }
+
         return res.writeHead(400, { 'Content-Type': 'application/json' })
           && res.end(JSON.stringify({
-            error: 'Cannot delete member with active borrowed items. Please return all items first.'
+            error: 'Cannot delete member: member has related borrows or fines',
+            blocks
           }));
       }
 
-      // Check for unpaid fines
-      db.query(
-        `SELECT COALESCE(SUM(Amount_Due), 0) as unpaid_fines
-         FROM fine WHERE User_ID = ? AND Paid = 0`,
-        [id],
-        (err, fineResult) => {
-          if (err) {
-            console.error('Error checking fines:', err);
-            return res.writeHead(500, { 'Content-Type': 'application/json' })
-              && res.end(JSON.stringify({ error: 'Database error' }));
-          }
-
-          if (fineResult[0].unpaid_fines > 0) {
-            return res.writeHead(400, { 'Content-Type': 'application/json' })
-              && res.end(JSON.stringify({
-                error: `Cannot delete member with unpaid fines ($${fineResult[0].unpaid_fines}). Please clear fines first.`
-              }));
-          }
-
-          // Soft Delete member
-          db.query(
-            'UPDATE user SET Is_Deleted = 1, Is_Active = 0 WHERE User_ID = ?',
-            [id],
-            (err, result) => {
-              if (err) {
-                console.error('Error deleting member:', err);
-                return res.writeHead(500, { 'Content-Type': 'application/json' })
-                  && res.end(JSON.stringify({ error: 'Failed to delete member' }));
-              }
-
-              if (result.affectedRows === 0) {
-                return res.writeHead(404, { 'Content-Type': 'application/json' })
-                  && res.end(JSON.stringify({ error: 'Member not found' }));
-              }
-
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ message: 'Member deleted successfully' }));
-            }
-          );
+      // No borrows and no fines -> safe to delete
+      db.query('DELETE FROM user WHERE User_ID = ? AND Role = 1', [id], (err, delRes) => {
+        if (err) {
+          console.error('Error deleting user:', err);
+          return res.writeHead(500, { 'Content-Type': 'application/json' })
+            && res.end(JSON.stringify({ error: 'Database error deleting member' }));
         }
-      );
-    }
-  );
+
+        if (delRes.affectedRows === 0) {
+          return res.writeHead(404, { 'Content-Type': 'application/json' })
+            && res.end(JSON.stringify({ error: 'Member not found' }));
+        }
+
+        // Audit delete
+        auditIfAdmin(req, 'DELETE', 'user', id, `Deleted member ${id}`);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ message: 'Member deleted successfully' }));
+      });
+    });
+  });
 };
 
 // Update member account status
-// Update member status
-// Update member account status
-exports.updateUserStatus = (req, res) => {
+exports.updateMemberStatus = (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
-  if (!['Active', 'Blocked', 'Pending'].includes(status)) {
+  if (!['Active', 'Suspended', 'Inactive'].includes(status)) {
     return res.writeHead(400, { 'Content-Type': 'application/json' })
-      && res.end(JSON.stringify({ message: 'Invalid status. Must be Active, Blocked, or Pending' }));
-  }
-
-  let isActive = 1;
-  let isBlocked = 0;
-
-  if (status === 'Blocked') {
-    isBlocked = 1;
-  } else if (status === 'Pending') {
-    isActive = 0;
+      && res.end(JSON.stringify({ message: 'Invalid status. Must be Active, Suspended, or Inactive' }));
   }
 
   db.query(
-    'UPDATE user SET Status = ?, Is_Active = ?, Is_Blocked = ? WHERE User_ID = ?',
-    [status, isActive, isBlocked, id],
+    'UPDATE user SET Account_Status = ? WHERE User_ID = ? AND Role = 1',
+    [status, id],
     (err, result) => {
       if (err) {
         console.error('Error updating status:', err);
@@ -585,223 +628,14 @@ exports.updateUserStatus = (req, res) => {
 
       if (result.affectedRows === 0) {
         return res.writeHead(404, { 'Content-Type': 'application/json' })
-          && res.end(JSON.stringify({ message: 'User not found' }));
+          && res.end(JSON.stringify({ message: 'Member not found' }));
       }
 
+      // Audit status update
+      auditIfAdmin(req, 'UPDATE', 'user', id, `Updated status to ${status}`);
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: `User status updated to ${status}` }));
+      res.end(JSON.stringify({ message: `Member status updated to ${status}` }));
     }
   );
 };
-
-// Toggle Block Status
-exports.toggleBlockStatus = (req, res) => {
-  const { id } = req.params;
-  const { isBlocked, reason } = req.body;
-
-  db.query(
-    'UPDATE user SET Is_Blocked = ?, Blocked_Reason = ? WHERE User_ID = ?',
-    [isBlocked ? 1 : 0, reason || null, id],
-    (err, result) => {
-      if (err) {
-        console.error('Error updating block status:', err);
-        return res.writeHead(500, { 'Content-Type': 'application/json' })
-          && res.end(JSON.stringify({ message: 'Failed to update block status' }));
-      }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: `User ${isBlocked ? 'blocked' : 'unblocked'} successfully` }));
-    }
-  );
-};
-
-// Toggle Activation Status
-exports.toggleActivationStatus = (req, res) => {
-  const { id } = req.params;
-  const { isActive } = req.body;
-
-  db.query(
-    'UPDATE user SET Is_Active = ? WHERE User_ID = ?',
-    [isActive ? 1 : 0, id],
-    (err, result) => {
-      if (err) {
-        console.error('Error updating activation status:', err);
-        return res.writeHead(500, { 'Content-Type': 'application/json' })
-          && res.end(JSON.stringify({ message: 'Failed to update activation status' }));
-      }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: `User ${isActive ? 'activated' : 'deactivated'} successfully` }));
-    }
-  );
-};
-
-// Get available roles
-exports.getRoles = (req, res) => {
-  const roles = [
-    { id: 1, name: 'Student', description: 'Standard user with borrowing privileges' },
-    { id: 2, name: 'Admin', description: 'Full system access' },
-    { id: 3, name: 'Librarian', description: 'Manage assets and members' }
-  ];
-
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(roles));
-};
-
-// Get comprehensive member details
-exports.getMemberDetails = (req, res) => {
-  console.log("EXECUTING NEW MEMBER DETAILS CONTROLLER");
-  const { id } = req.params;
-
-  const queries = {
-    user: 'SELECT User_ID, First_Name, Last_Name, User_Email, User_Phone as Phone_Number, Role, Status, Is_Active, Is_Blocked, Blocked_Reason, Created_At, Last_Login FROM user WHERE User_ID = ?',
-    loans: `
-      SELECT b.Borrow_ID, b.Rentable_ID as Asset_ID, b.Borrow_Date, b.Due_Date, b.Return_Date,
-             CASE
-               WHEN b.Return_Date IS NULL AND b.Due_Date < NOW() THEN 'Overdue'
-               ELSE 'Borrowed'
-             END as Status,
-             CASE
-               WHEN bk.Title IS NOT NULL THEN bk.Title
-               WHEN m.Title IS NOT NULL THEN m.Title
-               ELSE 'Unknown Asset'
-             END as Title
-      FROM borrow b
-      LEFT JOIN book_inventory bk ON b.Rentable_ID = bk.Asset_ID
-      LEFT JOIN movie_inventory m ON b.Rentable_ID = m.Asset_ID
-      WHERE b.Borrower_ID = ? AND b.Return_Date IS NULL
-      ORDER BY b.Due_Date ASC
-    `,
-    history: `
-      SELECT b.Borrow_ID, b.Rentable_ID as Asset_ID, b.Borrow_Date, b.Return_Date, 'Returned' as Status,
-             CASE
-               WHEN bk.Title IS NOT NULL THEN bk.Title
-               WHEN m.Title IS NOT NULL THEN m.Title
-               ELSE 'Unknown Asset'
-             END as Title
-      FROM borrow b
-      LEFT JOIN book_inventory bk ON b.Rentable_ID = bk.Asset_ID
-      LEFT JOIN movie_inventory m ON b.Rentable_ID = m.Asset_ID
-      WHERE b.Borrower_ID = ? AND b.Return_Date IS NOT NULL
-      ORDER BY b.Return_Date DESC
-      LIMIT 50
-    `,
-    fines: `
-      SELECT f.Fine_ID, f.Amount_Due as Amount, CASE WHEN f.Paid = 1 THEN 'Paid' ELSE 'Unpaid' END as Paid_Status, f.Fine_Date, 'Overdue Fine' as Reason
-      FROM fine f
-      WHERE f.User_ID = ?
-      ORDER BY f.Fine_Date DESC
-    `,
-    holds: `
-      SELECT h.Hold_ID, h.Rentable_ID as Asset_ID, h.Hold_Date, h.Hold_Expires as Expiry_Date, 
-             CASE 
-               WHEN h.Canceled_At IS NOT NULL THEN 'Canceled'
-               WHEN h.Expired_At IS NOT NULL THEN 'Expired'
-               WHEN h.Fulfilling_Borrow_ID IS NOT NULL THEN 'Fulfilled'
-               ELSE 'Active'
-             END as Status,
-             CASE
-               WHEN bk.Title IS NOT NULL THEN bk.Title
-               WHEN m.Title IS NOT NULL THEN m.Title
-               ELSE 'Unknown Asset'
-             END as Title
-      FROM hold h
-      LEFT JOIN book_inventory bk ON h.Rentable_ID = bk.Asset_ID
-      LEFT JOIN movie_inventory m ON h.Rentable_ID = m.Asset_ID
-      WHERE h.Holder_ID = ?
-      ORDER BY h.Hold_Date DESC
-    `
-  };
-
-  db.query(queries.user, [id], (err, userResults) => {
-    if (err) {
-      console.error('Error fetching user details:', err);
-      return res.writeHead(500, { 'Content-Type': 'application/json' }) && res.end(JSON.stringify({ error: 'Database error' }));
-    }
-    if (userResults.length === 0) {
-      return res.writeHead(404, { 'Content-Type': 'application/json' }) && res.end(JSON.stringify({ error: 'User not found' }));
-    }
-
-    const user = userResults[0];
-
-    // Mock activity logs since system_logs table access is restricted
-    const mockActivity = [
-      { Log_ID: 1, Action: 'LOGIN', Details: '{"method": "password"}', IP_Address: '127.0.0.1', Timestamp: new Date().toISOString() },
-      { Log_ID: 2, Action: 'UPDATE_USER', Details: '{"userId": 15, "field": "status"}', IP_Address: '127.0.0.1', Timestamp: new Date(Date.now() - 86400000).toISOString() },
-      { Log_ID: 3, Action: 'CHECKOUT', Details: '{"bookId": 101}', IP_Address: '127.0.0.1', Timestamp: new Date(Date.now() - 172800000).toISOString() }
-    ];
-
-    // Execute other queries in parallel
-    Promise.all([
-      new Promise((resolve, reject) => db.query(queries.loans, [id], (err, res) => err ? reject(err) : resolve(res))),
-      new Promise((resolve, reject) => db.query(queries.history, [id], (err, res) => err ? reject(err) : resolve(res))),
-      new Promise((resolve, reject) => db.query(queries.fines, [id], (err, res) => err ? reject(err) : resolve(res))),
-      new Promise((resolve, reject) => db.query(queries.holds, [id], (err, res) => err ? reject(err) : resolve(res)))
-    ])
-      .then(([loans, history, fines, holds]) => {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          user,
-          loans,
-          history,
-          fines,
-          holds,
-          activity: mockActivity // Return mock activity
-        }));
-      })
-      .catch(err => {
-        console.error('Error fetching related data:', err);
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Failed to fetch related data' }));
-      });
-  });
-};
-
-// Bulk actions handler
-exports.bulkAction = (req, res) => {
-  const { userIds, action } = req.body;
-
-  if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
-    return res.writeHead(400, { 'Content-Type': 'application/json' })
-      && res.end(JSON.stringify({ error: 'Invalid user IDs' }));
-  }
-
-  let query = '';
-  let params = [];
-
-  switch (action) {
-    case 'activate':
-      query = 'UPDATE user SET Is_Active = 1, Status = "Active" WHERE User_ID IN (?)';
-      params = [userIds];
-      break;
-    case 'deactivate':
-      query = 'UPDATE user SET Is_Active = 0, Status = "Pending" WHERE User_ID IN (?)';
-      params = [userIds];
-      break;
-    case 'block':
-      query = 'UPDATE user SET Is_Blocked = 1, Status = "Blocked", Blocked_Reason = "Bulk Action" WHERE User_ID IN (?)';
-      params = [userIds];
-      break;
-    case 'unblock':
-      query = 'UPDATE user SET Is_Blocked = 0, Status = "Active", Blocked_Reason = NULL WHERE User_ID IN (?)';
-      params = [userIds];
-      break;
-    case 'delete':
-      query = 'UPDATE user SET Is_Deleted = 1, Is_Active = 0 WHERE User_ID IN (?)';
-      params = [userIds];
-      break;
-    default:
-      return res.writeHead(400, { 'Content-Type': 'application/json' })
-        && res.end(JSON.stringify({ error: 'Invalid action' }));
-  }
-
-  db.query(query, params, (err, result) => {
-    if (err) {
-      console.error('Error performing bulk action:', err);
-      return res.writeHead(500, { 'Content-Type': 'application/json' })
-        && res.end(JSON.stringify({ error: 'Database error' }));
-    }
-
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ message: `Successfully processed ${result.affectedRows} users` }));
-  });
-};
-
