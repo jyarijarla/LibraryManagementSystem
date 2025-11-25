@@ -138,89 +138,87 @@ const getOverdueItems = async (req, res) => {
 
 // Bonus Report: Inventory Summary
 const getInventorySummary = (req, res) => {
-  // Build a safe inventory summary using the inventory views/tables that exist in the schema.
+  // Compute inventory per asset type using rentable and asset-specific tables
   const query = `
-<<<<<<< HEAD
     SELECT Asset_Type, Unique_Items, Total_Copies, Total_Available, Currently_Borrowed, Utilization_Percentage
     FROM (
       SELECT
         'Book' AS Asset_Type,
-        COUNT(*) AS Unique_Items,
-        COALESCE(SUM(Copies),0) AS Total_Copies,
-        COALESCE(SUM(Available_Copies),0) AS Total_Available,
-        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
-        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
-      FROM book_inventory
+        COUNT(DISTINCT b.Asset_ID) AS Unique_Items,
+        COUNT(r.Rentable_ID) AS Total_Copies,
+        COALESCE(SUM(CASE WHEN r.Availability = 1 THEN 1 ELSE 0 END), 0) AS Total_Available,
+        COALESCE(SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END), 0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(r.Rentable_ID),0)) * 100, 0), 2) AS Utilization_Percentage
+      FROM rentable r
+      JOIN asset a ON r.Asset_ID = a.Asset_ID
+      JOIN book b ON a.Asset_ID = b.Asset_ID
 
       UNION ALL
 
       SELECT
         'CD' AS Asset_Type,
-        COUNT(*) AS Unique_Items,
-        COALESCE(SUM(Copies),0) AS Total_Copies,
-        COALESCE(SUM(Available_Copies),0) AS Total_Available,
-        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
-        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
-      FROM cd_inventory
+        COUNT(DISTINCT cd.Asset_ID) AS Unique_Items,
+        COUNT(r.Rentable_ID) AS Total_Copies,
+        COALESCE(SUM(CASE WHEN r.Availability = 1 THEN 1 ELSE 0 END), 0) AS Total_Available,
+        COALESCE(SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END), 0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(r.Rentable_ID),0)) * 100, 0), 2) AS Utilization_Percentage
+      FROM rentable r
+      JOIN asset a ON r.Asset_ID = a.Asset_ID
+      JOIN cd ON a.Asset_ID = cd.Asset_ID
 
       UNION ALL
 
       SELECT
         'Audiobook' AS Asset_Type,
-        COUNT(*) AS Unique_Items,
-        COALESCE(SUM(Copies),0) AS Total_Copies,
-        COALESCE(SUM(Available_Copies),0) AS Total_Available,
-        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
-        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
-      FROM audiobook_inventory
+        COUNT(DISTINCT ab.Asset_ID) AS Unique_Items,
+        COUNT(r.Rentable_ID) AS Total_Copies,
+        COALESCE(SUM(CASE WHEN r.Availability = 1 THEN 1 ELSE 0 END), 0) AS Total_Available,
+        COALESCE(SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END), 0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(r.Rentable_ID),0)) * 100, 0), 2) AS Utilization_Percentage
+      FROM rentable r
+      JOIN asset a ON r.Asset_ID = a.Asset_ID
+      JOIN audiobook ab ON a.Asset_ID = ab.Asset_ID
 
       UNION ALL
 
       SELECT
         'Movie' AS Asset_Type,
-        COUNT(*) AS Unique_Items,
-        COALESCE(SUM(Copies),0) AS Total_Copies,
-        COALESCE(SUM(Available_Copies),0) AS Total_Available,
-        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
-        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
-      FROM movie_inventory
+        COUNT(DISTINCT mv.Asset_ID) AS Unique_Items,
+        COUNT(r.Rentable_ID) AS Total_Copies,
+        COALESCE(SUM(CASE WHEN r.Availability = 1 THEN 1 ELSE 0 END), 0) AS Total_Available,
+        COALESCE(SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END), 0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(r.Rentable_ID),0)) * 100, 0), 2) AS Utilization_Percentage
+      FROM rentable r
+      JOIN asset a ON r.Asset_ID = a.Asset_ID
+      JOIN movie mv ON a.Asset_ID = mv.Asset_ID
 
       UNION ALL
 
       SELECT
         'Technology' AS Asset_Type,
-        COUNT(*) AS Unique_Items,
-        COALESCE(SUM(Copies),0) AS Total_Copies,
-        COALESCE(SUM(Available_Copies),0) AS Total_Available,
-        COALESCE(SUM(Copies) - SUM(Available_Copies),0) AS Currently_Borrowed,
-        ROUND(COALESCE((SUM(Copies) - SUM(Available_Copies)) / NULLIF(SUM(Copies),0) * 100, 0), 2) AS Utilization_Percentage
-      FROM technology_inventory
+        COUNT(DISTINCT t.Asset_ID) AS Unique_Items,
+        COUNT(r.Rentable_ID) AS Total_Copies,
+        COALESCE(SUM(CASE WHEN r.Availability = 1 THEN 1 ELSE 0 END), 0) AS Total_Available,
+        COALESCE(SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END), 0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(r.Rentable_ID),0)) * 100, 0), 2) AS Utilization_Percentage
+      FROM rentable r
+      JOIN asset a ON r.Asset_ID = a.Asset_ID
+      JOIN technology t ON a.Asset_ID = t.Asset_ID
 
       UNION ALL
 
       SELECT
         'Study Room' AS Asset_Type,
-        COUNT(*) AS Unique_Items,
-        COUNT(*) AS Total_Copies,
-        COALESCE(SUM(CASE WHEN Availability = 1 THEN 1 ELSE 0 END), 0) AS Total_Available,
-        COALESCE(COUNT(*) - SUM(CASE WHEN Availability = 1 THEN 1 ELSE 0 END), 0) AS Currently_Borrowed,
-        ROUND(COALESCE((COUNT(*) - SUM(CASE WHEN Availability = 1 THEN 1 ELSE 0 END)) / NULLIF(COUNT(*),0) * 100, 0), 2) AS Utilization_Percentage
-      FROM study_room
+        COUNT(DISTINCT sr.Asset_ID) AS Unique_Items,
+        COUNT(r.Rentable_ID) AS Total_Copies,
+        COALESCE(SUM(CASE WHEN r.Availability = 1 THEN 1 ELSE 0 END), 0) AS Total_Available,
+        COALESCE(SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END), 0) AS Currently_Borrowed,
+        ROUND(COALESCE((SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(r.Rentable_ID),0)) * 100, 0), 2) AS Utilization_Percentage
+      FROM rentable r
+      JOIN asset a ON r.Asset_ID = a.Asset_ID
+      JOIN study_room sr ON a.Asset_ID = sr.Asset_ID
     ) t
     ORDER BY Total_Copies DESC;
-=======
-    SELECT 
-      'Book' AS Asset_Type,
-      COUNT(DISTINCT b.Asset_ID) AS Unique_Items,
-      COUNT(r.Rentable_ID) AS Total_Copies,
-      SUM(CASE WHEN r.Availability = 1 THEN 1 ELSE 0 END) AS Total_Available,
-      SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) AS Currently_Borrowed,
-      ROUND((SUM(CASE WHEN r.Availability = 0 THEN 1 ELSE 0 END) / NULLIF(COUNT(r.Rentable_ID), 0)) * 100, 2) AS Utilization_Percentage
-    FROM rentable r
-    JOIN asset a ON r.Asset_ID = a.Asset_ID
-    JOIN book b ON a.Asset_ID = b.Asset_ID
-    GROUP BY Asset_Type
->>>>>>> main
   `;
 
   db.query(query, (err, results) => {
@@ -1533,6 +1531,8 @@ const getCustomReport = (req, res) => {
     const s = String(status).toLowerCase();
     if (s === 'current' || s === 'currently' || s === 'currently_borrowed') {
       query += ` AND br.Return_Date IS NULL `;
+    } else if (s === 'overdue') {
+      query += ` AND br.Return_Date IS NULL AND br.Due_Date < CURDATE() `;
     } else if (s === 'returned') {
       query += ` AND br.Return_Date IS NOT NULL `;
     }
