@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Navigate, NavLink, Routes, Route } from 'react-router-dom'
 import { motion } from 'framer-motion'
+
+
 import {
     LayoutDashboard,
     BookOpenCheck,
@@ -26,6 +28,7 @@ import {
 import { SuccessPopup } from '../../components/FeedbackUI/FeedbackUI'
 import './Dashboard.css'
 import { Assets } from './Assets'
+import Profile from './Profile'
 
 import History from './History'
 import { OverlayProvider } from '../../components/FeedbackUI/OverlayContext'
@@ -109,11 +112,12 @@ const API_URL = window.location.hostname === 'localhost'
 function DashboardOverview() {
     const navigate = useNavigate()
     const [stats, setStats] = useState(null)
-    const [loading, setLoading] = useState(true)
+    const { setLoading } = useLoading();
 
     useEffect(() => {
         const fetchStats = async () => {
             try {
+                setLoading({ isLoading: true })
                 const token = localStorage.getItem('token');
                 const response = await fetch(`${API_URL}/dashboard/student/stats`, {
                     headers: {
@@ -129,14 +133,12 @@ function DashboardOverview() {
             } catch (error) {
                 console.error('Error fetching stats:', error);
             } finally {
-                setLoading(false);
+                setLoading({ isLoading: false });
             }
         };
 
         fetchStats();
     }, []);
-
-    if (loading) return <div className="student-loading">Loading dashboard...</div>
 
     // Safe access to stats
     const summary = stats?.summary || { borrowed: 0, overdue: 0, bookings: 0, reservations: 0, fines: 0 }
@@ -291,6 +293,10 @@ const StudentSidebar = ({ sidebarOpen, setSidebarOpen, onLogout }) => (
                     <HistoryIcon size={20} />
                     <span>History</span>
                 </NavLink>
+                <NavLink to="/student/all-history" className={({ isActive }) => `student-sidebar-link ${isActive ? 'active' : ''}`} onClick={() => setSidebarOpen(false)}>
+                    <HistoryIcon size={20} />
+                    <span>All History</span>
+                </NavLink>
             </nav>
             <div className="student-sidebar-footer">
                 <button className="student-sidebar-logout" onClick={onLogout}>
@@ -304,7 +310,8 @@ const StudentSidebar = ({ sidebarOpen, setSidebarOpen, onLogout }) => (
 )
 
 const StudentTopbar = ({ sidebarOpen, setSidebarOpen }) => {
-    const [searchValue, setSearchValue] = useState('')
+    const navigate = useNavigate()
+
     const user = JSON.parse(localStorage.getItem('user') || '{}')
 
     return (
@@ -314,24 +321,18 @@ const StudentTopbar = ({ sidebarOpen, setSidebarOpen }) => {
                     {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
                 </button>
                 <div>
-                    <p>Welcome back, {user.First_Name || 'Student'} 👋</p>
+                    <p>Welcome back, {user.First_Name || 'Student'}</p>
                 </div>
             </div>
             <div className="student-topbar-right">
-                <div className="student-search">
-                    <Search size={18} />
-                    <input
-                        type="text"
-                        placeholder="Search..."
-                        value={searchValue}
-                        onChange={(event) => setSearchValue(event.target.value)}
-                    />
-                </div>
                 <button className="student-icon-button">
                     <Bell size={20} />
                     <span className="student-indicator" />
                 </button>
-                <div className="student-profile-icon">
+                <div 
+                className="student-profile-icon"
+                onClick = {() => navigate('/student/profile')}
+                >
                     <User size={20} />
                 </div>
             </div>
@@ -371,8 +372,10 @@ function StudentDashboard() {
                                 <Route index element={<Navigate to="/student/overview" replace />} />
                                 <Route path="overview" element={<DashboardOverview />} />
                                 <Route path="assets" element={<Assets />} />
-
                                 <Route path="history" element={<History />} />
+                                <Route path="all-history" element={<HistoryTable />} />
+                                {/* NEW */}
+                                <Route path="profile" element={<Profile />} />
                             </Routes>
                         </div>
                     </div>
@@ -384,5 +387,6 @@ function StudentDashboard() {
 
 // Helper icon for Quick Actions (missing import)
 import { DollarSign } from 'lucide-react'
+import HistoryTable from './HistoryTable'
 
 export default StudentDashboard

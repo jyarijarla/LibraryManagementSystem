@@ -474,6 +474,20 @@ body {
   flex-shrink: 0;
   text-align: right;
 }
+/*Button and status UI for Active Loans*/
+.student-preview-ui {
+  display: flex;
+  flex-direction: row;
+  gap: 10px
+}
+.student-log-action-btn {
+  font-weight: 600;
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  color:#dc2626;
+  background: linear-gradient(135deg, #fecaca 0%, #ff8b8b 100%);
+}
 
 /* --- Status Badges --- */
 .status-badge {

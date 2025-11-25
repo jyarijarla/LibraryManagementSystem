@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { ErrorPopup } from '../../components/FeedbackUI/FeedbackUI'
+import useBorrowerData from './BorrowerHooks';
 import {
     ShieldCheck,
     AlertCircle,
@@ -16,125 +18,35 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import './Dashboard.css';
 
-const API_URL = window.location.hostname === 'localhost'
-    ? 'http://localhost:3000/api'
-    : 'https://librarymanagementsystem-z2yw.onrender.com/api';
-
 const History = () => {
     const [activeTab, setActiveTab] = useState('fines');
-    const [fines, setFines] = useState([]);
-    const [loans, setLoans] = useState([]);
-    const [holds, setHolds] = useState([]);
-    const [history, setHistory] = useState([]);
 
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [processingId, setProcessingId] = useState(null);
-    const [successMessage, setSuccessMessage] = useState('');
-    const [searchTerm, setSearchTerm] = useState('');
-
-    useEffect(() => {
-        fetchAllData();
-    }, []);
-
-    const fetchAllData = async () => {
-        setLoading(true);
-        try {
-            const token = localStorage.getItem('token');
-            const user = JSON.parse(localStorage.getItem('user') || '{}');
-            const userId = user.id || user.User_ID;
-
-            if (!userId) throw new Error('User ID not found');
-
-            const headers = { 'Authorization': `Bearer ${token}` };
-
-            // 1. Fetch Fines
-            const finesRes = await fetch(`${API_URL}/fines/user/${userId}`, { headers });
-            if (finesRes.ok) {
-                const finesData = await finesRes.json();
-                setFines(finesData);
-            }
-
-            // 2. Fetch Borrows (Active & History)
-            const borrowsRes = await fetch(`${API_URL}/borrow-records/user`, { headers });
-            if (borrowsRes.ok) {
-                const borrowsData = await borrowsRes.json();
-                if (Array.isArray(borrowsData)) {
-                    const activeLoans = borrowsData.filter(b => !b.Return_Date);
-                    const returnedLoans = borrowsData.filter(b => b.Return_Date);
-                    setLoans(activeLoans);
-                    setHistory(returnedLoans);
-                }
-            }
-
-            // 3. Fetch Holds
-            const holdsRes = await fetch(`${API_URL}/holds/user`, { headers });
-            if (holdsRes.ok) {
-                const holdsData = await holdsRes.json();
-                if (Array.isArray(holdsData)) {
-                    setHolds(holdsData);
-                }
-            }
-
-        } catch (err) {
-            console.error('Error fetching report data:', err);
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handlePayFine = async (fine) => {
-        setProcessingId(fine.Borrow_ID);
-        try {
-            const token = localStorage.getItem('token');
-            const response = await fetch(`${API_URL}/fines/${fine.Borrow_ID}/pay-online`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    amount: fine.Fine_Amount
-                })
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Payment failed');
-            }
-
-            setSuccessMessage(`Payment successful for ${fine.Item_Title}`);
-            setTimeout(() => setSuccessMessage(''), 3000);
-            fetchAllData(); // Refresh all data
-        } catch (err) {
-            console.error('Payment error:', err);
-            alert(`Payment failed: ${err.message}`);
-        } finally {
-            setProcessingId(null);
-        }
-    };
-
-    const filterData = (data) => {
-        if (!searchTerm) return data;
-        return data.filter(item =>
-            (item.Asset_Title && item.Asset_Title.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (item.Item_Title && item.Item_Title.toLowerCase().includes(searchTerm.toLowerCase())) ||
-            (item.Author && item.Author.toLowerCase().includes(searchTerm.toLowerCase()))
-        );
-    };
-
-    if (loading) return <div className="student-loading">Loading reports...</div>;
-
-    const unpaidFines = fines.filter(f => f.Status !== 'Paid' && f.Status !== 'Waived' && parseFloat(f.Fine_Amount) > 0);
-    const paidFines = fines.filter(f => f.Status === 'Paid' || f.Status === 'Waived');
-
-    const totalFinesAmount = unpaidFines.reduce((sum, f) => sum + parseFloat(f.Fine_Amount), 0);
-    const activeHoldsCount = holds.filter(h => h.Status === 'Active').length;
+    const {
+        fines,
+        loans,
+        holds,
+        history,
+        error,
+        setError,
+        processingId,
+        successMessage,
+        setSuccessMessage,
+        searchTerm,
+        setSearchTerm,
+        filterData,
+        unpaidFines,
+        paidFines,
+        totalFinesAmount,
+        activeHoldsCount,
+        handleReturn,
+        handleHoldCancel,
+        handlePayFine
+    } = useBorrowerData();
 
     return (
         <div className="student-dashboard-content">
             <div className="student-section-header">
+                <ErrorPopup errorMessage={error} />
                 <div>
                     <h3>My History</h3>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>
@@ -390,11 +302,14 @@ const History = () => {
                                                     <h4>{loan.Asset_Title}</h4>
                                                     <p>{loan.Asset_Type} • Due: {new Date(loan.Due_Date).toLocaleDateString()}</p>
                                                 </div>
-                                                <div className="student-preview-status">
-                                                    {loan.Overdue_Days > 0 && (
-                                                        <span className="status-badge overdue">Overdue by {loan.Overdue_Days} days</span>
-                                                    )}
-                                                    <span className="status-badge active">Borrowed</span>
+                                                <div className='student-preview-ui'>
+                                                    <div className="student-preview-status">
+                                                        {loan.Overdue_Days > 0 && (
+                                                            <span className="status-badge overdue">Overdue by {loan.Overdue_Days} days</span>
+                                                        )}
+                                                        <span className="status-badge active">Borrowed</span>
+                                                    </div>
+                                                    {<button className="student-log-action-btn" onClick={() => handleReturn(loan.Borrow_ID)}>Return</button>}
                                                 </div>
                                             </div>
                                         ))
@@ -425,10 +340,13 @@ const History = () => {
                                                     <h4>{hold.Asset_Title}</h4>
                                                     <p>{hold.Asset_Type} • Expires: {new Date(hold.Hold_Expires).toLocaleDateString()}</p>
                                                 </div>
-                                                <div className="student-preview-status">
-                                                    <span className={`status-badge ${hold.Status.toLowerCase() === 'active' ? 'pending' : ''}`}>
-                                                        {hold.Status}
-                                                    </span>
+                                                <div className='student-preview-ui'>
+                                                    <div className="student-preview-status">
+                                                        <span className={`status-badge ${hold.Status.toLowerCase() === 'active' ? 'pending' : ''}`}>
+                                                            {hold.Status}
+                                                        </span>
+                                                        {hold.active_key && <button className="student-log-action-btn" onClick={() => handleHoldCancel(hold.Hold_ID)}>Cancel</button>}
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))

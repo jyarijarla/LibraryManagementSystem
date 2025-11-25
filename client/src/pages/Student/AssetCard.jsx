@@ -70,40 +70,40 @@ const assetTypeMap = {
 };
 
 async function borrowAsset(assetID) {
-    const response = await axios.post(`${API_URL}/borrow`,
-        { userID: localStorage.getItem("userId"), assetID: assetID }, {
-        headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+    const response = await axios.post(`${API_URL}/borrow/${assetID}`,
+        null,
+        { headers: 
+            {'Authorization': `Bearer ${localStorage.getItem('token')}`}
         }
-    })
+    )
     return response.data;
 }
+
 async function holdAsset(assetID) {
-    const response = await axios.post(`${API_URL}/hold`,
-        { userID: localStorage.getItem("userId"), assetID: assetID }, {
-        headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+    const response = await axios.post(`${API_URL}/hold/${assetID}`,
+        null, 
+        { headers: 
+            {'Authorization': `Bearer ${localStorage.getItem('token')}`}
         }
-    })
+    )
     return response.data;
 }
 async function waitlistAsset(assetID) {
-    const response = await axios.post(`${API_URL}/waitlist`,
-        { userID: localStorage.getItem("userId"), assetID: assetID }, {
-        headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+    const response = await axios.post(`${API_URL}/waitlist/${assetID}`,
+        null, 
+        { headers: 
+            {'Authorization': `Bearer ${localStorage.getItem('token')}`}
         }
-    }
     )
     return response.data;
 }
 async function returnAsset(borrowID) {
     const response = await axios.post(`${API_URL}/`,
-        { userID: localStorage.getItem("userId"), assetID: assetID }, {
-        headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+        { userID: localStorage.getItem("userId"), assetID: assetID }, 
+        { headers: 
+            {'Authorization': `Bearer ${localStorage.getItem('token')}`}
         }
-    })
+    )
     return response.data;
 }
 export function AssetCard({ assetType, getAsset, onAssetChange, setError }) {
@@ -268,9 +268,6 @@ export function AssetCard({ assetType, getAsset, onAssetChange, setError }) {
                                 </button>
                                 <button className='asset-btn asset-btn-secondary' onClick={handleWaitlist}>
                                     Join Waitlist
-                                </button>
-                                <button className='asset-btn asset-btn-danger' onClick={handleReturn}>
-                                    Return Asset
                                 </button>
                             </div>
                         </div>

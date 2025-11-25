@@ -103,27 +103,27 @@ const syncFines = async () => {
                 if (daysSinceSync > 0) {
                   if (diffDays <= maxDays) {
                     const additionalFine = daysSinceSync * fineRate;
-                    updates.push([record.Amount_Due + additionalFine, record.Amount_Due + additionalFine, record.Fine_ID]);
+                    updates.push([record.Amount_Due + additionalFine, record.Fine_ID]);
                   }
                 }
               }
             }
           } else {
             // New fine to insert
-            inserts.push([record.Borrow_ID, record.Borrower_ID, amountDue, isPaid, amountDue]);
+            inserts.push([record.Borrow_ID, record.Borrower_ID, amountDue, isPaid]);
           }
         }
 
         if (inserts.length > 0) {
           const values = inserts.map(row => `(${row.join(',')}, CURDATE())`).join(',');
-          db.query(`INSERT INTO fine (Borrow_ID, User_ID, Amount_Due, Paid, Original_Amount, Fine_Date) VALUES ${values}`, (err) => {
+          db.query(`INSERT INTO fine (Borrow_ID, User_ID, Amount_Due, Paid, Fine_Date) VALUES ${values}`, (err) => {
             if (err) console.error('Error inserting synced fines:', err);
           });
         }
 
         if (updates.length > 0) {
           updates.forEach(update => {
-            db.query('UPDATE fine SET Amount_Due = ?, Original_Amount = ?, Fine_Date = CURDATE() WHERE Fine_ID = ?', update);
+            db.query('UPDATE fine SET Amount_Due = ?, Fine_Date = CURDATE() WHERE Fine_ID = ?', update);
           });
         }
 
@@ -324,8 +324,8 @@ exports.processFinePayment = (req, res) => {
         // Update fine table
         await new Promise((resolve, reject) => {
           connection.query(
-            'UPDATE fine SET Amount_Due = ?, Paid = ?, Payment_Status = ? WHERE Fine_ID = ?',
-            [newAmount, isPaid, isPaid ? 'Paid' : 'Unpaid', fine.Fine_ID],
+            'UPDATE fine SET Amount_Due = ?, Paid = ? WHERE Fine_ID = ?',
+            [newAmount, isPaid, fine.Fine_ID],
             (err) => {
               if (err) reject(err);
               else resolve();
@@ -372,7 +372,7 @@ exports.waiveFine = (req, res) => {
   const borrowId = req.params.id;
 
   db.query(
-    'UPDATE fine SET Amount_Due = 0, Paid = 1, Payment_Status = "Waived" WHERE Borrow_ID = ?',
+    'UPDATE fine SET Amount_Due = 0, Paid = 1 WHERE Borrow_ID = ?',
     [borrowId],
     (err, result) => {
       if (err) return sendJSON(res, 500, { message: 'Error waiving fine' });
@@ -393,17 +393,35 @@ exports.getFineStats = async (req, res) => {
   try {
     await syncFines();
 
+    const { rate: fineRate, maxDays } = await getFineConfig();
+
     const query = `
       SELECT 
-        COUNT(*) as total_overdue_items,
-        COUNT(DISTINCT User_ID) as users_with_overdue,
-        SUM(Amount_Due) as total_unpaid_fines,
-        (SELECT SUM(Amount_Due) FROM fine WHERE Paid = 1) as total_collected_fines_placeholder
-      FROM fine
-      WHERE Paid = 0
+        COUNT(CASE WHEN f.Paid = 0 THEN 1 END) as total_overdue_items,
+        COUNT(DISTINCT CASE WHEN f.Paid = 0 THEN f.User_ID END) as users_with_overdue,
+        SUM(CASE WHEN f.Paid = 0 THEN f.Amount_Due ELSE 0 END) as total_unpaid_fines,
+        
+        SUM(
+          GREATEST(0,
+            CASE 
+              WHEN b.Return_Date IS NOT NULL THEN 
+                (LEAST(DATEDIFF(b.Return_Date, b.Due_Date), ?) * ?) - f.Amount_Due
+              ELSE 
+                (LEAST(DATEDIFF(CURDATE(), b.Due_Date), ?) * ?) - f.Amount_Due
+            END
+          )
+        ) as total_collected_fines,
+
+        COUNT(CASE WHEN f.Paid = 0 AND DATEDIFF(CURDATE(), b.Due_Date) <= 7 THEN 1 END) as warning_overdues,
+        COUNT(CASE WHEN f.Paid = 0 AND DATEDIFF(CURDATE(), b.Due_Date) BETWEEN 8 AND 30 THEN 1 END) as urgent_overdues,
+        COUNT(CASE WHEN f.Paid = 0 AND DATEDIFF(CURDATE(), b.Due_Date) > 30 THEN 1 END) as critical_overdues,
+
+        AVG(CASE WHEN f.Paid = 0 THEN DATEDIFF(CURDATE(), b.Due_Date) END) as avg_days_overdue
+      FROM fine f
+      JOIN borrow b ON f.Borrow_ID = b.Borrow_ID
     `;
 
-    db.query(query, (err, results) => {
+    db.query(query, [maxDays, fineRate, maxDays, fineRate], (err, results) => {
       if (err) throw err;
       const stats = results[0];
 
@@ -411,11 +429,11 @@ exports.getFineStats = async (req, res) => {
         totalOverdueItems: stats.total_overdue_items || 0,
         usersWithOverdue: stats.users_with_overdue || 0,
         totalUnpaidFines: stats.total_unpaid_fines || 0,
-        totalCollectedFines: 0, // Placeholder as explained
-        criticalOverdues: 0, // Implement if needed
-        urgentOverdues: 0,
-        warningOverdues: 0,
-        avgDaysOverdue: 0
+        totalCollectedFines: parseFloat(stats.total_collected_fines || 0).toFixed(2),
+        criticalOverdues: stats.critical_overdues || 0,
+        urgentOverdues: stats.urgent_overdues || 0,
+        warningOverdues: stats.warning_overdues || 0,
+        avgDaysOverdue: Math.round(stats.avg_days_overdue || 0)
       });
     });
   } catch (err) {
